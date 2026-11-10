@@ -43,6 +43,9 @@ class FakeBackend:
     def list_runs(self):
         return []
 
+    def list_run_files(self, run_id):
+        return None
+
     def read_run_file(self, run_id, path):
         return None
 

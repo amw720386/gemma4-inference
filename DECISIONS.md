@@ -242,3 +242,13 @@ attribution into PRs #2–#4 (all 23 commits patch-equivalent), merged, and dele
 recreated. BOOTSTRAP.md now clones `main` (D-002 above is historical). Verified offline: a plain clone lands on `main`,
 `pip install -e ".[bridge]"` succeeds, `modal_bridge/app.py` loads with cap $10 / per-job $2 / max_active 1 / GPU
 timeout 876 s, and `modal workspace proxy-tokens` exists in modal 1.6.3.
+
+**D-037 (2026-11-10) Paid runs must come back complete.** A real-HTTP rehearsal (uvicorn-served bridge API, fake Modal
+backend, the exact `client.py verify` / `campaign.py e1-smoke --execute` commands) showed that `client.py fetch` copied
+only manifest/metadata/results.csv/results.jsonl and the campaign fetched nothing — REPORT.md, correctness.json and
+per-point server logs / effective config / raw InferenceX JSON would have stayed on the Modal volume. The bridge now
+lists a run's files (`GET /runfiles/{run_id}`, path-traversal guarded), `fetch` downloads all of them (never
+overwriting local files; > 20 MB skipped and reported), and the campaign fetches every finished job's run
+automatically. `run-file-listing` is a required `/health` feature, so a bridge deployed before this change is refused
+until redeployed. The campaign CLI also gains `--ledger` / `--fetch-dir`, so rehearsals no longer write to the real
+`results/budget_ledger.jsonl`.

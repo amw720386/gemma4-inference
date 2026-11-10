@@ -272,13 +272,17 @@ class ModalBackend:
         root = pathlib.Path(RESULTS_MOUNT) / "runs"
         return sorted(p.name for p in root.iterdir()) if root.exists() else []
 
-    def read_run_file(self, run_id: str, path: str) -> str | None:
+    def list_run_files(self, run_id: str):
+        from g4bench.bridge_jobs import list_run_files
+
         res_vol.reload()
-        root = (pathlib.Path(RESULTS_MOUNT) / "runs" / run_id).resolve()
-        f = (root / path).resolve()
-        if root not in f.parents or not f.is_file() or f.stat().st_size > 20_000_000:
-            return None
-        return f.read_text(errors="replace")
+        return list_run_files(pathlib.Path(RESULTS_MOUNT) / "runs", run_id)
+
+    def read_run_file(self, run_id: str, path: str) -> str | None:
+        from g4bench.bridge_jobs import read_run_file
+
+        res_vol.reload()
+        return read_run_file(pathlib.Path(RESULTS_MOUNT) / "runs", run_id, path)
 
 
 @app.function(image=bridge_image, volumes={RESULTS_MOUNT: res_vol}, timeout=600, cpu=(0.25, 1.0),

@@ -144,7 +144,8 @@ def preflight_estimates(campaign: dict[str, Any], call: Call, req: dict[str, Any
 
 def run(campaign: dict[str, Any], call: Call, *, execute: bool = False, poll_s: float = 120.0,
         max_wait_s: float = 3600.0, sleep: Callable[[float], None] = time.sleep,
-        ledger: Path | None = LEDGER, now: Callable[[], float] = time.time) -> list[StepOutcome]:
+        ledger: Path | None = LEDGER, now: Callable[[], float] = time.time,
+        fetch_dir: Path | None = None) -> list[StepOutcome]:
     out: list[StepOutcome] = []
     req = approved_limits(campaign["require"])
     if execute:
@@ -209,6 +210,12 @@ def run(campaign: dict[str, Any], call: Call, *, execute: bool = False, poll_s: 
                 cancelled = True
             sleep(poll_s)
         problem = _expect(step, st["state"], st.get("result"))
+        res = st.get("result") if isinstance(st.get("result"), dict) else {}
+        if fetch_dir is not None and step["kind"] == "job" and res.get("run_id"):
+            try:  # evidence first: fetch even if the step's expectations failed
+                res["fetched"] = fetch_run(call, res["run_id"], fetch_dir)
+            except Exception as e:  # noqa: BLE001 - the run stays on the volume; refetch with client.py fetch
+                res["fetched"] = {"error": f"{e!r}"[:300]}
         b = call("GET", "/budget")
         o = StepOutcome(step["id"], "failed" if problem else "done", problem or "ok", jid, sub.get("reserved_usd"),
                         (st.get("job") or {}).get("settled_usd"), _slim(st.get("result")),
@@ -218,6 +225,28 @@ def run(campaign: dict[str, Any], call: Call, *, execute: bool = False, poll_s: 
         if problem:
             break
     return out
+
+
+def fetch_run(call: Call, run_id: str, dest_root: Path) -> dict[str, Any]:
+    """Download every file of a bridge run (via /runfiles listing) into dest_root/run_id. Never overwrites."""
+    dest = Path(dest_root) / run_id
+    files = call("GET", f"/runfiles/{run_id}")
+    got, skipped = 0, []
+    for f in files:
+        target = (dest / f["path"]).resolve()
+        if dest.resolve() not in target.parents:
+            skipped.append(f"{f['path']}: path escapes run dir")
+            continue
+        if target.exists():
+            skipped.append(f"{f['path']}: exists locally")
+            continue
+        if f["bytes"] > 20_000_000:
+            skipped.append(f"{f['path']}: {f['bytes']} bytes > 20 MB (left on the volume)")
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(call("GET", f"/runs/{run_id}/{f['path']}"))
+        got += 1
+    return {"fetched_to": str(dest), "files": got, "listed": len(files), "skipped": skipped}
 
 
 def _slim(res: Any) -> Any:

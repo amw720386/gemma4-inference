@@ -26,6 +26,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--execute", action="store_true")
     ap.add_argument("--poll", type=float, default=120.0)
     ap.add_argument("--max-wait-s", type=float, default=3600.0)
+    ap.add_argument("--ledger", type=Path, default=C.LEDGER,
+                    help="JSONL ledger to append to (default results/budget_ledger.jsonl; use another path for rehearsals)")
+    ap.add_argument("--fetch-dir", type=Path, default=Path(__file__).resolve().parents[1] / "results" / "runs",
+                    help="where finished runs are downloaded (all files via /runfiles)")
     a = ap.parse_args(argv)
     def call(method, path, json=None):
         try:
@@ -34,7 +38,8 @@ def main(argv: list[str] | None = None) -> int:
             raise C.CampaignStop(str(e)) from None
 
     try:
-        outs = C.run(C.load(a.campaign), call, execute=a.execute, poll_s=a.poll, max_wait_s=a.max_wait_s)
+        outs = C.run(C.load(a.campaign), call, execute=a.execute, poll_s=a.poll, max_wait_s=a.max_wait_s,
+                     ledger=a.ledger, fetch_dir=a.fetch_dir)
     except C.CampaignStop as e:
         print(json.dumps({"stopped": str(e)}))
         return 1
