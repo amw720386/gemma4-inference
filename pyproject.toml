@@ -23,4 +23,5 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 markers = ["network: needs outbound HTTPS (HF Hub)", "slow: > 10 s"]

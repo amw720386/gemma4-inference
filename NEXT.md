@@ -8,6 +8,9 @@
 
 ## B. Agent, after A — strictly in this order, stop at the first failure or when `/budget` cannot cover the next step
 
+Mechanised (D-026): `python modal_bridge/campaign.py e1-smoke` (plan) → `… e1-smoke --execute` (steps 1–4) →
+review + commit results → `… e2-pairs --execute` (step 5). The table below is what the campaigns do.
+
 Before every paid step: run `budget`, write the planned reservation in BUDGET.md, then launch; after it settles,
 record the settled estimate. Never run two jobs at once (the bridge refuses anyway).
 

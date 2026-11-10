@@ -1,0 +1,1 @@
+{"utc": "2026-11-10T21:14:12Z", "campaign": "e1-smoke", "id": "selftest", "status": "refused", "detail": "HTTP 404 /health: modal-http: invalid function call\n", "job_id": null, "reserved_usd": null, "settled_usd": null, "result": null, "budget_after": {}}

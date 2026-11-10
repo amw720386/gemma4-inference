@@ -57,10 +57,13 @@ so each fits the 876 s timeout (`--only <key>`). The plan within $10 is in NEXT.
 
 ## Ledger (agent's copy; the bridge's `/budget` is the source of truth once deployed)
 
+Machine-readable per-step log: `results/budget_ledger.jsonl` (written by the campaign runner).
+
 | Date (UTC) | Job id | Experiment | GPU | Reserved $ | Settled est. $ | Notes |
 |---|---|---|---|---:|---:|---|
 | 2026-11-10 | – | E0 CPU-only (this container) | none | 0 | **0.00** | no paid compute |
 | 2026-11-10 | – | E5c data prep (this container) | none | 0 | **0.00** | SPEED-Bench prepared locally |
+| 2026-11-10 | – | e1-smoke `--execute` gate test | none | 0 | **0.00** | refused at /health (404, not deployed) before any POST |
 
 **Total spent to date: $0.00.** Bridge not deployed; no Modal compute has run.
 
