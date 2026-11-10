@@ -82,6 +82,33 @@ def test_analyze_end_to_end_reads_run_context(tmp_path):
             r.pop("pins_target"), r.pop("pins_draft"), r.pop("run_id")
         (d / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows) + "{corrupt\n")
     res = analyze.run(root=tmp_path, out=tmp_path / "summary")
-    assert res["rows"] == 6 and res["engine_pairs"] == 8
+    assert res["rows"] == 6 and res["engine_pairs"] == 13
     md = (tmp_path / "summary" / "SUMMARY.md").read_text()
     assert "vLLM vs SGLang at matched load" in md and "claim (n>=3)" in md and "1.527" in md
+
+
+def test_article_implied_ratios_cancel_backboard_for_all_13_metrics():
+    from g4bench.engine_compare import METRICS, article_implied
+
+    imp = article_implied("1024x1")
+    assert len(imp) == 13
+    assert imp["output_throughput"]["est"] == pytest.approx(186.8 / 122.6, rel=0.01)  # matches absolute table
+    assert imp["p99_tpot"]["lo"] <= 8.4 / 5.6 * 1.03 and imp["p99_tpot"]["hi"] >= 8.4 / 5.6 * 0.97
+    for k, v in imp.items():
+        assert v["lo"] < v["est"] < v["hi"]
+    out = compare_engines(_rows(), correctness={"rv": True, "rs": True})
+    assert {r["metric"] for r in out} == set(METRICS)
+    t = _thr(out)
+    assert t["consistent_with_article"] is True  # synthetic 187/122.5 = 1.527 lies inside the article bounds
+    lo, hi = t["article_bounds"]
+    assert (t["boot_ci"][0] <= hi and lo <= t["boot_ci"][1]) == t["consistent_with_article"]
+    assert article_implied("0x1") == {}
+
+
+def test_inconsistency_with_article_is_flagged():
+    rows = _rows()
+    for r in rows:
+        if r["engine"] == "sglang":
+            r["output_throughput"] = 180.0  # engines nearly equal: far from the article's ~1.52x
+    t = _thr(compare_engines(rows, correctness={"rv": True, "rs": True}))
+    assert t["consistent_with_article"] is False and t["advantage"] < 1.1
