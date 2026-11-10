@@ -131,3 +131,14 @@ static existence only — it cannot catch invalid *values* or runtime incompatib
 HTTP API → ledger → worker body → runner on the mock engine → poll → settle path, so job-spec/RunOptions mismatches
 and deadline/wall-budget handling are exercised for free. Test-only allowlist overrides live in `BridgeConfig`;
 production allowlists are unchanged.
+
+**D-025 (2026-11-10) Record the engine's effective configuration per point.** Source reading (vLLM v0.33.0
+`Gemma4Config.verify_and_update_config`): because Gemma 4 mixes head_dim 256 (sliding) and 512 (global), vLLM uses
+FA4 for all layers when FA4 is available, otherwise **forces TRITON_ATTN**; the MTP proposer carries the target's
+backend into draft layers. Which branch fires on sm_120 (RTX PRO 6000) is unknown until E1, and the backend
+plausibly dominates the vLLM-vs-Backboard gap, so `serverlog.py` parses (verbatim format strings from the pinned
+sources) the backend decision, selected attention backend, KV-cache tokens and max concurrency, CUDA-graph capture
+time/memory, and SGLang's effective `server_args` (attention backend, effective speculative algorithm — e.g. NEXTN
+vs FROZEN_KV_MTP — cuda_graph_max_bs, max_running_requests). Results schema v3 adds `eff_*` columns; each point
+writes `effective_config.json`; reports show an "Effective engine configuration" table. Absent lines stay `None`.
+No flags were changed: the article says default recipes, and both engines select backends automatically.

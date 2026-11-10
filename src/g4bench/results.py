@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-SCHEMA_VERSION = 2  # v2 (2026-11-10): + dataset, ignore_eos, dataset_digest, request-level CI columns
+SCHEMA_VERSION = 3  # v2: + dataset, ignore_eos, dataset_digest, request CIs; v3: + effective engine config
 
 LAT_METRICS = ("ttft", "tpot", "itl", "e2el")
 LAT_STATS = ("mean", "median", "p90", "p99")
@@ -32,6 +32,7 @@ COLUMNS: list[str] = [
     "req_littles_law_tok_s", "req_littles_law_rel_gap",
     "spec_acceptance_length", "spec_draft_acceptance_rate",
     "gpu_mem_peak_mib", "gpu_power_mean_w", "gpu_sm_clock_mean_mhz",
+    "eff_attention_backend", "eff_spec_algorithm", "eff_kv_cache_tokens", "eff_max_running_requests",
     "server_start_s", "started_utc", "notes",
 ]
 
@@ -44,7 +45,8 @@ def normalize(raw: dict[str, Any], *, context: dict[str, Any]) -> dict[str, Any]
               "gpu_name", "gpu_count", "exact_hardware", "point_id", "key", "isl", "osl", "conc",
               "seed", "trial", "num_prompts", "random_range_ratio", "use_chat_template", "dataset", "ignore_eos",
               "spec_acceptance_length", "spec_draft_acceptance_rate", "gpu_mem_peak_mib",
-              "gpu_power_mean_w", "gpu_sm_clock_mean_mhz", "server_start_s", "started_utc", "notes"):
+              "gpu_power_mean_w", "gpu_sm_clock_mean_mhz", "server_start_s", "started_utc", "notes",
+              "eff_attention_backend", "eff_spec_algorithm", "eff_kv_cache_tokens", "eff_max_running_requests"):
         if k in context:
             rec[k] = context[k]
     outcome = raw.get("benchmark_outcome") or {}

@@ -16,7 +16,7 @@ record the settled estimate. Never run two jobs at once (the bridge refuses anyw
 | 0 | `g4bench flagcheck` (local, free), then `health`, `budget` (free) | 0 | 0 | `ok`, `ledger_ok`, cap 10, per-job ≤ 2, available 9.50, no active jobs |
 | 1 | `selftest` | 0.10 | ≤ 0.10 | tests pass inside Modal |
 | 2 | `prefetch` | 0.16 | ≤ 0.16 | weights cached; SPEED-Bench coding digest = InferenceX |
-| 3 | `submit --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2`, then `wait <job_id>` | 2.00 | ~0.7 | 0 failures, probes ≥ 7/8, acceptance length captured, `exact_hardware=true`; `fetch` + commit `results/runs/<run_id>/` |
+| 3 | `submit --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2`, then `wait <job_id>` | 2.00 | ~0.7 | 0 failures, probes ≥ 7/8, acceptance length captured, `exact_hardware=true`, effective attention backend recorded (REPORT.md table); `fetch` + commit `results/runs/<run_id>/` |
 | 4 | same with `--engine sglang-0.5.23-nextn` | 2.00 | ~0.7 | same; record effective spec algorithm |
 | 5 | single-point article jobs, seed 0: `--matrix backboard-repro --seeds 0 --only <key> --max-usd 2`, alternating engines at the same key — start with `1024x1`, then `8192x4` (largest vLLM gap in the article) | 2.00 each | 0.76–0.86 each | each point valid; stop when `available_usd` < 2.0 |
 

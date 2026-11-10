@@ -1,7 +1,7 @@
 # Status — 2026-11-10 (checkpoint 3)
 
 **One-line state:** harness, real-prompt arm, reporting and a **server-side $10 project spend limit** in the bridge
-are built and CPU-tested (84 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
+are built and CPU-tested (87 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
 GPU work waits only on the user's one-time bridge deploy + scoped proxy token. Spend to date: **$0.00**.
 
 ## Summary
@@ -21,6 +21,7 @@ GPU work waits only on the user's one-time bridge deploy + scoped proxy token. S
 | vLLM vs SGLang matched-load comparison (paired by seed, correctness-gated, CIs) | ✅ CPU-tested | src/g4bench/engine_compare.py, results/summary/engine_comparison.csv |
 | Static engine-flag preflight vs pinned vLLM/SGLang source (runner refuses unknown flags) | ✅ all 4 configs clean | src/g4bench/flagcheck.py, configs/engine_flags/ |
 | CPU rehearsal of the paid bridge path (HTTP → ledger → worker → runner(mock) → settle) | ✅ | src/g4bench/bridge_jobs.py, tests/test_bridge_rehearsal.py |
+| Effective engine config from server logs (attention backend, KV tokens, CUDA graphs, SGLang effective spec algorithm) | ✅ schema v3 | src/g4bench/serverlog.py |
 | GPU experiments E1–E6 | ⛔ blocked (see below) | — |
 
 ## Measured results
@@ -45,6 +46,8 @@ excludes and every report banners as "MOCK ENGINE — NOT A MEASUREMENT". `resul
   speculative acceptance length ≳ 3.1; throughput is acceptance-dominated, hence prompt-content-sensitive.
 - The InferenceX golden-AL prompt set (80 SPEED-Bench coding prompts) can be reproduced byte-identically
   with ~4.6 GB of streamed downloads instead of ~35 GB; Gemma-tokenized lengths 27–1471 (mean 251).
+- vLLM v0.33.0 source: Gemma 4's mixed head dims (256/512) make vLLM use FA4 if available, else force
+  TRITON_ATTN; which happens on sm_120 is an E1 observable (D-025).
 - SPEED-Bench throughput "1k"/"8k" are ~1210 / ~9372 Gemma tokens (sized for a different tokenizer), so
   they are real-text proxies near, not at, the article's ISLs.
 
@@ -64,5 +67,5 @@ g4bench speedbench prepare && python -m pytest -q
 ```
 
 Expected: SPEED-Bench coding digest `6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18`,
-`matches_inferencex_digest: true`; 84 tests pass (without `speedbench prepare`, the one network-marked
+`matches_inferencex_digest: true`; 87 tests pass (without `speedbench prepare`, the one network-marked
 digest test is skipped; without `modal` installed, the bridge-definition test is skipped).

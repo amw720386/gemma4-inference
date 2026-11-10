@@ -213,6 +213,10 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
     log_text = server.log_path.read_text(encoding="utf-8", errors="replace") if server.log_path.exists() else ""
     acc_log = promscrape.acceptance_from_log(log_text)
     (pdir / "spec_metrics.json").write_text(json.dumps({"delta": d, "acceptance": acc, "log": acc_log}, indent=2))
+    from . import serverlog
+
+    eff = serverlog.parse(log_text, eng.engine if eng.engine in ("vllm", "sglang") else None)
+    (pdir / "effective_config.json").write_text(json.dumps(eff, indent=2))
     ctx = {
         "run_id": run_id, "config_hash": chash, "engine": eng.engine, "engine_config": eng.name,
         "engine_version": eng.version, "hardware_class": meta["hardware_class"],
@@ -221,6 +225,10 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
         "spec_acceptance_length": acc.get("acceptance_length") or acc_log.get("acceptance_length_log_mean"),
         "spec_draft_acceptance_rate": acc.get("draft_acceptance_rate"),
         "server_start_s": start_s, "started_utc": started, "notes": notes, **gpu,
+        "eff_attention_backend": eff.get("attention_backend") or eff.get("gemma4_backend_decision"),
+        "eff_spec_algorithm": eff.get("speculative_algorithm"),
+        "eff_kv_cache_tokens": eff.get("kv_cache_tokens"),
+        "eff_max_running_requests": eff.get("max_running_requests"),
     }
     if result_path.exists():
         raw = json.loads(result_path.read_text())
