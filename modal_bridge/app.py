@@ -49,8 +49,10 @@ VLLM_IMAGE = "vllm/vllm-openai@sha256:91ee972ab751fb7180bc71c175865e36b091686600
 SGLANG_IMAGE = "lmsysorg/sglang@sha256:f7876bef696ccf9cf75a2bf7ccb82970f5fac577f082fb8ca95c9a59d2160eb5"
 
 # Budget configuration is baked into the deployed image env: changing it requires a (human) redeploy.
-PROJECT_CAP_USD = float(os.environ.get("G4_PROJECT_CAP_USD", "10"))
-PER_JOB_CAP_USD = min(float(os.environ.get("G4_PER_JOB_CAP_USD", "2")), PROJECT_CAP_USD)
+# G4_PROJECT_BUDGET_USD / G4_JOB_CAP_USD are accepted as aliases (names used in the agent's cloud environment).
+PROJECT_CAP_USD = float(os.environ.get("G4_PROJECT_CAP_USD") or os.environ.get("G4_PROJECT_BUDGET_USD") or "10")
+PER_JOB_CAP_USD = min(float(os.environ.get("G4_PER_JOB_CAP_USD") or os.environ.get("G4_JOB_CAP_USD") or "2"),
+                      PROJECT_CAP_USD)
 MAX_ACTIVE = int(os.environ.get("G4_BRIDGE_MAX_ACTIVE", "1"))
 PLATFORM_RESERVE_USD = float(os.environ.get("G4_PLATFORM_RESERVE_USD", "0.50"))
 LEDGER_CFG = B.LedgerConfig(cap_usd=PROJECT_CAP_USD, platform_reserve_usd=PLATFORM_RESERVE_USD,
