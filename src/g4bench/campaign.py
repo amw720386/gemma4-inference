@@ -81,7 +81,7 @@ def check_limits(call: Call, require: dict[str, Any], need_usd: float) -> dict[s
     missing = sorted(set(FEATURES) - set(h.get("features") or []))
     if missing:
         raise CampaignStop(f"deployed bridge lacks safety features {missing} (stale deploy? code_sha="
-                           f"{h.get('code_sha')}); redeploy from the current agent/gemma4-repro head")
+                           f"{h.get('code_sha')}); redeploy from the current main (modal_bridge/BOOTSTRAP.md)")
     b = call("GET", "/budget")
     if float(h.get("cap_usd", -1)) != float(require["cap_usd"]) or float(b.get("cap_usd", -1)) != float(require["cap_usd"]):
         raise CampaignStop(f"server cap {h.get('cap_usd')}/{b.get('cap_usd')} != approved {require['cap_usd']}")

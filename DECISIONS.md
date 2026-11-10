@@ -236,3 +236,9 @@ free preflight: `/health` + `/budget` must show the approved limits, then every 
 campaign refuses unless each fits one per-job reservation, its worst case ≤ the approved per-job cap, and the largest
 worst case ≤ `available_usd`. Order on a live bridge: verify → estimate → CPU selftest → prefetch → vLLM smoke →
 SGLang smoke (same `smoke` matrix for both engines = comparable pair).
+
+**D-036 (2026-11-10) `agent/gemma4-repro` retired; deploy from `main`.** The working branch was replayed with
+attribution into PRs #2–#4 (all 23 commits patch-equivalent), merged, and deleted by the owner; it must never be
+recreated. BOOTSTRAP.md now clones `main` (D-002 above is historical). Verified offline: a plain clone lands on `main`,
+`pip install -e ".[bridge]"` succeeds, `modal_bridge/app.py` loads with cap $10 / per-job $2 / max_active 1 / GPU
+timeout 876 s, and `modal workspace proxy-tokens` exists in modal 1.6.3.
