@@ -26,7 +26,7 @@ new, explicit budget approval.
 
 ## C. Agent, CPU-side work available now
 
-1. vLLM-vs-SGLang matched-load comparison in `g4bench analyze` (ratio + bootstrap CI, gated on both passing correctness).
+1. ~~vLLM-vs-SGLang matched-load comparison~~ ✅ done (cycle 1: `engine_compare.py`, D-022).
 2. EOS-honouring real-prompt variant (`ignore_eos: false`, D-017): CPU test + estimate.
 3. Torch-profiler trace parsing (for E5g) against a recorded fixture.
 4. Optional: licence choice for this repository (owner decision; none added).

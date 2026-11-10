@@ -18,15 +18,42 @@ AGG_METRICS = ["output_throughput", "mean_ttft_ms", "median_ttft_ms", "p90_ttft_
                "req_littles_law_rel_gap"]
 
 
+def run_context(run_dir: Path) -> dict[str, Any]:
+    """Run-level facts every row inherits: model pins (manifest) and correctness gate (correctness.json)."""
+    ctx: dict[str, Any] = {"pins_target": None, "pins_draft": None, "correctness_pass": None}
+    man = run_dir / "manifest.json"
+    if man.exists():
+        try:
+            pins = (json.loads(man.read_text()).get("pins") or {}).get("model") or {}
+            ctx["pins_target"] = (pins.get("target") or {}).get("revision")
+            ctx["pins_draft"] = (pins.get("draft") or {}).get("revision")
+        except json.JSONDecodeError:
+            pass
+    corr = run_dir / "correctness.json"
+    if corr.exists():
+        try:
+            ctx["correctness_pass"] = bool((json.loads(corr.read_text()).get("probes") or {}).get("pass"))
+        except json.JSONDecodeError:
+            ctx["correctness_pass"] = False
+    return ctx
+
+
 def load_all(root: Path = RESULTS / "runs", include_mock: bool = False) -> list[dict[str, Any]]:
     rows = []
     for f in sorted(root.glob("*/results.jsonl")):
+        ctx = run_context(f.parent)
         for line in f.read_text().splitlines():
             if not line.strip():
                 continue
-            r = json.loads(line)
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue  # reported by the per-run report; never aggregated
             if r.get("engine") == "mock" and not include_mock:
                 continue
+            for k, v in ctx.items():
+                r.setdefault(k, v)
+            r.setdefault("run_id", f.parent.name)
             rows.append(r)
     return rows
 
@@ -59,8 +86,15 @@ def run(root: Path = RESULTS / "runs", out: Path = RESULTS / "summary", include_
         sel = [c for c in comps if c["reference"] == ref]
         if sel:
             md += [f"## Output throughput vs article `{ref}`", "", compare.markdown_table(sel), ""]
+    from .engine_compare import compare_engines, markdown as ec_md
+
+    corr = {r.get("run_id"): r.get("correctness_pass") for r in rows}
+    ec = compare_engines(rows, correctness=corr)
+    _write_csv(out / "engine_comparison.csv", ec)
+    md += ["## vLLM vs SGLang at matched load (measured; advantage > 1 = vLLM better)", ""]
+    md += [ec_md(ec) if ec else "not measured: no vLLM/SGLang pairs yet.", ""]
     (out / "SUMMARY.md").write_text("\n".join(md) + "\n")
-    return {"rows": len(rows), "aggregates": len(agg), "comparisons": len(comps)}
+    return {"rows": len(rows), "aggregates": len(agg), "comparisons": len(comps), "engine_pairs": len(ec)}
 
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:

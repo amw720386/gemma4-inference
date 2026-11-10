@@ -1,7 +1,7 @@
 # Status — 2026-11-10 (checkpoint 3)
 
 **One-line state:** harness, real-prompt arm, reporting and a **server-side $10 project spend limit** in the bridge
-are built and CPU-tested (71 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
+are built and CPU-tested (77 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
 GPU work waits only on the user's one-time bridge deploy + scoped proxy token. Spend to date: **$0.00**.
 
 ## Summary
@@ -18,6 +18,7 @@ GPU work waits only on the user's one-time bridge deploy + scoped proxy token. S
 | Failure-mode integration tests (dead server, failures, timeout, budget, bad datasets) | ✅ | tests/test_failure_modes.py |
 | **Bridge budget ledger** ($10 project cap, $2/job, 1 active, reserve-before-launch, race/restart-safe, `/budget`) | ✅ CPU-tested | src/g4bench/budget.py, src/g4bench/bridge_api.py, tests/test_budget.py, tests/test_bridge_api.py |
 | Modal HTTPS bridge | 🟨 written + definition-validated (modal 1.6.3); **not deployed** | modal_bridge/ |
+| vLLM vs SGLang matched-load comparison (paired by seed, correctness-gated, CIs) | ✅ CPU-tested | src/g4bench/engine_compare.py, results/summary/engine_comparison.csv |
 | GPU experiments E1–E6 | ⛔ blocked (see below) | — |
 
 ## Measured results
@@ -28,7 +29,8 @@ excludes and every report banners as "MOCK ENGINE — NOT A MEASUREMENT". `resul
 ## Exact blocker
 
 1. **Bridge not deployed** (user is arranging it). `https://arnold-17059--g4repro-bridge.modal.run` answers
-   `modal-http: invalid function call` (checked 2026-11-10). This session must not deploy or use the Modal CLI/SDK.
+   `modal-http: invalid function call` (last checked 2026-11-10, cycle 1; `G4_BRIDGE_URL` not yet visible in this
+   container's environment — it applies on the next session restart; the client falls back to the expected URL). This session must not deploy or use the Modal CLI/SDK.
 2. **No scoped proxy token** in this environment yet (user is arranging it separately; the agent does not request it).
 3. ~~No approved budget~~ → **resolved: $10 total approved** (BUDGET.md, DECISIONS D-019). Enforced by the bridge
    ledger once deployed; it is an estimate gating bridge launches, **not** a Modal billing hard stop.
@@ -60,5 +62,5 @@ g4bench speedbench prepare && python -m pytest -q
 ```
 
 Expected: SPEED-Bench coding digest `6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18`,
-`matches_inferencex_digest: true`; 71 tests pass (without `speedbench prepare`, the one network-marked
+`matches_inferencex_digest: true`; 77 tests pass (without `speedbench prepare`, the one network-marked
 digest test is skipped; without `modal` installed, the bridge-definition test is skipped).
