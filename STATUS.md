@@ -26,6 +26,10 @@ analysis by default). Nothing in this repo should be read as a reproduction resu
 2. Provide a Modal proxy-auth token for host `arnold-17059--g4repro-bridge.modal.run` through the
    environment's credential form (Bearer `<id>.<secret>`). No other secret is required (models ungated).
 
+2026-11-10: the agent requested this credential through the secure form; **the user declined**. It will
+not be requested again in this session. GPU work stays blocked until the user provides access by one of
+the routes in NEXT.md.
+
 Checked 2026-11-10: the host is reachable via HTTPS from this environment and returns
 `modal-http: invalid function call` (nothing deployed). No existing bridge for this project exists; we did not
 look at or use any other project's bridge or credentials.

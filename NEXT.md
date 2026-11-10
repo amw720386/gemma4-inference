@@ -3,8 +3,14 @@
 ## Needs a human (blocking all GPU work)
 
 1. **Deploy the bridge once** — `modal_bridge/BOOTSTRAP.md` §1 (workspace `arnold-17059`).
-2. **Create a Modal proxy-auth token** and enter it in the environment's secure credential form for host
-   `arnold-17059--g4repro-bridge.modal.run` as Bearer `<TokenID>.<TokenSecret>` (§2–3).
+2. **Create a Modal proxy-auth token** and add it as a network secret on this cloud environment
+   (environment settings → network secrets, host `arnold-17059--g4repro-bridge.modal.run`, header
+   `Authorization`, value `Bearer <TokenID>.<TokenSecret>`). The in-session request was declined on
+   2026-11-10, so the agent won't ask again; add it in settings when ready.
+   *Alternative without giving the agent a token:* run the matrix yourself on any 1× RTX PRO 6000 host
+   (`g4bench run --engine vllm-0.33.0-mtp4 --matrix smoke`), or call the bridge with
+   `modal_bridge/client.py` from your own machine, then commit `results/runs/<run_id>/`. The agent
+   analyzes committed results with `g4bench analyze`.
 3. Optional: confirm or change the budget caps in BUDGET.md (proposed project cap $100).
 4. Optional: choose a licence for this repository (none added; the vendored client stays Apache-2.0).
 
