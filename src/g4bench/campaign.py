@@ -116,11 +116,48 @@ def _expect(step: dict[str, Any], state: str, res: Any) -> str | None:
     return None
 
 
+def preflight_estimates(campaign: dict[str, Any], call: Call, req: dict[str, Any]) -> list[dict[str, Any]]:
+    """Free: POST /estimate for every job step before anything is spent.
+
+    Refuses unless each job fits inside one per-job reservation (bridge ``fits``), its worst case is within the
+    approved per-job cap, and the largest worst case fits what /budget says is available (steps run one at a time,
+    so only one reservation is open at once).
+    """
+    b = call("GET", "/budget")
+    ests = []
+    for step in campaign["steps"]:
+        if step["kind"] != "job":
+            continue
+        e = call("POST", "/estimate", json=step["spec"])
+        ests.append({"id": step["id"], **{k: e.get(k) for k in ("points", "est_gpu_s", "timeout_s", "worst_case_usd",
+                                                                  "fits", "reservation_cap_usd")}})
+        if not e.get("fits"):
+            raise CampaignStop(f"{step['id']}: estimated {e.get('est_gpu_s')} s does not fit the {e.get('timeout_s')} s "
+                               "a per-job reservation buys")
+        if float(e.get("worst_case_usd") or 1e9) > float(req["per_job_cap_usd_max"]) + 1e-9:
+            raise CampaignStop(f"{step['id']}: worst case ${e.get('worst_case_usd')} exceeds per-job cap")
+    worst = max((float(x["worst_case_usd"]) for x in ests), default=0.0)
+    if worst > float(b["available_usd"]) + 1e-9:
+        raise CampaignStop(f"largest job worst case ${worst:.2f} exceeds available ${b['available_usd']:.2f}")
+    return ests
+
+
 def run(campaign: dict[str, Any], call: Call, *, execute: bool = False, poll_s: float = 120.0,
         max_wait_s: float = 3600.0, sleep: Callable[[float], None] = time.sleep,
         ledger: Path | None = LEDGER, now: Callable[[], float] = time.time) -> list[StepOutcome]:
     out: list[StepOutcome] = []
     req = approved_limits(campaign["require"])
+    if execute:
+        try:
+            check_limits(call, req, 0.0)
+            ests = preflight_estimates(campaign, call, req)
+        except CampaignStop as e:
+            o = StepOutcome("preflight", "refused", str(e))
+            _log(ledger, campaign, o, now)
+            return [o]
+        o = StepOutcome("preflight", "done", "free /health + /budget + /estimate checks passed", result=ests)
+        _log(ledger, campaign, o, now)
+        out.append(o)
     for step in campaign["steps"]:
         spec = step.get("spec") or {}
         need = min(float(spec.get("max_usd", req["per_job_cap_usd_max"])), float(req["per_job_cap_usd_max"]))

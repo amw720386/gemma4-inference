@@ -230,3 +230,9 @@ nextn-adaptive (E6). All configs now declare `role` (only the two article recipe
 `admissibility` (a/b/c). Analysis compares only baselines with the article's open-engine numbers and pairs only
 baselines in vLLM-vs-SGLang; variants are compared with Backboard only, labelled by class; class c never. All are on
 the bridge allowlist; none is scheduled under the current $10 approval (each single-point job ≈ $0.8–1.0).
+
+**D-035 (2026-11-10) Free `/estimate` preflight before any spend.** `campaign.run(execute=True)` now begins with a
+free preflight: `/health` + `/budget` must show the approved limits, then every job step is sent to `/estimate`; the
+campaign refuses unless each fits one per-job reservation, its worst case ≤ the approved per-job cap, and the largest
+worst case ≤ `available_usd`. Order on a live bridge: verify → estimate → CPU selftest → prefetch → vLLM smoke →
+SGLang smoke (same `smoke` matrix for both engines = comparable pair).
