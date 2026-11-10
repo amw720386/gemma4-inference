@@ -192,6 +192,19 @@ def build(run_dir: Path) -> tuple[str, str]:
         lines.append(f"| {k[0]} | {k[1] or 'natural'} | {k[2]} | {_f(mean(a, 'spec_acceptance_length'), '{:.3f}')} | "
                      f"{_f(mean(a, 'gpu_mem_peak_mib'), '{:.0f}')} | {_f(mean(a, 'gpu_power_mean_w'), '{:.0f}')} |")
 
+    lines += ["", "## Effective engine configuration (parsed from server logs)", "",
+              "| attention backend | spec algorithm | KV-cache tokens | max running requests | seen in |",
+              "|---|---|---:|---:|---|"]
+    effs = sorted({(r.get("eff_attention_backend"), r.get("eff_spec_algorithm"), r.get("eff_kv_cache_tokens"),
+                    r.get("eff_max_running_requests")) for r in rows if r.get("status") != "skipped"},
+                  key=lambda t: tuple(str(x) for x in t))
+    for e in effs:
+        n = sum(1 for r in rows if (r.get("eff_attention_backend"), r.get("eff_spec_algorithm"),
+                                    r.get("eff_kv_cache_tokens"), r.get("eff_max_running_requests")) == e)
+        lines.append(f"| {e[0] or NM} | {e[1] or NM} | {_f(e[2], '{:,}')} | {_f(e[3], '{:d}')} | {n} point-run(s) |")
+    if not effs:
+        lines.append(f"| {NM} | {NM} | {NM} | {NM} | – |")
+
     # ---- comparison to the article
     lines += ["", "## Comparison with article baselines", ""]
     ref = {"vllm": "vllm", "sglang": "sglang"}.get(engine_kind or "")
