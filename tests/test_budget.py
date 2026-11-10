@@ -156,3 +156,61 @@ def test_unknown_op_and_job():
         L.op("drop_table")
     with pytest.raises(B.LedgerStateError):
         L.job("nope")
+
+
+def test_non_finished_outcomes_settle_at_worst_case_and_bound_holds():
+    clock = Clock()
+    L = _ledger(clock=clock, max_active=10)
+    for outcome in ("failed", "cancelled", "expired"):
+        j = _reserve(L)
+        L.attach(j["job_id"], "fc")
+        clock.t += 5
+        s = L.settle(j["job_id"], outcome=outcome)
+        assert s["settled_usd"] == pytest.approx(B.worst_case_usd(j["rate_usd_s"], j["timeout_s"]))
+        assert s["settled_usd"] <= j["reserved_usd"] + 1e-9
+    j = _reserve(L)
+    assert j["start_deadline_unix"] == j["reserved_at"] + B.STARTUP_MARGIN_S
+    assert j["deadline_unix"] == j["start_deadline_unix"] + j["timeout_s"]
+
+
+def test_orphan_settles_only_after_deadline_at_full_reservation():
+    clock = Clock()
+    L = _ledger(clock=clock)
+    j = _reserve(L)
+    with pytest.raises(B.LedgerStateError):
+        L.settle_orphan(j["job_id"])  # too early
+    clock.t = j["deadline_unix"] + B.SCALEDOWN_MARGIN_S + 1
+    s = L.settle_orphan(j["job_id"])
+    assert s["settled_usd"] == j["reserved_usd"] and s["outcome"] == "orphan"
+    k = _reserve(L)
+    L.attach(k["job_id"], "fc")
+    clock.t = k["deadline_unix"] + 1e6
+    with pytest.raises(B.LedgerStateError):
+        L.settle_orphan(k["job_id"])  # has a call id: must be settled via poll, not as orphan
+
+
+def test_platform_metering_counts_above_the_reserve():
+    clock = Clock()
+    L = _ledger(clock=clock, platform_reserve_usd=0.01, platform_rate_usd_s=0.001, platform_warm_s=60)
+    L.touch()
+    for _ in range(100):  # a poll every 30 s for 50 min keeps the containers warm continuously
+        clock.t += 30
+        L.touch()
+    s = L.snapshot()
+    assert s["platform_metered_usd"] == pytest.approx((100 * 30 + 60) * 0.001)
+    assert s["committed_usd"] == pytest.approx(s["platform_metered_usd"]) and s["available_usd"] < 10 - 3
+    clock.t += 10_000  # long idle gap counts as one warm window, not the whole gap
+    L.touch()
+    assert L.snapshot()["platform_metered_usd"] == pytest.approx((100 * 30 + 60 + 60) * 0.001)
+
+
+def test_commit_cas_rejects_concurrent_writer_and_recovers_stale_claim():
+    kv, clock = B.MemoryKV(), Clock()
+    L = _ledger(kv, clock, max_active=10)
+    v = L.snapshot()["ledger_version"]
+    kv.put(f"{B.COMMIT_PREFIX}{v + 1}", {"at": clock()})  # another writer claimed the next version just now
+    with pytest.raises(B.LedgerStateError):
+        _reserve(L)
+    clock.t += L.cfg.lease_s + 1                            # ...and then crashed without writing the ledger
+    _reserve(L)
+    assert L.snapshot()["ledger_version"] == v + 1

@@ -25,6 +25,7 @@ from .paths import CONFIGS, RESULTS
 
 Call = Callable[..., Any]   # call(method, path, json=None) -> parsed JSON; raises on HTTP error
 LEDGER = RESULTS / "budget_ledger.jsonl"
+POLL_GRACE_S = 1800.0
 
 
 class CampaignStop(RuntimeError):
@@ -116,6 +117,8 @@ def run(campaign: dict[str, Any], call: Call, *, execute: bool = False, poll_s: 
         sub = call("POST", path, json=spec if step["kind"] == "job" else None)
         jid = sub["job_id"]
         t0, cancelled = now(), False
+        # Hard stop for polling: the server settles at worst case anyway; never poll (and keep the bridge warm) forever.
+        poll_until = float(sub.get("deadline_unix") or (t0 + max_wait_s)) + POLL_GRACE_S
         errors = 0
         while True:
             try:
@@ -134,6 +137,13 @@ def run(campaign: dict[str, Any], call: Call, *, execute: bool = False, poll_s: 
                 continue
             if st["state"] not in ("running", "unknown"):
                 break
+            if now() > poll_until:
+                o = StepOutcome(step["id"], "failed", f"still {st['state']} {POLL_GRACE_S:.0f}s after its deadline; "
+                                "stopped polling - the reservation stays held and settles at worst case server-side",
+                                jid, sub.get("reserved_usd"))
+                _log(ledger, campaign, o, now)
+                out.append(o)
+                return out
             if not cancelled and now() - t0 > max_wait_s:
                 call("POST", f"/jobs/{jid}/cancel")
                 cancelled = True

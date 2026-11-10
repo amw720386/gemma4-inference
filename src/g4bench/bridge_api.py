@@ -81,6 +81,17 @@ def build_api(backend: Backend, cfg: BridgeConfig):
 
     api = FastAPI(title="g4repro bridge")
     estimator = cfg.estimator or default_estimator
+
+    @api.middleware("http")
+    async def meter(request, call_next):
+        # Every request keeps the bridge (and ledger) containers warm: meter it into the ledger (D-030).
+        import anyio
+
+        try:
+            await anyio.to_thread.run_sync(lambda: backend.ledger("touch"))
+        except Exception:  # noqa: BLE001 - paid endpoints fail closed on their own ledger calls
+            pass
+        return await call_next(request)
     engines = cfg.allowed_engines or ALLOWED_ENGINES
     matrices = cfg.allowed_matrices or ALLOWED_MATRICES
 
@@ -118,23 +129,43 @@ def build_api(backend: Backend, cfg: BridgeConfig):
 
     def _reconcile() -> None:
         for j in list(_ledger("snapshot")["active"].values()):
+            if j["state"] == "reserved" and not j.get("call_id"):
+                try:  # ambiguous spawn / lost attach: settles at full reservation once its deadline has passed
+                    backend.ledger("settle_orphan", job_id=j["job_id"])
+                except B.LedgerStateError:
+                    pass  # too early: keep holding
+                continue
             _refresh(j)
 
     def _launch(kind: str, res: Resources, payload: dict[str, Any], *, gpu: str | None, timeout_s: int,
-                meta: dict[str, Any]) -> dict[str, Any]:
+                meta: dict[str, Any], ceiling_usd: float | None = None) -> dict[str, Any]:
         rate = res.rate(gpu)
         worst = B.worst_case_usd(rate, timeout_s)
         _reconcile()
-        usd = min(cfg.per_job_cap_usd, math.ceil(worst * 100) / 100)  # >= worst because timeout_s was floored
+        ceiling = min(cfg.per_job_cap_usd, ceiling_usd if ceiling_usd is not None else cfg.per_job_cap_usd)
+        usd = min(ceiling, math.ceil(worst * 100) / 100)  # >= worst because timeout_s was floored from ceiling
         job = _ledger("reserve", kind=kind, usd=usd, rate_usd_s=rate, timeout_s=timeout_s, meta=meta)
         payload = dict(payload, job_id=job["job_id"], deadline_unix=job["deadline_unix"],
+                       start_deadline_unix=job["start_deadline_unix"],
                        max_wall_s=max(timeout_s - SOFT_WALL_HEADROOM_S, 60))
         try:
             call_id = backend.spawn(kind, payload, gpu=gpu, timeout_s=timeout_s)
-        except Exception as e:  # noqa: BLE001 - spawn never happened: give the reservation back
-            _ledger("release", job_id=job["job_id"], reason=f"spawn failed: {e!r}"[:300])
-            raise HTTPException(502, f"spawn failed; reservation released: {e!r}"[:500]) from e
-        job = _ledger("attach", job_id=job["job_id"], call_id=call_id)
+        except ValueError as e:  # raised before any RPC (e.g. unknown kind): provably never started
+            _ledger("release", job_id=job["job_id"], reason=f"spawn rejected locally: {e!r}"[:300])
+            raise HTTPException(400, f"spawn rejected; reservation released: {e!r}"[:500]) from e
+        except Exception as e:  # noqa: BLE001 - outcome unknown: Modal may have accepted the call
+            raise HTTPException(502, f"spawn outcome unknown ({e!r}); reservation {job['job_id']} stays held and "
+                                     "settles at full reservation after its deadline"[:600]) from e
+        last: Exception | None = None
+        for _ in range(3):
+            try:
+                job = backend.ledger("attach", job_id=job["job_id"], call_id=call_id)
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+        else:
+            raise HTTPException(502, f"job spawned as call {call_id} but ledger attach failed ({last!r}); "
+                                     f"reservation {job['job_id']} stays held (orphan, worst-case settlement)")
         return {"job_id": job["job_id"], "call_id": call_id, "reserved_usd": job["reserved_usd"],
                 "timeout_s": timeout_s, "deadline_unix": job["deadline_unix"]}
 
@@ -187,7 +218,7 @@ def build_api(backend: Backend, cfg: BridgeConfig):
                                      "split the job with `only` or seeds")
         kind = "gpu:" + engines[spec.engine]
         out = _launch(kind, GPU_JOB, spec.model_dump(), gpu=spec.gpu, timeout_s=p["timeout_s"],
-                      meta={"engine": spec.engine, "matrix": spec.matrix, "gpu": spec.gpu, "points": p["points"],
+                      ceiling_usd=p["reservation_cap_usd"], meta={"engine": spec.engine, "matrix": spec.matrix, "gpu": spec.gpu, "points": p["points"],
                             "est_gpu_s": p["est_gpu_s"], "notes": spec.notes})
         return {**out, "estimate": p}
 

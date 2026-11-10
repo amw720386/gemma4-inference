@@ -118,7 +118,7 @@ def _commit_loop(stop: "threading.Event") -> None:  # noqa: F821
 def _guarded(fn, spec: dict) -> dict:
     from g4bench.bridge_jobs import guarded
 
-    return guarded(fn, spec)
+    return guarded(fn, spec, hard_kill=True)  # os._exit at the reservation's end deadline (D-030)
 
 
 def _run_job(spec: dict) -> dict:
@@ -136,7 +136,7 @@ def _run_job(spec: dict) -> dict:
         res_vol.commit()
 
 
-_gpu_kw = dict(gpu=GPU_JOB.gpu, timeout=GPU_DEFAULT_TIMEOUT_S, volumes={HF_HOME: hf_vol, RESULTS_MOUNT: res_vol},
+_gpu_kw = dict(gpu=GPU_JOB.gpu, timeout=GPU_DEFAULT_TIMEOUT_S, startup_timeout=int(B.STARTUP_MARGIN_S), volumes={HF_HOME: hf_vol, RESULTS_MOUNT: res_vol},
                max_containers=1, retries=0, scaledown_window=SCALEDOWN_WINDOW_S,
                cpu=(4.0, GPU_JOB.cpu_limit), memory=(32768, int(GPU_JOB.mem_limit_gib * 1024)))
 
@@ -174,7 +174,8 @@ def _prefetch(spec: dict) -> dict:
     return out
 
 
-@app.function(image=bridge_image, timeout=PREFETCH.timeout_s, volumes={HF_HOME: hf_vol}, retries=0, max_containers=1,
+@app.function(image=bridge_image, timeout=PREFETCH.timeout_s, startup_timeout=600, volumes={HF_HOME: hf_vol},
+              retries=0, max_containers=1,
               scaledown_window=SCALEDOWN_WINDOW_S, cpu=(PREFETCH.cpu_limit, PREFETCH.cpu_limit),
               memory=(int(PREFETCH.mem_limit_gib * 1024), int(PREFETCH.mem_limit_gib * 1024)))
 def prefetch_weights(spec: dict) -> dict:
@@ -190,7 +191,7 @@ def _selftest(spec: dict) -> dict:
     return {"rc": p.returncode, "tail": (p.stdout + p.stderr)[-4000:]}
 
 
-@app.function(image=bridge_image, timeout=SELFTEST.timeout_s, retries=0, max_containers=1,
+@app.function(image=bridge_image, timeout=SELFTEST.timeout_s, startup_timeout=600, retries=0, max_containers=1,
               scaledown_window=SCALEDOWN_WINDOW_S, cpu=(SELFTEST.cpu_limit, SELFTEST.cpu_limit),
               memory=(int(SELFTEST.mem_limit_gib * 1024), int(SELFTEST.mem_limit_gib * 1024)))
 def selftest(spec: dict) -> dict:
@@ -205,7 +206,10 @@ class ModalBackend:
             "LedgerStateError": B.LedgerStateError}
 
     def ledger(self, op: str, **kw):
-        r = ledger_op.remote(op, kw)
+        try:
+            r = ledger_op.remote(op, kw)
+        except Exception as e:  # noqa: BLE001 - transport/Modal errors: fail closed (HTTP 503)
+            raise B.LedgerStateError(f"ledger call failed: {e!r}"[:500]) from e
         if not r.get("ok"):
             raise self._ERR.get(r.get("error"), B.LedgerStateError)(r.get("message"))
         return r["value"]
@@ -226,19 +230,22 @@ class ModalBackend:
 
         try:
             return "finished", modal.FunctionCall.from_id(call_id).get(timeout=0)
-        except (me.TimeoutError, TimeoutError):
-            return "running", None          # still running (modal's TimeoutError is NOT builtins.TimeoutError)
-        except me.InputCancellation:
-            return "cancelled", None
-        except me.FunctionTimeoutError:
+        except me.FunctionTimeoutError:     # subclass of modal TimeoutError: must be caught first (D-030)
             return "failed", {"error": "Modal function timeout (worst case reached)"}
-        except me.OutputExpiredError:
-            return "expired", None          # settled at worst case
-        except Exception as e:  # noqa: BLE001 - unknown: NOT terminal; reservation stays held
+        except me.OutputExpiredError:       # subclass of modal TimeoutError too
+            return "expired", None
+        except (me.TimeoutError, TimeoutError):
+            return "running", None          # plain "no output yet" (modal's TimeoutError is NOT builtins')
+        except (me.RemoteError, me.ExecutionError, me.InternalFailure) as e:
+            # A non-success *result* came back (cancelled/terminated, crashed, OOM, startup failure): terminal.
+            return "failed", {"error": f"{type(e).__name__}: {e!r}"[:500]}
+        except BaseException as e:  # noqa: BLE001 - transport errors etc.: NOT terminal; reservation stays held
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
             return "unknown", {"error": repr(e)[:500]}
 
     def cancel(self, call_id: str) -> None:
-        modal.FunctionCall.from_id(call_id).cancel()
+        modal.FunctionCall.from_id(call_id).cancel(terminate_containers=True)
 
     def list_runs(self) -> list[str]:
         res_vol.reload()
@@ -255,7 +262,7 @@ class ModalBackend:
 
 
 @app.function(image=bridge_image, volumes={RESULTS_MOUNT: res_vol}, timeout=600, cpu=(0.25, 1.0),
-              memory=(512, 1024), scaledown_window=60)
+              memory=(512, 1024), scaledown_window=60, max_containers=1)  # metered as platform spend (D-030)
 @modal.concurrent(max_inputs=16)
 @modal.asgi_app(label="g4repro-bridge", requires_proxy_auth=True)
 def bridge():

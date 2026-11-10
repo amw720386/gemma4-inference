@@ -171,3 +171,29 @@ false`, max 1024 tokens). Keys get a `+eos` suffix and point ids `-eos`, so it c
 arm; validation accepts outputs in [1, OSL]. Throughput is not comparable across the two arms (different decode work);
 the readout is acceptance length and TPOT. Planned only — not in the $10 campaigns (est. $5.78 seed 0, both engines,
 pessimistic since outputs are assumed full length).
+
+**D-030 (2026-11-10) Independent review of the budget path; 8 findings fixed before any deploy.** A fresh reviewer
+(not anchored on my reasoning) read the ledger, API, Modal wiring and campaign against the modal 1.6.3 source. I
+verified each claim in the SDK source, then fixed:
+1. *High*: `FunctionTimeoutError` and `OutputExpiredError` subclass `modal.exception.TimeoutError`, so my poll mapped
+   timed-out/expired jobs to "running" forever (holding $2 and blocking all launches). Now most-specific first.
+2. *High*: cancelled/crashed/OOM calls return a non-success result raised as RemoteError/ExecutionError/
+   InternalFailure — now terminal ("failed"); cancel uses `terminate_containers=True`; the worker no longer swallows
+   BaseException (cancellation propagates).
+3. *High*: bridge/ledger container spend was an unmetered $0.50 set-aside. Every request now touches the ledger; warm
+   time is metered (gaps > 60 s count as one window) and committed as max(reserve, metered); the web function has
+   `max_containers=1`; the campaign stops polling 30 min after a job's deadline.
+4. *Med-high*: any spawn exception released the reservation although Modal may have accepted the call. Now only
+   pre-RPC `ValueError` releases; anything else stays held and becomes an orphan.
+5. *Med*: a failed attach left a running job without call id. Attach is retried; failures return the call id; orphans
+   (reserved, no call id) settle at their full reservation once their deadline has passed.
+6. *Med*: Modal's timeout starts at input start, so queueing/preemption could push real cost past the reservation,
+   and non-finished outcomes settled at min(now, latest). Now workers refuse to start after
+   `start_deadline = reserved_at + 900 s` (so start + timeout ≤ `deadline_unix`), arm a hard `os._exit` at
+   `deadline_unix`, GPU `startup_timeout=900`, CPU `startup_timeout=600`; every non-finished outcome settles at the
+   worst case.
+7. *Low*: stale-lock stealing was not compare-and-swap. Each save now claims `ledger/commit/<version>` with atomic
+   put-if-absent (stale claims older than the lease are recoverable).
+8. *Low*: reservations could exceed `max_usd` by < 1 cent through rounding — now capped at the requested ceiling.
+Not fixable in this design and documented: workers can still be invoked directly with a workspace token, bypassing the
+ledger; the ledger remains an estimate that gates bridge launches only.
