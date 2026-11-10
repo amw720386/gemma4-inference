@@ -1,0 +1,20 @@
+# Control: vLLM without speculative decoding. Isolates spec-decode gain and gives the
+# acceptance-independent floor (pure memory-bandwidth bound decode).
+name: vllm-0.33.0-nospec
+engine: vllm
+version: "0.33.0"
+client_backend: vllm
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--async-scheduling]
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env: {}

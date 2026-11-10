@@ -1,0 +1,36 @@
+{
+  "dataset": "speedbench-tp8k-inline",
+  "n_prompts": 808,
+  "n_rows_in_split": 1536,
+  "prompt_digest": "fa7ff0ed0709cdd55ebbe0c82b36ef2ec3d9d38832462151032dacbf1cb20f97",
+  "matches_inferencex_digest": null,
+  "SUBSET_WARNING": "Inline-only subset of the official split: externally-resolved rows are excluded, so category mix differs from SPEED-Bench throughput. Not an official SPEED-Bench result.",
+  "kept_by_category": {
+    "high_entropy": 465,
+    "low_entropy": 343
+  },
+  "excluded_by_source": {
+    "high_entropy | https://raw.githubusercontent.com/RUCAIBox/BAMBOO/f230f206148396c12774ef3a632df291d96dc6ab/datasets/showspred_16k.jsonl": 20,
+    "high_entropy | https://raw.githubusercontent.com/RUCAIBox/BAMBOO/f230f206148396c12774ef3a632df291d96dc6ab/datasets/meetingpred_16k.jsonl": 27,
+    "mixed | http://opencompass.openxlab.space/utils/AdaLEval/stackselect_8k.json": 244,
+    "mixed | https://huggingface.co/datasets/cais/hle/tree/021a3d71f516a7ac28ceb8d284969902edf1edeb": 268,
+    "low_entropy | http://opencompass.openxlab.space/utils/AdaLEval/textsort_8k.json": 169
+  },
+  "sources": {
+    "speed_bench": {
+      "repo": "nvidia/SPEED-Bench",
+      "revision": "454f88454792dfa3ccfd7ef15fff248efde44cd1",
+      "file": "throughput_8k/test-00000-of-00001.parquet",
+      "sha256": "11fb562ad82bab6af8139135ac18453230bf3233dee3228235634e5fc4939a78"
+    }
+  },
+  "prepared_utc": "2026-11-10T20:30:40Z",
+  "versions": {
+    "python": "3.13.18",
+    "pyarrow": "26.0.1",
+    "requests": "2.34.2",
+    "g4bench": "0.1.0"
+  },
+  "file": "speedbench-tp8k-inline.jsonl",
+  "file_sha256": "4a81ab663543038d1f7ab6a73c38a10d14d6f9bca51ae507df8beb8e331120e3"
+}
