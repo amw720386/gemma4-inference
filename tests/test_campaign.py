@@ -53,9 +53,9 @@ def test_plan_only_by_default_spends_nothing(tmp_path):
 def test_full_e1_executes_in_order_and_logs(tmp_path):
     d = Driver(FakeBackend(), GOOD)
     outs = C.run(E1, d, execute=True, sleep=lambda s: None, ledger=tmp_path / "l.jsonl")
-    assert [o.status for o in outs] == ["done"] * 4, [o.detail for o in outs]
-    assert d.posts == ["/selftest", "/prefetch", "/jobs", "/jobs"]
-    lines = [json.loads(x) for x in (tmp_path / "l.jsonl").read_text().splitlines()]
+    assert [o.id for o in outs][0] == "preflight" and [o.status for o in outs] == ["done"] * 5, [o.detail for o in outs]
+    assert d.posts == ["/estimate", "/estimate", "/selftest", "/prefetch", "/jobs", "/jobs"]
+    lines = [json.loads(x) for x in (tmp_path / "l.jsonl").read_text().splitlines()][1:]
     assert len(lines) == 4 and all(x["budget_after"]["cap_usd"] == 10.0 for x in lines)
     assert lines[-1]["budget_after"]["available_usd"] < 9.5 and all(x["settled_usd"] is not None for x in lines)
 
@@ -64,8 +64,8 @@ def test_stops_on_failed_expectation(tmp_path):
     bad = {**GOOD, "cpu:prefetch": {"speedbench": {"coding": "deadbeef"}}}
     d = Driver(FakeBackend(), bad)
     outs = C.run(E1, d, execute=True, sleep=lambda s: None, ledger=tmp_path / "l.jsonl")
-    assert [o.status for o in outs] == ["done", "failed"] and "digest" in outs[1].detail
-    assert d.posts == ["/selftest", "/prefetch"]  # no GPU job launched after a failed gate
+    assert [o.status for o in outs] == ["done", "done", "failed"] and "digest" in outs[2].detail
+    assert d.posts == ["/estimate", "/estimate", "/selftest", "/prefetch"]  # no GPU job after a failed gate
 
 
 def test_refuses_when_server_limits_differ_from_approval(tmp_path):
@@ -73,7 +73,7 @@ def test_refuses_when_server_limits_differ_from_approval(tmp_path):
         be = FakeBackend(cap=cap, per_job=per_job)
         d = Driver(be, GOOD, cap=cap, per_job=per_job)
         outs = C.run(E1, d, execute=True, sleep=lambda s: None, ledger=tmp_path / "l.jsonl")
-        assert outs[0].status == "refused" and d.posts == [], outs[0].detail
+        assert outs[0].status == "refused" and outs[0].id == "preflight" and d.posts == [], outs[0].detail
 
 
 def test_refuses_when_remaining_budget_too_small(tmp_path):
@@ -81,14 +81,14 @@ def test_refuses_when_remaining_budget_too_small(tmp_path):
     be.L.cfg = type(be.L.cfg)(**{**be.L.cfg.__dict__, "platform_reserve_usd": 8.2})  # leaves $1.80
     d = Driver(be, GOOD)
     outs = C.run(E1, d, execute=True, sleep=lambda s: None, ledger=tmp_path / "l.jsonl")
-    assert [o.status for o in outs] == ["done", "done", "refused"] and "available" in outs[2].detail
-    assert d.posts == ["/selftest", "/prefetch"]
+    assert outs[0].status == "refused" and "available" in outs[0].detail  # caught by the free preflight
+    assert d.posts == ["/estimate", "/estimate"]
 
 
 def test_job_with_invalid_points_stops_campaign(tmp_path):
     d = Driver(FakeBackend(), {**GOOD, "gpu:vllm": {"n_points": 2, "n_valid": 1}})
     outs = C.run(E1, d, execute=True, sleep=lambda s: None, ledger=None)
-    assert [o.status for o in outs] == ["done", "done", "failed"] and "1/2" in outs[2].detail
+    assert [o.status for o in outs] == ["done", "done", "done", "failed"] and "1/2" in outs[3].detail
 
 
 def test_campaign_files_reference_allowlisted_configs():
@@ -153,3 +153,12 @@ def test_stale_bridge_without_safety_features_is_refused():
 
     with pytest.raises(C.CampaignStop, match="lacks safety features"):
         C.check_limits(stale, {"cap_usd": 10.0, "per_job_cap_usd_max": 2.0, "max_active": 1}, need_usd=0.0)
+
+
+def test_preflight_refuses_job_that_does_not_fit_one_reservation():
+    be = FakeBackend()
+    d = Driver(be, GOOD)
+    d.c = TestClient(build_api(be, BridgeConfig(cap_usd=10.0, per_job_cap_usd=2.0, max_active=1,
+                                                estimator=lambda s: {"points": 8, "est_gpu_s": 99999, "summary": ""})))
+    outs = C.run(E1, d, execute=True, sleep=lambda s: None, ledger=None)
+    assert outs[0].status == "refused" and "does not fit" in outs[0].detail and "/jobs" not in d.posts
