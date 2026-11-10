@@ -50,9 +50,15 @@ class LocalBackend:
     def list_runs(self):
         return sorted(p.name for p in self.root.iterdir()) if self.root.exists() else []
 
+    def list_run_files(self, run_id):
+        from g4bench.bridge_jobs import list_run_files
+
+        return list_run_files(self.root, run_id)
+
     def read_run_file(self, run_id, path):
-        f = self.root / run_id / path
-        return f.read_text() if f.is_file() else None
+        from g4bench.bridge_jobs import read_run_file
+
+        return read_run_file(self.root, run_id, path)
 
 
 def test_submit_run_poll_settle_on_mock(tmp_path, tokenizer_dir):
@@ -82,6 +88,23 @@ def test_submit_run_poll_settle_on_mock(tmp_path, tokenizer_dir):
     runs = c.get("/runs").json()
     assert runs == [res["run_id"]]
     assert "MOCK ENGINE" in c.get(f"/runs/{res['run_id']}/REPORT.md").text
+    # Full evidence comes back, not just the CSV/JSONL (regression: fetch used to copy only 4 files).
+    from g4bench.campaign import fetch_run
+
+    got = fetch_run(lambda m, p, json=None: (lambda r: r.json() if "json" in r.headers.get("content-type", "")
+                                             else r.text)(c.request(m, p)), res["run_id"], tmp_path / "fetched")
+    d = tmp_path / "fetched" / res["run_id"]
+    assert got["files"] == got["listed"] > 10 and not got["skipped"]
+    for rel in ("REPORT.md", "throughput.svg", "manifest.json", "metadata.json", "results.jsonl", "results.csv"):
+        assert (d / rel).is_file(), rel
+    pts = sorted((d / "points").iterdir())
+    assert pts and all((p / "inferencex_result.json").is_file() and (p / "effective_config.json").is_file()
+                       and (p / "client.log").is_file() for p in pts)
+    assert any((p / "server.log").is_file() for p in pts)
+    again = fetch_run(lambda m, p, json=None: (lambda r: r.json() if "json" in r.headers.get("content-type", "")
+                                               else r.text)(c.request(m, p)), res["run_id"], tmp_path / "fetched")
+    assert again["files"] == 0 and len(again["skipped"]) == got["listed"]  # never overwrites local evidence
+    assert c.get("/runfiles/nope").status_code == 404
 
 
 def test_worker_refuses_after_deadline_and_wall_budget_is_bounded(tmp_path):
@@ -132,3 +155,15 @@ def test_modal_poll_classification_with_real_exception_classes(monkeypatch):
 
         monkeypatch.setattr(modal.FunctionCall, "from_id", staticmethod(lambda cid, _fc=FC(): _fc))
         assert bridge_app.ModalBackend().poll("fc-x")[0] == want, type(exc).__name__
+
+
+def test_run_file_helpers_refuse_traversal(tmp_path):
+    from g4bench.bridge_jobs import list_run_files, read_run_file
+
+    (tmp_path / "runs" / "r1").mkdir(parents=True)
+    (tmp_path / "runs" / "r1" / "a.txt").write_text("x")
+    (tmp_path / "secret.txt").write_text("nope")
+    assert list_run_files(tmp_path / "runs", "r1") == [{"path": "a.txt", "bytes": 1}]
+    assert list_run_files(tmp_path / "runs", "..") is None
+    assert read_run_file(tmp_path / "runs", "r1", "../../secret.txt") is None
+    assert read_run_file(tmp_path / "runs", "r1", "a.txt") == "x"

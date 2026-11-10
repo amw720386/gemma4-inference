@@ -151,14 +151,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[{time.time()-t0:.0f}s] running", file=sys.stderr, flush=True)
             time.sleep(a.poll)
     elif a.cmd == "fetch":
-        dest = pathlib.Path(a.dest) / a.run_id
-        dest.mkdir(parents=True, exist_ok=True)
-        for name in ("manifest.json", "metadata.json", "results.csv", "results.jsonl"):
-            try:
-                (dest / name).write_text(_call("GET", f"/runs/{a.run_id}/{name}"))
-            except SystemExit as e:
-                print(f"skip {name}: {e}", file=sys.stderr)
-        out = {"fetched_to": str(dest)}
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
+        from g4bench.campaign import fetch_run
+
+        out = fetch_run(lambda m, p, json=None: _call(m, p), a.run_id, pathlib.Path(a.dest))
     print(json.dumps(out, indent=2) if not isinstance(out, str) else out)
     return 0
 

@@ -162,3 +162,27 @@ def test_preflight_refuses_job_that_does_not_fit_one_reservation():
                                                 estimator=lambda s: {"points": 8, "est_gpu_s": 99999, "summary": ""})))
     outs = C.run(E1, d, execute=True, sleep=lambda s: None, ledger=None)
     assert outs[0].status == "refused" and "does not fit" in outs[0].detail and "/jobs" not in d.posts
+
+
+def test_campaign_auto_fetches_each_finished_run(tmp_path):
+    files = {"REPORT.md": "# r", "points/p1/server.log": "log"}
+
+    class WithRuns(FakeBackend):
+        def list_run_files(self, run_id):
+            return [{"path": k, "bytes": len(v)} for k, v in files.items()] if run_id == "run-x" else None
+
+        def read_run_file(self, run_id, path):
+            return files.get(path) if run_id == "run-x" else None
+
+    d = Driver(WithRuns(), {**GOOD, "gpu:vllm": {"n_points": 2, "n_valid": 2, "run_id": "run-x"},
+                            "gpu:sglang": {"n_points": 2, "n_valid": 2, "run_id": "run-x"}})
+
+    def call(method, path, json=None):  # text endpoints return text, like client._call
+        if path.startswith("/runs/"):
+            return d.c.request(method, path).text
+        return d(method, path, json=json)
+
+    outs = C.run(E1, call, execute=True, sleep=lambda s: None, ledger=None, fetch_dir=tmp_path / "runs")
+    assert [o.status for o in outs] == ["done"] * 5
+    assert (tmp_path / "runs" / "run-x" / "points" / "p1" / "server.log").read_text() == "log"
+    assert outs[3].result["fetched"]["files"] == 2 and outs[4].result["fetched"]["files"] == 0  # no overwrite

@@ -53,7 +53,8 @@ python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[bridge]"
 ```
 
 The last command installs the package plus `fastapi` and `modal==1.6.3` (the version the bridge was validated
-with). Deploy from a clean checkout: `/health` reports the deployed git SHA (with `-dirty` if there were local
+with). Deploy from a clean checkout of the latest `main` (if you deployed earlier, redeploy: the pre-spend check refuses a
+bridge missing any required feature, e.g. `run-file-listing`). `/health` reports the deployed git SHA (with `-dirty` if there were local
 edits), and the agent's pre-spend check refuses a bridge that lacks the current safety features.
 
 ```bash
