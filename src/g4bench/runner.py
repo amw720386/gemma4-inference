@@ -232,7 +232,8 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
     (pdir / "effective_config.json").write_text(json.dumps(eff, indent=2))
     ctx = {
         "run_id": run_id, "config_hash": chash, "engine": eng.engine, "engine_config": eng.name,
-        "engine_version": eng.version, "hardware_class": meta["hardware_class"],
+        "engine_version": eng.version, "engine_role": eng.raw.get("role", "variant"),
+        "admissibility": str(eng.raw.get("admissibility", "c")), "hardware_class": meta["hardware_class"],
         "gpu_name": (meta["gpus"][0]["name"] if meta["gpus"] else None), "gpu_count": len(meta["gpus"]),
         "exact_hardware": meta["exact_hardware"], **{k: v for k, v in p.to_dict().items()},
         "spec_acceptance_length": acc.get("acceptance_length") or acc_log.get("acceptance_length_log_mean"),

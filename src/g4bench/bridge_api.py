@@ -15,7 +15,12 @@ from typing import Any, Callable, Protocol
 from . import budget as B
 
 ALLOWED_ENGINES = {"vllm-0.33.0-mtp4": "vllm", "vllm-0.33.0-mtp4-textonly": "vllm", "vllm-0.33.0-nospec": "vllm",
-                   "sglang-0.5.23-nextn": "sglang"}
+                   "sglang-0.5.23-nextn": "sglang",
+                   # E5/E6 variants (flag-checked against pinned sources; D-034)
+                   "vllm-0.33.0-mtp2": "vllm", "vllm-0.33.0-mtp3": "vllm", "vllm-0.33.0-mtp5": "vllm",
+                   "vllm-0.33.0-mtp6": "vllm", "vllm-0.33.0-mtp-bsched": "vllm", "vllm-0.33.0-mtp4-draftfp8": "vllm",
+                   "sglang-0.5.23-nextn3": "sglang", "sglang-0.5.23-nextn4": "sglang",
+                   "sglang-0.5.23-nextn-adaptive": "sglang"}
 ALLOWED_MATRICES = {"smoke", "backboard-repro", "speedbench-coding", "speedbench-tp"}
 ALLOWED_GPUS = {"RTX-PRO-6000", "L40S", "A100-80GB", "H100!", "H200", "B200"}
 TERMINAL = {"finished", "failed", "cancelled", "expired"}

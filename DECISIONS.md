@@ -219,3 +219,14 @@ unregional host the client defaulted to; both return 404 today (not deployed). T
 regional host (`G4_BRIDGE_URL` still wins once visible after a session restart). The environment also defines
 `G4_PROJECT_BUDGET_USD` and `G4_JOB_CAP_USD`: the campaign uses them to *tighten* (never relax) the limits it requires
 the server to report, and the bridge accepts them as deploy-time aliases of `G4_PROJECT_CAP_USD` / `G4_PER_JOB_CAP_USD`.
+
+**D-034 (2026-11-10) Optimization arms prepared; every config carries role + admissibility.** From the pinned sources:
+vLLM v0.33.0 `SpeculativeConfig` exposes `num_speculative_tokens_per_batch_size` (depth by batch size) and
+`draft_lm_head_quantization` ("fp8"/"nvfp4", MRv2 only; "the target verifies with its own head, so only the acceptance
+length can change") — the closest open analogue of Backboard's 4-bit shortlist; SGLang v0.5.23 exposes
+`--speculative-adaptive` and draft-model quantization. New flag-checked configs: vLLM mtp2/3/5/6 (E5b depth sweep),
+mtp-bsched (E6, schedule to be re-derived from E5b), mtp4-draftfp8 (E6, class **b**); SGLang nextn3/nextn4 (E5b),
+nextn-adaptive (E6). All configs now declare `role` (only the two article recipes are `baseline`) and
+`admissibility` (a/b/c). Analysis compares only baselines with the article's open-engine numbers and pairs only
+baselines in vLLM-vs-SGLang; variants are compared with Backboard only, labelled by class; class c never. All are on
+the bridge allowlist; none is scheduled under the current $10 approval (each single-point job ≈ $0.8–1.0).

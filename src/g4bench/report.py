@@ -207,14 +207,22 @@ def build(run_dir: Path) -> tuple[str, str]:
 
     # ---- comparison to the article
     lines += ["", "## Comparison with article baselines", ""]
-    ref = {"vllm": "vllm", "sglang": "sglang"}.get(engine_kind or "")
+    role, adm = eng.get("role", "variant"), str(eng.get("admissibility", "c"))
+    ref = {"vllm": "vllm", "sglang": "sglang"}.get(engine_kind or "") if role == "baseline" else None
+    lines.append(f"Config role: **{role}**, admissibility class **{adm}** (DECISIONS D-011)."
+                 + ("" if role == "baseline" else " Variants are not compared with the article's open baselines.") + "")
     targets_svg: dict[str, list[tuple[int, float]]] = {}
-    if is_mock:
+    if adm == "c" and not is_mock:
+        lines.append("Not compared: admissibility class c (not comparable).")
+    elif is_mock:
         lines.append("Not compared: mock engine.")
     elif not exact:
         lines.append("Not compared: not the article's hardware (proxy run).")
-    elif ref is None:
+    elif ref is None and role == "baseline":
         lines.append("Not compared: engine has no article counterpart.")
+    elif ref is None:
+        lines.append("Variant run: see `g4bench analyze` (results/summary/comparison.csv) for the comparison with "
+                     "Backboard's reported numbers, labelled by admissibility class.")
     else:
         tg = compare.load_targets()
         lines += [f"Reference: article `{ref}` (and Backboard) numbers for random-token prompts. Classification uses the "

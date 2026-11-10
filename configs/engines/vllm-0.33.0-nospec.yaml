@@ -1,6 +1,9 @@
 # Control: vLLM without speculative decoding. Isolates spec-decode gain and gives the
 # acceptance-independent floor (pure memory-bandwidth bound decode).
 name: vllm-0.33.0-nospec
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E5a
 engine: vllm
 version: "0.33.0"
 client_backend: vllm

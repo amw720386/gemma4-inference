@@ -19,7 +19,7 @@ LAT_METRICS = ("ttft", "tpot", "itl", "e2el")
 LAT_STATS = ("mean", "median", "p90", "p99")
 
 COLUMNS: list[str] = [
-    "schema_version", "run_id", "config_hash", "engine", "engine_config", "engine_version",
+    "schema_version", "run_id", "config_hash", "engine", "engine_config", "engine_version", "engine_role", "admissibility",
     "hardware_class", "gpu_name", "gpu_count", "exact_hardware", "point_id", "key",
     "isl", "osl", "conc", "seed", "trial", "num_prompts", "random_range_ratio", "use_chat_template",
     "dataset", "ignore_eos", "dataset_digest",
@@ -41,7 +41,8 @@ def normalize(raw: dict[str, Any], *, context: dict[str, Any]) -> dict[str, Any]
     """Map one InferenceX result JSON (+ run context) to a COLUMNS-keyed record."""
     rec: dict[str, Any] = {c: None for c in COLUMNS}
     rec["schema_version"] = SCHEMA_VERSION
-    for k in ("run_id", "config_hash", "engine", "engine_config", "engine_version", "hardware_class",
+    for k in ("run_id", "config_hash", "engine", "engine_config", "engine_version", "engine_role", "admissibility",
+              "hardware_class",
               "gpu_name", "gpu_count", "exact_hardware", "point_id", "key", "isl", "osl", "conc",
               "seed", "trial", "num_prompts", "random_range_ratio", "use_chat_template", "dataset", "ignore_eos",
               "spec_acceptance_length", "spec_draft_acceptance_rate", "gpu_mem_peak_mib",
