@@ -8,11 +8,16 @@ Configuration (never printed):
 
 Usage:
   python modal_bridge/client.py health
+  python modal_bridge/client.py budget
   python modal_bridge/client.py estimate --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2
   python modal_bridge/client.py submit   --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2
-  python modal_bridge/client.py status <call_id>
-  python modal_bridge/client.py wait <call_id> [--poll 60] [--max-s 7200]
-  python modal_bridge/client.py cancel <call_id>
+  python modal_bridge/client.py status <job_id>
+  python modal_bridge/client.py wait <job_id> [--poll 120] [--max-s 3600]
+  python modal_bridge/client.py cancel <job_id>
+
+``submit``/``prefetch``/``selftest`` first read /budget and refuse locally if the remaining estimate cannot
+cover the per-job cap; the server enforces the project cap regardless (its ledger is authoritative for the
+bridge, and is an estimate, not a Modal billing hard stop).
   python modal_bridge/client.py runs | fetch <run_id> <dest_dir>
 """
 
@@ -49,10 +54,20 @@ def _call(method: str, path: str, **kw) -> dict | list | str:
     return r.json() if "json" in ct else r.text
 
 
+def _precheck(max_usd: float | None) -> None:
+    b = _call("GET", "/budget")
+    need = min(max_usd if max_usd is not None else 0.25, b["per_job_cap_usd"])
+    if b["active"]:
+        raise SystemExit(f"refusing: {len(b['active'])} job(s) still active per /budget")
+    if b["available_usd"] < need:
+        raise SystemExit(f"refusing: available ${b['available_usd']:.2f} < ${need:.2f} needed (cap ${b['cap_usd']:.2f})")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("health")
+    sub.add_parser("budget")
     sub.add_parser("runs")
     sub.add_parser("jobs")
     sub.add_parser("prefetch")
@@ -69,11 +84,11 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--notes", default="")
         p.add_argument("--dry-run", action="store_true")
     for name in ("status", "cancel"):
-        sub.add_parser(name).add_argument("call_id")
+        sub.add_parser(name).add_argument("job_id")
     w = sub.add_parser("wait")
-    w.add_argument("call_id")
-    w.add_argument("--poll", type=float, default=60)
-    w.add_argument("--max-s", type=float, default=4 * 3600)
+    w.add_argument("job_id")
+    w.add_argument("--poll", type=float, default=120)  # polling keeps the bridge container warm (platform reserve)
+    w.add_argument("--max-s", type=float, default=3600)
     f = sub.add_parser("fetch")
     f.add_argument("run_id")
     f.add_argument("dest")
@@ -81,31 +96,36 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "health":
         out = _call("GET", "/health")
+    elif a.cmd == "budget":
+        out = _call("GET", "/budget")
     elif a.cmd == "runs":
         out = _call("GET", "/runs")
     elif a.cmd == "jobs":
         out = _call("GET", "/jobs")
     elif a.cmd in ("prefetch", "selftest"):
+        _precheck(None)
         out = _call("POST", f"/{a.cmd}")
     elif a.cmd in ("estimate", "submit"):
         spec = {k: v for k, v in {"engine": a.engine, "matrix": a.matrix, "seeds": a.seeds, "trials": a.trials,
                                   "only": a.only, "gpu": a.gpu, "max_usd": a.max_usd, "notes": a.notes,
                                   "dry_run": a.dry_run}.items() if v is not None}
+        if a.cmd == "submit":
+            _precheck(a.max_usd)
         out = _call("POST", "/estimate" if a.cmd == "estimate" else "/jobs", json=spec)
     elif a.cmd == "status":
-        out = _call("GET", f"/jobs/{a.call_id}")
+        out = _call("GET", f"/jobs/{a.job_id}")
     elif a.cmd == "cancel":
-        out = _call("POST", f"/jobs/{a.call_id}/cancel")
+        out = _call("POST", f"/jobs/{a.job_id}/cancel")
     elif a.cmd == "wait":
         t0 = time.time()
         while True:
-            out = _call("GET", f"/jobs/{a.call_id}")
-            if out.get("state") != "running":
+            out = _call("GET", f"/jobs/{a.job_id}")
+            if out.get("state") not in ("running", "unknown"):
                 break
             if time.time() - t0 > a.max_s:
-                print(f"max wait exceeded; cancelling {a.call_id}", file=sys.stderr)
-                out = _call("POST", f"/jobs/{a.call_id}/cancel")
-                break
+                print(f"max wait exceeded; cancelling {a.job_id}", file=sys.stderr)
+                _call("POST", f"/jobs/{a.job_id}/cancel")
+                a.max_s = float("inf")  # keep polling until termination is confirmed (settles the ledger)
             print(f"[{time.time()-t0:.0f}s] running", file=sys.stderr, flush=True)
             time.sleep(a.poll)
     elif a.cmd == "fetch":

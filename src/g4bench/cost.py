@@ -56,5 +56,9 @@ def estimate(points: list[Point], gpu: str = "RTX-PRO-6000", *, fresh_server_per
         detail.append({"point_id": p.point_id, "est_tok_s": tok_s, "est_s": s})
         total += s
     total *= engines
-    usd = total / 3600 * (g.usd_per_hr_modal or 0.0)
+    # Same pricing as the bridge ledger: GPU + CPU/memory at the GPU job's container *limits*.
+    from .bridge_api import GPU_JOB
+    from .budget import resource_rate
+
+    usd = total * resource_rate(gpu, GPU_JOB.cpu_limit, GPU_JOB.mem_limit_gib) if g.usd_per_hr_modal else 0.0
     return Estimate(len(points) * engines, total, usd, detail)

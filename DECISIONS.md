@@ -87,3 +87,26 @@ variant (`ignore_eos: false`, point IDs suffixed `-eos`) is the planned follow-u
 **D-018 (2026-11-10) Within-run request statistics are diagnostics.** Per-request bootstrap CIs (TTFT, TPOT,
 E2EL, ITL) and the Little's-law throughput estimator describe one run's sampling noise only; claims use
 between-run CIs (n ≥ 3). Missing/inconsistent per-request logs are reported as states, never imputed.
+
+**D-019 (2026-11-10) Approved budget: $10 total project cap, enforced server-side.** Supersedes the $100 proposal
+(D-013 stays: nothing paid runs without explicit approval). The bridge now keeps a project-wide ledger in Modal Dict
+`g4repro-budget`; every paid launch (GPU jobs, CPU prefetch, CPU selftest) reserves its worst case at the container's
+cpu/memory/GPU *limits* × (Modal timeout + 900 s startup + 60 s scaledown) before spawning; per-job cap $2 bounds the
+Modal timeout (876 s on RTX PRO 6000 at $3.92/h incl. CPU/memory limits); one open reservation at a time; $0.50
+platform reserve for the bridge/ledger containers. Mutations are serialized through a single-container, one-input
+`ledger_op` function plus a Dict lease lock (atomic put-if-absent); the ledger is one key re-read per op, so restarts
+lose nothing; corrupt/unreachable state fails closed. Reservations are released only if the spawn itself failed;
+otherwise settled from wall time since reservation once Modal confirms termination (uncapped; expired ⇒ worst case;
+unknown poll errors ⇒ keep holding). `G4_BRIDGE_HARD_CAP_USD` is removed (per-job cap replaces it). The ledger is an
+estimate gating this bridge only — explicitly **not** a Modal billing hard stop.
+
+**D-020 (2026-11-10) Bug fixed before first deploy: Modal's poll timeout exception.** `FunctionCall.get(timeout=0)`
+raises `modal.exception.TimeoutError`, which is not a subclass of builtins `TimeoutError` (verified on modal 1.6.3).
+The previous bridge caught only the builtin, so a running job would have been marked ended, defeating the concurrency
+limit. The new backend catches it explicitly and maps only Modal's specific terminal exceptions (InputCancellation,
+FunctionTimeoutError, OutputExpiredError) to terminal states; anything else is "unknown" and keeps the reservation.
+A definition test also caught that web functions cannot take `retries` (deploy would have failed).
+
+**D-021 (2026-11-10) Estimates priced like the ledger.** `g4bench plan` now prices GPU jobs at GPU + CPU/memory limits
+($3.92/h on RTX PRO 6000, +29 % vs GPU-only), so plans and ledger reservations agree. Under $10 the full seed-0 matrix
+for both engines (~$13.9) does not fit; work is planned as single-point jobs, smoke first (NEXT.md).

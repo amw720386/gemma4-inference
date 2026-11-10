@@ -9,9 +9,9 @@ Gemma 4 12B serving numbers reported by Backboard on 2026-11-09
 > (vLLM 0.33.0, SGLang 0.5.23) with an InferenceX-style harness, report our own measurements
 > with uncertainty, and treat Backboard's numbers purely as external targets.
 
-**Current state:** harness, real-prompt (SPEED-Bench) arm and per-run reporting are complete and
-CPU-validated (51 tests); **no GPU measurements yet** — blocked on a one-time Modal bridge deploy and an
-approved budget (see [STATUS.md](STATUS.md)). No number in this repo is a measured GPU
+**Current state:** harness, real-prompt (SPEED-Bench) arm, per-run reporting and a server-side **$10
+project spend limit** in the Modal bridge are complete and CPU-validated (71 tests); **no GPU measurements yet**
+— waiting on the one-time bridge deploy and a scoped proxy token (see [STATUS.md](STATUS.md), [BUDGET.md](BUDGET.md)). No number in this repo is a measured GPU
 result unless it appears in `results/runs/*/results.csv` with a run ID.
 
 ## What the article reports (targets, not our results)

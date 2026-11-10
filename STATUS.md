@@ -1,8 +1,8 @@
-# Status — 2026-11-10 (checkpoint 2)
+# Status — 2026-11-10 (checkpoint 3)
 
-**One-line state:** harness + real-prompt arm + reporting are built and CPU-tested (51 tests);
-**zero GPU measurements exist**; GPU work is blocked on (a) the Modal bridge not being deployed and
-(b) no approved budget. GPU spend to date: **$0.00**.
+**One-line state:** harness, real-prompt arm, reporting and a **server-side $10 project spend limit** in the bridge
+are built and CPU-tested (71 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
+GPU work waits only on the user's one-time bridge deploy + scoped proxy token. Spend to date: **$0.00**.
 
 ## Summary
 
@@ -16,7 +16,8 @@
 | **Per-request bootstrap CIs** (TTFT/TPOT/E2EL/ITL + Little's-law throughput diagnostic) | ✅ in results schema v2 | src/g4bench/request_stats.py |
 | **Per-run report** (REPORT.md + throughput.svg, not-measured/mock/proxy states) | ✅ auto-written by every run | src/g4bench/report.py, docs/examples/ (MOCK) |
 | Failure-mode integration tests (dead server, failures, timeout, budget, bad datasets) | ✅ | tests/test_failure_modes.py |
-| Modal HTTPS bridge | 🟨 written + definition-validated; **not deployed** | modal_bridge/ |
+| **Bridge budget ledger** ($10 project cap, $2/job, 1 active, reserve-before-launch, race/restart-safe, `/budget`) | ✅ CPU-tested | src/g4bench/budget.py, src/g4bench/bridge_api.py, tests/test_budget.py, tests/test_bridge_api.py |
+| Modal HTTPS bridge | 🟨 written + definition-validated (modal 1.6.3); **not deployed** | modal_bridge/ |
 | GPU experiments E1–E6 | ⛔ blocked (see below) | — |
 
 ## Measured results
@@ -26,12 +27,11 @@ excludes and every report banners as "MOCK ENGINE — NOT A MEASUREMENT". `resul
 
 ## Exact blocker
 
-1. **Bridge not deployed.** `https://arnold-17059--g4repro-bridge.modal.run` answers
-   `modal-http: invalid function call` (checked 2026-11-10). Deploy is a one-time human step
-   (`modal_bridge/BOOTSTRAP.md`); this session must not use the Modal CLI/SDK control plane.
-2. **No bridge credential** in this environment. The in-session request was declined; it will not be
-   re-requested. When provisioned, it goes in the environment's network secrets (NEXT.md).
-3. **No approved budget.** BUDGET.md caps are a proposal (D-013). Nothing paid runs until confirmed.
+1. **Bridge not deployed** (user is arranging it). `https://arnold-17059--g4repro-bridge.modal.run` answers
+   `modal-http: invalid function call` (checked 2026-11-10). This session must not deploy or use the Modal CLI/SDK.
+2. **No scoped proxy token** in this environment yet (user is arranging it separately; the agent does not request it).
+3. ~~No approved budget~~ → **resolved: $10 total approved** (BUDGET.md, DECISIONS D-019). Enforced by the bridge
+   ledger once deployed; it is an estimate gating bridge launches, **not** a Modal billing hard stop.
 
 ## Key findings (CPU-side only)
 
@@ -47,7 +47,7 @@ excludes and every report banners as "MOCK ENGINE — NOT A MEASUREMENT". `resul
 ## Tooling versions used for CPU checks
 
 Python 3.13.18; numpy 2.5.4, aiohttp 3.14.5, transformers 5.22.2, tokenizers 0.23.3, huggingface_hub 2.4.0,
-jinja2 3.1.6, pyarrow 26.0.1, requests 2.34.2, fastapi 0.162.4, pytest 9.2.0, modal 1.6.3 (definition import only).
+jinja2 3.1.6, pyarrow 26.0.1, requests 2.34.2, fastapi 0.162.4, httpx 0.28.1, pytest 9.2.0, modal 1.6.3 (definition import only).
 
 ## Verify this checkpoint
 
@@ -60,5 +60,5 @@ g4bench speedbench prepare && python -m pytest -q
 ```
 
 Expected: SPEED-Bench coding digest `6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18`,
-`matches_inferencex_digest: true`; 51 tests pass (without `speedbench prepare`, the one network-marked
-digest test is skipped).
+`matches_inferencex_digest: true`; 71 tests pass (without `speedbench prepare`, the one network-marked
+digest test is skipped; without `modal` installed, the bridge-definition test is skipped).

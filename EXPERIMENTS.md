@@ -36,7 +36,8 @@ Fixed before any GPU data exists (do not edit after seeing data; add a dated ame
 
 `g4bench plan` (src/g4bench/cost.py) – pessimistic: assumes we run 1.5× slower than the article's
 same-engine numbers, 6 min per fresh server start, 4 min container overhead, Modal RTX-PRO-6000 at
-$0.000842/s ($3.03/h). `vllm-nospec` estimates are ~3× too low (it uses the spec-decode throughput
+GPU + CPU/memory *limits* ($0.001089/s = $3.92/h; D-021). **Approved budget: $10 total, ≤ $2 per job**
+(D-019): only E1 plus ≈ 8 single-point seed-0 jobs fit; everything beyond needs a new approval. `vllm-nospec` estimates are ~3× too low (it uses the spec-decode throughput
 guess); budget it at ~$9 per seed.
 
 ## Experiments
