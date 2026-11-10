@@ -3,3 +3,7 @@
 Valid point-runs: 0 / 0 total.
 
 **No GPU measurements yet.** Nothing below is a measured result.
+## vLLM vs SGLang at matched load (measured; advantage > 1 = vLLM better)
+
+not measured: no vLLM/SGLang pairs yet.
+

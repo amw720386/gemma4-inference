@@ -110,3 +110,10 @@ A definition test also caught that web functions cannot take `retries` (deploy w
 **D-021 (2026-11-10) Estimates priced like the ledger.** `g4bench plan` now prices GPU jobs at GPU + CPU/memory limits
 ($3.92/h on RTX PRO 6000, +29 % vs GPU-only), so plans and ledger reservations agree. Under $10 the full seed-0 matrix
 for both engines (~$13.9) does not fit; work is planned as single-point jobs, smoke first (NEXT.md).
+
+**D-022 (2026-11-10) Engine comparisons are paired by seed at identical workload.** `engine_compare.py` pairs vLLM and
+SGLang rows only when hardware class, dataset + prompt digest, ISL, OSL, concurrency, range ratio, chat template,
+ignore_eos and num_prompts all match, and the same seed (=> identical request stream) exists on both sides. A pair
+is GATED (no ratio printed) unless both point-runs are valid, both runs' correctness probes passed, and model pins
+match. Ratios use the article's "advantage" convention; CIs are bootstrap-of-means and paired log-ratio t-CIs;
+n < 3 is labelled descriptive. The article's implied vLLM/SGLang ratio is shown as a reference column only.
