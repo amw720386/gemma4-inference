@@ -1,0 +1,37 @@
+{
+ "speedbench-coding": {
+  "n": 80,
+  "tok_min": 27,
+  "tok_p50": 177,
+  "tok_mean": 251.0,
+  "tok_max": 1471,
+  "by_category_mean": {
+   "coding": 251.0
+  },
+  "digest": "6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18"
+ },
+ "speedbench-tp1k-inline": {
+  "n": 897,
+  "tok_min": 994,
+  "tok_p50": 1208,
+  "tok_mean": 1209.7,
+  "tok_max": 3076,
+  "by_category_mean": {
+   "high_entropy": 1181.0,
+   "low_entropy": 1242.4
+  },
+  "digest": "2a96afbd6ff82e55457792c7ea1c2aca3dfef537abcee041d51c04db63d94a09"
+ },
+ "speedbench-tp8k-inline": {
+  "n": 808,
+  "tok_min": 7638,
+  "tok_p50": 9269,
+  "tok_mean": 9372.1,
+  "tok_max": 12256,
+  "by_category_mean": {
+   "high_entropy": 9016.3,
+   "low_entropy": 9854.3
+  },
+  "digest": "fa7ff0ed0709cdd55ebbe0c82b36ef2ec3d9d38832462151032dacbf1cb20f97"
+ }
+}

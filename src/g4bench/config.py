@@ -129,7 +129,7 @@ def stable_hash(obj: Any, n: int = 12) -> str:
 def config_hash(engine: EngineConfig, matrix: dict[str, Any], pins: dict[str, Any]) -> str:
     client_policy = {k: matrix.get(k) for k in (
         "random_range_ratio", "use_chat_template", "num_prompts_per_conc", "num_warmups_per_conc",
-        "max_model_len",
+        "max_model_len", "dataset", "dataset_by_isl", "ignore_eos",
     )}
     return stable_hash({
         "engine": {"name": engine.name, "args": engine.args, "env": engine.env, "version": engine.version},

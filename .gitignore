@@ -9,3 +9,5 @@ dist/
 results/scratch/
 *.secret
 .env
+data/speedbench/*.jsonl
+.cache/

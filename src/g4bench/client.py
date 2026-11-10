@@ -21,7 +21,14 @@ from .paths import THIRD_PARTY_INFERENCEX
 
 def client_argv(point: Point, *, base_url: str, model: str, backend: str, result: Path,
                 tokenizer: str | None = None, python: str | None = None,
-                save_detailed: bool = True, endpoint: str = "/v1/completions") -> list[str]:
+                save_detailed: bool = True, endpoint: str = "/v1/completions",
+                dataset_file: Path | None = None) -> list[str]:
+    if point.dataset != "random":
+        return dataset_client_argv(point, base_url=base_url, model=model, backend=backend, result=result,
+                                   tokenizer=tokenizer, python=python, save_detailed=save_detailed,
+                                   endpoint=endpoint, dataset_file=dataset_file)
+    if not point.ignore_eos:
+        raise ValueError("random dataset arm always uses --ignore-eos (InferenceX policy)")
     argv = [
         python or sys.executable, "-m", "infx.bench_serving.benchmark_serving",
         "--model", model,
@@ -56,7 +63,29 @@ def client_argv(point: Point, *, base_url: str, model: str, backend: str, result
 def client_env(base_env: dict[str, str]) -> dict[str, str]:
     """PYTHONPATH that resolves ``infx`` to the vendored, checksummed copy."""
     env = dict(base_env)
-    pp = str(THIRD_PARTY_INFERENCEX)
+    # vendored infx + our src (dataset_client runs as a subprocess, possibly outside a venv)
+    pp = str(THIRD_PARTY_INFERENCEX) + ":" + str(THIRD_PARTY_INFERENCEX.parents[1] / "src")
     env["PYTHONPATH"] = pp + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     return env
+
+
+def dataset_client_argv(point: Point, *, base_url: str, model: str, backend: str, result: Path,
+                        tokenizer: str | None, python: str | None, save_detailed: bool, endpoint: str,
+                        dataset_file: Path | None) -> list[str]:
+    """Real-prompt arm: same request/timing/metric code (InferenceX ``benchmark()``), our request list."""
+    if dataset_file is None or tokenizer is None:
+        raise ValueError("real-prompt arm needs dataset_file and a tokenizer")
+    argv = [
+        python or sys.executable, "-m", "g4bench.dataset_client",
+        "--base-url", base_url, "--endpoint", endpoint, "--backend", backend, "--model", model,
+        "--tokenizer", tokenizer, "--dataset-file", str(dataset_file),
+        "--num-prompts", str(point.num_prompts), "--max-concurrency", str(point.conc),
+        "--num-warmups", str(point.num_warmups), "--seed", str(point.seed), "--osl", str(point.osl),
+        "--ignore-eos" if point.ignore_eos else "--no-ignore-eos",
+        "--use-chat-template" if point.use_chat_template else "--no-use-chat-template",
+        "--result-dir", str(result.parent), "--result-filename", result.name,
+    ]
+    if save_detailed:
+        argv.append("--save-detailed")
+    return argv

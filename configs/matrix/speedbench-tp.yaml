@@ -1,0 +1,16 @@
+# E5c real-prompt arm B: matched input length with real text. SPEED-Bench throughput_1k / throughput_8k,
+# INLINE-ONLY SUBSET (externally-resolved rows excluded; see provenance SUBSET_WARNING). Biased toward
+# high/low-entropy categories; the "mixed" category is absent. Reported separately from article targets.
+name: speedbench-tp
+dataset_by_isl: {1024: speedbench-tp1k-inline, 8192: speedbench-tp8k-inline}
+isl: [1024, 8192]
+osl: [1024]
+conc: [1, 4, 16, 64]
+seeds: [0, 1, 2]
+trials_per_seed: 1
+ignore_eos: true
+use_chat_template: true
+num_prompts_per_conc: 10
+num_warmups_per_conc: 2
+max_model_len: 14336       # Gemma-tokenized tp8k prompts reach 12256 tokens (+1024 output); see DECISIONS D-016
+fresh_server_per_point: true
