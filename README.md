@@ -50,26 +50,22 @@ results/summary/              aggregated tables (g4bench analyze)
 docs/                         sources, analysis
 ```
 
-## Quick start (CPU)
+## Quick start (CPU, one command)
 
 ```bash
-python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
+scripts/setup.sh
 ```
+
+Creates `.venv`, installs the exact tested versions from `requirements-lock.txt`, checks the pinned model revisions
+are reachable, statically checks every engine config's flags against the pinned vLLM/SGLang sources, and runs the
+CPU test-suite. Add `--data` to also prepare the SPEED-Bench prompt sets (digest-gated against InferenceX, ~4.6 GB
+streamed). Verified from a fresh clone on 2026-11-10: 120 passed, 1 skipped (the `--data` digest test), ~3 min.
+
+Other free checks:
 
 ```bash
-python -m pytest -q
+.venv/bin/g4bench consistency && .venv/bin/g4bench roofline && .venv/bin/g4bench plan
 ```
-
-```bash
-g4bench sources && g4bench consistency && g4bench roofline && g4bench plan
-```
-
-```bash
-g4bench speedbench prepare
-```
-
-(prepares the SPEED-Bench prompt sets into `data/speedbench/`, refusing unless the coding set is
-digest-identical to InferenceX's; ~4.6 GB streamed, ~4 min.)
 
 On a GPU host with the engine installed (or via the Modal bridge):
 
