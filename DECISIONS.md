@@ -197,3 +197,12 @@ verified each claim in the SDK source, then fixed:
 8. *Low*: reservations could exceed `max_usd` by < 1 cent through rounding — now capped at the requested ceiling.
 Not fixable in this design and documented: workers can still be invoked directly with a workspace token, bypassing the
 ledger; the ledger remains an estimate that gates bridge launches only.
+
+**D-031 (2026-11-10) Worker verified under engine-image conditions; a crash-every-job bug fixed.** Both pinned engine
+images run Python 3.12 (read from their registry image configs: vLLM CUDA 13.0.2 with `TORCH_CUDA_ARCH_LIST` incl.
+12.0 = sm_120; SGLang CUDA 13.0.3). Our dev venv is 3.13. Running the bridge worker body on Python 3.12 with only
+engine-shipped packages (`scripts/check_worker_env.sh`) exposed that `GpuSampler(threading.Thread)` stored its event as
+`self._stop`, shadowing `Thread._stop()` used by `join()` on ≤ 3.12 → `TypeError` on every point, i.e. every paid GPU
+job would have failed. Fixed (`_halt`) with an AST guard test that fails on the old code. The same check confirms no
+fastapi/pyarrow/httpx/modal/pydantic/pytest import on the worker path. New E1 risk recorded: Modal's host driver must
+support CUDA 13 (metadata captures `driver_version`).

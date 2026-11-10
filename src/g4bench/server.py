@@ -88,7 +88,7 @@ class GpuSampler(threading.Thread):
     def __init__(self, path: Path, interval: float = 1.0):
         super().__init__(daemon=True)
         self.path, self.interval = path, interval
-        self._stop = threading.Event()
+        self._halt = threading.Event()  # NOT _stop: shadows Thread._stop() on Python <= 3.12
         self.available = shutil.which("nvidia-smi") is not None
 
     def run(self) -> None:
@@ -97,7 +97,7 @@ class GpuSampler(threading.Thread):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.path, "w", encoding="utf-8") as f:
             f.write(self.FIELDS + "\n")
-            while not self._stop.is_set():
+            while not self._halt.is_set():
                 try:
                     out = subprocess.run(["nvidia-smi", f"--query-gpu={self.FIELDS}", "--format=csv,noheader,nounits"],
                                          capture_output=True, text=True, timeout=10).stdout
@@ -105,10 +105,10 @@ class GpuSampler(threading.Thread):
                     f.flush()
                 except (OSError, subprocess.TimeoutExpired):
                     pass
-                self._stop.wait(self.interval)
+                self._halt.wait(self.interval)
 
     def stop(self) -> dict[str, float | None]:
-        self._stop.set()
+        self._halt.set()
         self.join(timeout=15)
         return summarize_gpu_csv(self.path)
 
