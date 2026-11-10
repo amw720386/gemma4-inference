@@ -16,6 +16,8 @@ Fixed before any GPU data exists (do not edit after seeing data; add a dated ame
    (main matrix), correctness probes ≥ 7/8 on that server build.
 2. **Uncertainty**: every reported number is a run-level mean over n ≥ 3 runs (seeds 0,1,2; ≥ 1 trial)
    with a Student-t 95 % CI and CV. Single runs are labelled `n=1` and never used for claims.
+   Per-request bootstrap CIs (request_stats.py) are within-run diagnostics only (D-018).
+   *(Amendment 2026-11-10, before any data: clarifies the role of within-run CIs; no threshold changed.)*
 3. **Baseline reproduced** (per engine, per workload, output throughput): article value lies within our
    95 % CI, or |ours − article| / article ≤ **5 %** (systematic tolerance for GPU edition / driver / host).
    Engine baseline "reproduced" overall if ≥ 6 / 8 workloads pass; otherwise we report the gap and
@@ -39,7 +41,7 @@ guess); budget it at ~$9 per seed.
 
 ## Experiments
 
-### E0 – CPU harness validation (✅, $0)
+### E0 – CPU harness validation (✅, $0; 51 tests as of checkpoint 2)
 - Vendored InferenceX client (checksummed), pinned configs, 24 CPU tests incl. full mock end-to-end.
 - Model-availability test passes (both repos ungated, pinned revisions resolvable, weights size matches).
 - Prompt-stream fingerprints for all 24 (ISL × conc × seed) points (`configs/fingerprints-rr0.8.json`):
@@ -72,8 +74,14 @@ Ordered by expected information per dollar; run only those the E2–E4 data just
 - a. **No-spec control** (`vllm-0.33.0-nospec`, seed 0) – spec-decode gain and the acceptance-free floor.
 - b. **Speculative depth sweep** `num_speculative_tokens ∈ {2,3,5,6}` at 1K/c1, 8K/c4, 1K/c64 – the
   article's largest vLLM gap is 8K/c4 (1.34×); depth is the most likely lever.
-- c. **Prompt-content sensitivity** – random tokens vs real prompts (SPEED-Bench coding) at fixed
-  ISL/OSL: quantifies how much AL (hence throughput) depends on the synthetic workload.
+- c. **Prompt-content sensitivity** (🟨 CPU side done; GPU ⛔) – random tokens vs real prompts at the same
+  engine config, OSL 1024, conc {1,4,16,64}, seeds {0,1,2}:
+  - `speedbench-coding`: the 80 InferenceX golden-AL coding prompts, digest-identical to InferenceX
+    (`6f184545…`); natural lengths 27–1471 Gemma tokens (mean 251). Est. $4.47 seed 0, both engines.
+  - `speedbench-tp`: SPEED-Bench throughput_1k / _8k **inline-only subsets** (897 / 808 rows; no `mixed`
+    category); Gemma lengths ≈ 1210 / 9372 tokens. Est. $10.74 seed 0, both engines.
+  - Readouts: acceptance length, throughput, p99 TPOT per conc vs the random arm; never compared to the
+    article (keys carry `@dataset`). Pre-registered expectation: none — direction unknown a priori.
 - d. **Text-only variant** (`vllm-0.33.0-mtp4-textonly`) – skip MM profiling / bounded context.
 - e. **Scheduler/graph knobs** – `max-num-seqs`, cudagraph capture sizes, `max-num-batched-tokens`
   (8K TTFT), SGLang `cuda-graph-max-bs`, `chunked-prefill-size`.
@@ -97,3 +105,5 @@ is both the exact target and the cheapest GPU that fits the whole matrix.
 | Date | Exp | Run ID | Engine | Points | Valid | Notes |
 |---|---|---|---|---|---|---|
 | 2026-11-10 | E0 | (CPU, mock) | mock-cpu | 4 | 4 | pytest e2e only; numbers meaningless by design |
+| 2026-11-10 | E5c-prep | (CPU, data) | – | – | – | SPEED-Bench prepared; coding digest = InferenceX; tp subsets labelled |
+| 2026-11-10 | E0 | docs/examples/mock-runs/* | mock-cpu | 4 | 4 | example REPORT.md layout; MOCK, not a measurement |

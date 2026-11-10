@@ -9,10 +9,6 @@ Gemma 4 12B serving numbers reported by Backboard on 2026-11-09
 > (vLLM 0.33.0, SGLang 0.5.23) with an InferenceX-style harness, report our own measurements
 > with uncertainty, and treat Backboard's numbers purely as external targets.
 
-**Current state:** harness complete and CPU-validated; **no GPU measurements yet** (blocked on a
-one-time Modal bridge deploy — see [STATUS.md](STATUS.md)). No number in this repo is a measured GPU
-result unless it appears in `results/runs/*/results.csv` with a run ID.
-
 ## What the article reports (targets, not our results)
 
 1× RTX PRO 6000 Blackwell 96 GB, `google/gemma-4-12B-it` BF16, draft `google/gemma-4-12B-it-assistant`,
@@ -68,6 +64,13 @@ python -m pytest -q
 g4bench sources && g4bench consistency && g4bench roofline && g4bench plan
 ```
 
+```bash
+g4bench speedbench prepare
+```
+
+(prepares the SPEED-Bench prompt sets into `data/speedbench/`, refusing unless the coding set is
+digest-identical to InferenceX's; ~4.6 GB streamed, ~4 min.)
+
 On a GPU host with the engine installed (or via the Modal bridge):
 
 ```bash
@@ -77,6 +80,9 @@ g4bench run --engine vllm-0.33.0-mtp4 --matrix backboard-repro --seeds 0
 ```bash
 g4bench analyze
 ```
+
+Every run writes `results/runs/<run_id>/REPORT.md` + `throughput.svg` (regenerate with
+`g4bench report <run_dir>`). See `docs/examples/` for the layout (MOCK engine — not a measurement).
 
 ## Project docs
 

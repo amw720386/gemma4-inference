@@ -77,3 +77,16 @@ From `inferencex-e2e/infx/bench/fixed_seq.py` (copied to `docs/sources/inference
 - Exact server command lines, max-model-len, scheduler limits, attention backends, CUDA graph settings of the baselines.
 - InferenceX commit, client host CPU, GPU edition / power limit, driver/CUDA versions.
 - Whether "1K/8K" used range ratio 0.8 (likely, see above) or 1.0.
+
+## Real-prompt data (added 2026-11-10)
+
+| Artefact | Pin | Verified |
+|---|---|---|
+| InferenceX SPEED-Bench prep | `inferencex-e2e/infx/bench/speedbench.py` @ `0b991451`: `SPEED_BENCH_REVISION=454f8845…`, `PREPARE_PY_SHA256=a551be4d…`, `PROMPTS_SHA256=6f184545…` | ✅ read |
+| NeMo-Skills prepare.py | Skills @ `5ac8609a`, sha256 `a551be4d…` | ✅ downloaded, hash matches |
+| nvidia/SPEED-Bench | rev `454f88454792dfa3ccfd7ef15fff248efde44cd1`, ungated, licence "other" (NVIDIA License.pdf); qualitative / throughput_1k / throughput_8k parquet LFS sha256 pinned in `src/g4bench/speedbench.py` | ✅ |
+| deepmind/code_contests | rev `802411c3…`, test parquet sha256 `aa426cbd…` | ✅ |
+| livecodebench/code_generation_lite | rev `0fe84c39…`, test..test6.jsonl sha256 pinned; all six stream-hashed | ✅ |
+| Resulting coding set | 80 prompts, digest `6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18` | ✅ equals InferenceX |
+
+Coding sources: 61 humanevalpack + 9 Spec-Bench (inline), 5 code_contests + 5 LiveCodeBench (resolved).

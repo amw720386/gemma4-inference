@@ -1,0 +1,17 @@
+{
+  "delta": {
+    "vllm:spec_decode_num_accepted_tokens_total": 446.0,
+    "vllm:spec_decode_num_drafts_total": 226.0,
+    "vllm:spec_decode_num_draft_tokens_total": 904.0
+  },
+  "acceptance": {
+    "acceptance_length": 2.9734513274336285,
+    "draft_acceptance_rate": 0.49336283185840707,
+    "source": "vllm"
+  },
+  "log": {
+    "acceptance_length_log_mean": null,
+    "n_log_samples": 0,
+    "source": null
+  }
+}
