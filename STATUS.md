@@ -1,7 +1,7 @@
 # Status — 2026-11-10 (checkpoint 3)
 
 **One-line state:** harness, real-prompt arm, reporting and a **server-side $10 project spend limit** in the bridge
-are built and CPU-tested (116 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
+are built and CPU-tested (119 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
 GPU work waits only on the user's one-time bridge deploy + scoped proxy token. Spend to date: **$0.00**.
 
 ## Summary
@@ -25,6 +25,7 @@ GPU work waits only on the user's one-time bridge deploy + scoped proxy token. S
 | Independent review of the budget path: 8 findings (3 high) verified in SDK source and fixed | ✅ | DECISIONS D-030 |
 | Worker verified on Python 3.12 with engine-image-only deps (`scripts/check_worker_env.sh`); fixed a bug that would have crashed every GPU job | ✅ | DECISIONS D-031 |
 | Gap attribution (acceptance length vs step speed vs roofline) in per-run reports | ✅ | src/g4bench/gap.py |
+| E5/E6 optimization arms (depth sweep, depth-by-batch-size, draft LM-head FP8, SGLang adaptive) as flag-checked configs; role/admissibility gating in analysis | ✅ prepared, not run | configs/engines/, D-034 |
 | Budget-gated campaign runner (plan-only default; re-checks /health+/budget limits before every paid step) | ✅ verified refusing against undeployed bridge ($0) | src/g4bench/campaign.py, configs/campaigns/, results/budget_ledger.jsonl |
 | GPU experiments E1–E6 | ⛔ blocked (see below) | — |
 
@@ -73,5 +74,5 @@ g4bench speedbench prepare && python -m pytest -q
 ```
 
 Expected: SPEED-Bench coding digest `6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18`,
-`matches_inferencex_digest: true`; 116 tests pass (without `speedbench prepare`, the one network-marked
+`matches_inferencex_digest: true`; 119 tests pass (without `speedbench prepare`, the one network-marked
 digest test is skipped; without `modal` installed, the bridge-definition test is skipped).

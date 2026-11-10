@@ -74,7 +74,8 @@ Seeds 1,2 for both engines (completing n=3 per point); optionally a second trial
 Ordered by expected information per dollar; run only those the E2–E4 data justify:
 - a. **No-spec control** (`vllm-0.33.0-nospec`, seed 0) – spec-decode gain and the acceptance-free floor.
 - b. **Speculative depth sweep** `num_speculative_tokens ∈ {2,3,5,6}` at 1K/c1, 8K/c4, 1K/c64 – the
-  article's largest vLLM gap is 8K/c4 (1.34×); depth is the most likely lever.
+  article's largest vLLM gap is 8K/c4 (1.34×); depth is the most likely lever. Configs ready:
+  `vllm-0.33.0-mtp{2,3,5,6}`, `sglang-0.5.23-nextn{3,4}` (D-034).
 - c. **Prompt-content sensitivity** (🟨 CPU side done; GPU ⛔) – random tokens vs real prompts at the same
   engine config, OSL 1024, conc {1,4,16,64}, seeds {0,1,2}:
   - `speedbench-coding`: the 80 InferenceX golden-AL coding prompts, digest-identical to InferenceX
@@ -89,7 +90,7 @@ Ordered by expected information per dollar; run only those the E2–E4 data just
 - f. **Attention backend** (FlashInfer / Triton / FA) on sm_120.
 - g. **Torch profiler trace** at 1K/c1 and 8K/c4 to split verify / draft / sampling / CPU overhead.
 
-### E6 – Optimization candidates (⬜, only after E4 + E5)
+### E6 – Optimization candidates (⬜, only after E4 + E5; configs ready: `vllm-0.33.0-mtp-bsched`, `vllm-0.33.0-mtp4-draftfp8` (class b), `sglang-0.5.23-nextn-adaptive`)
 Candidates justified by E5 profiles, e.g. adaptive speculation depth by batch size, reduced draft
 overhead (centroid head already sparse; draft-step CUDA graphs), KV/attention kernel choice for 8K,
 and – separately labelled – lower-precision draft shortlisting (SGLang `--speculative-draft-model-quantization`),

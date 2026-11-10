@@ -67,3 +67,20 @@ def test_matrix_expansion():
 def test_run_id_format():
     rid = new_run_id("vllm-0.33.0-mtp4", "RTX-PRO-6000x1", "abcdef123456")
     assert re.fullmatch(r"\d{8}T\d{6}Z-vllm-0\.33\.0-mtp4-rtx-pro-6000x1-abcdef12-[0-9a-f]{4}", rid)
+
+
+def test_every_engine_config_declares_role_and_admissibility():
+    from g4bench.bridge_api import ALLOWED_ENGINES
+    from g4bench.paths import CONFIGS
+
+    baselines = []
+    for f in sorted((CONFIGS / "engines").glob("*.yaml")):
+        e = EngineConfig.load(str(f))
+        assert e.raw.get("role") in ("baseline", "variant"), f.name
+        assert str(e.raw.get("admissibility")) in ("a", "b", "c"), f.name
+        if e.raw["role"] == "baseline":
+            baselines.append(e.name)
+        if e.engine != "mock":
+            assert e.name in ALLOWED_ENGINES, f"{e.name} not allowlisted on the bridge"
+    assert sorted(baselines) == ["sglang-0.5.23-nextn", "vllm-0.33.0-mtp4"]
+    assert EngineConfig.load("vllm-0.33.0-mtp4-draftfp8").raw["admissibility"] == "b"

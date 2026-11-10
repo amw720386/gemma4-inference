@@ -5,11 +5,12 @@ import xml.etree.ElementTree as ET
 from g4bench import report
 
 
-def _mk(run_dir, *, engine="vllm", exact=True, rows=(), hw="RTX-PRO-6000x1", corr=None):
+def _mk(run_dir, *, engine="vllm", exact=True, rows=(), hw="RTX-PRO-6000x1", corr=None, role="baseline", adm="a"):
     run_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text(json.dumps({"run_id": run_dir.name, "config_hash": "abc",
                                                        "engine_config": {"name": f"{engine}-cfg", "engine": engine,
-                                                                         "version": "x"}}))
+                                                                         "version": "x", "role": role,
+                                                                         "admissibility": adm}}))
     (run_dir / "metadata.json").write_text(json.dumps({"hardware_class": hw, "exact_hardware": exact, "gpus": []}))
     (run_dir / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     if corr is not None:
@@ -75,3 +76,11 @@ def test_corrupt_results_line_is_reported_not_fatal(tmp_path):
         f.write("{truncated\n")
     md = report.build(d)[0]
     assert "unparseable results line" in md
+
+
+def test_variant_and_class_c_runs_are_not_compared_with_open_baselines(tmp_path):
+    d = _mk(tmp_path / "v", rows=[_row(1024, 1, 0, 300.0)], role="variant", adm="a")
+    md = report.build(d)[0].split("Comparison with article")[1]
+    assert "role: **variant**" in md and "| 1024 | 1 | 300 |" not in md
+    c = _mk(tmp_path / "c", rows=[_row(1024, 1, 0, 300.0)], role="variant", adm="c")
+    assert "admissibility class c" in report.build(c)[0]

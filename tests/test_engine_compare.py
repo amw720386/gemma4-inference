@@ -11,7 +11,8 @@ BASE = {"hardware_class": "RTX-PRO-6000x1", "dataset": "random", "dataset_digest
 
 
 def _r(engine, seed, thr, p99, run, **kw):
-    return {**BASE, "engine": engine, "seed": seed, "output_throughput": thr, "p99_tpot_ms": p99,
+    cfg = {"vllm": "vllm-0.33.0-mtp4", "sglang": "sglang-0.5.23-nextn"}[engine]
+    return {**BASE, "engine": engine, "engine_config": cfg, "seed": seed, "output_throughput": thr, "p99_tpot_ms": p99,
             "mean_ttft_ms": 90.0, "p90_ttft_ms": 100.0, "p99_ttft_ms": 110.0, "mean_tpot_ms": p99 * 0.95,
             "mean_e2el_ms": 5000.0, "p99_e2el_ms": 5400.0, "run_id": run, "point_id": f"{engine}-{seed}", **kw}
 
@@ -112,3 +113,16 @@ def test_inconsistency_with_article_is_flagged():
             r["output_throughput"] = 180.0  # engines nearly equal: far from the article's ~1.52x
     t = _thr(compare_engines(rows, correctness={"rv": True, "rs": True}))
     assert t["consistent_with_article"] is False and t["advantage"] < 1.1
+
+
+def test_analyze_excludes_variants_from_baseline_comparisons(tmp_path):
+    d = tmp_path / "rv"
+    d.mkdir()
+    (d / "correctness.json").write_text(json.dumps({"probes": {"pass": True}}))
+    rows = [dict(r, engine_config="vllm-0.33.0-mtp6", engine_role="variant", admissibility="a")
+            for r in _rows() if r["engine"] == "vllm"]
+    (d / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    res = analyze.run(root=tmp_path, out=tmp_path / "s")
+    comp = (tmp_path / "s" / "comparison.csv").read_text()
+    assert res["engine_pairs"] == 0                       # variants never paired against baselines
+    assert "backboard" in comp and ",vllm," not in comp    # compared with Backboard only, not article vLLM
