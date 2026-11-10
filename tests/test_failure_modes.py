@@ -84,3 +84,26 @@ def test_real_prompt_arm_end_to_end_on_mock(tmp_path, tokenizer_dir, monkeypatch
     assert man["datasets"]["mock-prompts"]["n_prompts"] == 5
     md = (d / "REPORT.md").read_text()
     assert "MOCK ENGINE" in md and "mock-prompts" in md and "8/8" in md
+
+
+def test_slow_point_is_cut_at_wall_budget_and_results_still_written(tmp_path, tokenizer_dir):
+    import time as _t
+
+    t0 = _t.monotonic()
+    d = run(_opts(tmp_path, tokenizer_dir, only_keys=["1024x1"], max_wall_s=35, client_timeout_s=3600,
+                  extra_server_args=["--step-ms", "2000"]))
+    elapsed = _t.monotonic() - t0
+    (r,) = _rows(d)
+    assert not r["valid"] and elapsed < 120  # bounded by the wall budget, not the 3600 s client timeout
+    assert (d / "REPORT.md").exists()
+
+
+def test_bounded_helper():
+    import time as _t
+
+    from g4bench.runner import MIN_STEP_TIMEOUT_S, _bounded
+
+    now = _t.monotonic()
+    assert _bounded(1800, 600, now) <= 600
+    assert _bounded(100, 10_000, now) == 100
+    assert _bounded(1800, 5, now - 100) == MIN_STEP_TIMEOUT_S

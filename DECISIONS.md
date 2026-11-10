@@ -159,3 +159,9 @@ rounding bounds per published ratio. Matches the absolute table where both exist
 186.8/122.6 = 1.524). `engine_compare` now reports it per metric plus a descriptive `consistent_with_article` flag
 (our bootstrap CI overlaps the article bounds). Table: docs/analysis/article_vllm_vs_sglang.md. Finding: the
 article's SGLang gap is a decode (TPOT) gap; p99 TTFT is at parity (0.97–1.06) at 8K.
+
+**D-028 (2026-11-10) Step timeouts never outlive the wall budget.** Server-start (1800 s) and per-point client
+(3600 s) timeouts exceeded the 876 s Modal timeout a $2 reservation buys, so a slow point would have been killed by
+Modal before results/report were written (paid data lost). The runner now bounds each step by the remaining wall
+budget (min 30 s); on the bridge that budget ends ≥ 180 s before the Modal timeout, so slow points are cut, recorded
+invalid, and the run still returns its results.
