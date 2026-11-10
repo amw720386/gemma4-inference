@@ -1,0 +1,35 @@
+# Pinned upstream artifacts. Every value below was verified against the primary
+# source on 2026-11-10 (see docs/SOURCES.md). Changing any pin => new config hash
+# => results are NOT pooled with earlier runs.
+model:
+  target:
+    repo: google/gemma-4-12B-it
+    revision: 43c9d014b231474fa7212dbb48a762566c2b255d   # HF main @ 2026-10-30
+    architecture: Gemma4UnifiedForConditionalGeneration
+    license: apache-2.0
+    gated: false
+    weights_bytes: 23919549408          # model.safetensors (single file, BF16)
+  draft:
+    repo: google/gemma-4-12B-it-assistant
+    revision: 3b0b0a4a3b31b5556516329227fb55f275c23c9f
+    architecture: Gemma4UnifiedAssistantForCausalLM
+    license: apache-2.0
+    gated: false
+engines:
+  vllm:
+    version: "0.33.0"                    # PyPI upload 2026-11-02
+    image: vllm/vllm-openai:v0.33.0
+    image_index_digest: sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    image_amd64_digest: sha256:91ee972ab751fb7180bc71c175865e36b091686600dca783d52b2511399810b3
+  sglang:
+    version: "0.5.23"                    # PyPI upload 2026-10-30
+    image: lmsysorg/sglang:v0.5.23
+    image_index_digest: sha256:f832b5c39559c9caa900b22ad37c76fcce66470676855c42052102c537812f1f
+    image_amd64_digest: sha256:f7876bef696ccf9cf75a2bf7ccb82970f5fac577f082fb8ca95c9a59d2160eb5
+client:
+  name: InferenceX bench_serving (vendored)
+  repo: https://github.com/SemiAnalysisAI/InferenceX
+  commit: 0b991451d71d7dca4b478fad09a28f14c43fe804      # main @ 2026-11-10 08:39 -08:00
+  path: inferencex-e2e/infx/bench_serving
+  vendored_at: third_party/inferencex/infx/bench_serving
+  checksums: third_party/inferencex/SHA256SUMS

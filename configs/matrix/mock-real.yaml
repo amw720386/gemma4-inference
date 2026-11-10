@@ -1,0 +1,14 @@
+# CPU tests only: real-prompt arm through the mock server (dataset written by the test into G4_DATA_DIR).
+name: mock-real
+dataset: mock-prompts
+isl: [0]
+osl: [32]
+conc: [1, 4]
+seeds: [0]
+trials_per_seed: 1
+ignore_eos: true
+use_chat_template: true
+num_prompts_per_conc: 2
+num_warmups_per_conc: 1
+max_model_len: 4096
+fresh_server_per_point: false

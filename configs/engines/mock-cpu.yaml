@@ -1,0 +1,15 @@
+# CPU-only fake engine for harness tests. Numbers produced with it are meaningless
+# and are tagged engine=mock; never compare them to targets.
+name: mock-cpu
+engine: mock
+version: "0"
+client_backend: vllm
+endpoint: /v1/completions
+port: 18000
+health_path: /health
+args:
+  - [--model, "{target_repo}"]
+  - [--port, "{port}"]
+  - [--step-ms, "1.0"]
+  - [--tokens-per-step, "3"]
+env: {}

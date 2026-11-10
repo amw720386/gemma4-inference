@@ -1,0 +1,99 @@
+{
+  "dataset": "speedbench-coding",
+  "n_prompts": 80,
+  "prompt_digest": "6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18",
+  "matches_inferencex_digest": true,
+  "inferencex_prompts_sha256": "6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18",
+  "inferencex_commit": "0b991451d71d7dca4b478fad09a28f14c43fe804",
+  "method": "re-implemented prepare.py coding branches; digest-gated",
+  "prepare_py": {
+    "url": "https://raw.githubusercontent.com/NVIDIA-NeMo/Skills/5ac8609a56ac941540b10c92e68d556e6343cd4c/nemo_skills/dataset/speed-bench/prepare.py",
+    "sha256": "a551be4df541474e54e21b480022b0cbb66c2da068fda61b2a64bd3223bbbed2"
+  },
+  "sources": {
+    "speed_bench": {
+      "repo": "nvidia/SPEED-Bench",
+      "revision": "454f88454792dfa3ccfd7ef15fff248efde44cd1",
+      "file": "qualitative/test-00000-of-00001.parquet",
+      "sha256": "4f76bc45bdffb38712a5c26d7a7c9a9a791484b392a7b64a6ffb9abe48e02e26"
+    },
+    "code_contests": {
+      "repo": "deepmind/code_contests",
+      "revision": "802411c3010cb00d1b05bad57ca77365a3c699d6",
+      "file": "data/test-00000-of-00001-9c49eeff30aacaa8.parquet",
+      "sha256": "aa426cbdb202bf8703b658bcb31fd1878ca7cfd33ca07d3b703dc94ca6a2b651",
+      "rows_used": [
+        "1575_B. Building an Amusement Park",
+        "1580_C. Train Maintenance",
+        "1580_E. Railway Construction",
+        "1586_H. Omkar and Tours",
+        "1613_C. Poisoned Dagger"
+      ]
+    },
+    "livecodebench": {
+      "repo": "livecodebench/code_generation_lite",
+      "revision": "0fe84c3912ea0c4d4a78037083943e8f0c4dd505",
+      "rows_used": [
+        "2857",
+        "abc305_a",
+        "abc314_a",
+        "abc370_d",
+        "abc397_a"
+      ],
+      "files": [
+        {
+          "file": "test.jsonl",
+          "complete": true,
+          "sha256": "2bd02b38beb48e8c46b5b9987095d999ff38cd8efc255ea5d58974317c48f63f",
+          "verified": true
+        },
+        {
+          "file": "test2.jsonl",
+          "complete": true,
+          "sha256": "095df7c5daf15f882c51a9deb84085cff1e073495a5dbcf95015a564d485f3a3",
+          "verified": true
+        },
+        {
+          "file": "test3.jsonl",
+          "complete": true,
+          "sha256": "28ed26cc83363ce3f1fe2d5fad9f8393077beb1907b167a31bd3b32f80801b79",
+          "verified": true
+        },
+        {
+          "file": "test4.jsonl",
+          "complete": true,
+          "sha256": "d711138ddaebfcf5f8ec6a4283ee677298c0f5c5d374a235af92aaf0584510da",
+          "verified": true
+        },
+        {
+          "file": "test5.jsonl",
+          "complete": true,
+          "sha256": "7f77571c2a6df0c2a72a3277650309f67e01e0008e18117e624633df53f81214",
+          "verified": true
+        },
+        {
+          "file": "test6.jsonl",
+          "complete": true,
+          "sha256": "bb4c364f71921c4495a6ad15abe1a927350b720009f4933e2e71f8af0f6fd1f5",
+          "verified": true
+        }
+      ]
+    }
+  },
+  "source_counts": {
+    "https://huggingface.co/datasets/bigcode/humanevalpack/tree/9a41762f73a8cb23bb5811b73d5aab164efcf378": 61,
+    "https://raw.githubusercontent.com/hemingkx/Spec-Bench/66230f10cb0a02aced5ef3ce1e85163c16160454/data/spec_bench/question.jsonl": 9,
+    "https://huggingface.co/datasets/deepmind/code_contests/tree/802411c3010cb00d1b05bad57ca77365a3c699d6": 5,
+    "https://huggingface.co/datasets/livecodebench/code_generation_lite/tree/0fe84c3912ea0c4d4a78037083943e8f0c4dd505": 5
+  },
+  "prepared_utc": "2026-11-10T20:34:30Z",
+  "seconds": 230.1,
+  "versions": {
+    "python": "3.13.18",
+    "pyarrow": "26.0.1",
+    "requests": "2.34.2",
+    "g4bench": "0.1.0"
+  },
+  "file": "speedbench-coding.jsonl",
+  "file_sha256": "94870ae8db8116713b03bc390825bc53a9d24bd9c2f36f29ea5b95ed9ca7640a"
+}
