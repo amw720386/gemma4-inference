@@ -142,3 +142,12 @@ time/memory, and SGLang's effective `server_args` (attention backend, effective 
 vs FROZEN_KV_MTP — cuda_graph_max_bs, max_running_requests). Results schema v3 adds `eff_*` columns; each point
 writes `effective_config.json`; reports show an "Effective engine configuration" table. Absent lines stay `None`.
 No flags were changed: the article says default recipes, and both engines select backends automatically.
+
+**D-026 (2026-11-10) Paid steps run only through a gated campaign.** `g4bench/campaign.py` +
+`modal_bridge/campaign.py` execute `configs/campaigns/*.yaml` (e1-smoke, e2-pairs) strictly sequentially. Default is
+plan-only; `--execute` re-checks before *every* step that `/health` is ok with the ledger reachable, that both
+`/health` and `/budget` report exactly the approved limits (cap $10, per-job ≤ $2, max_active 1, ledger disclaimer
+present), that no job is active and that `available_usd` covers the step; stops at the first failed gate or failed
+expectation (selftest rc 0; prefetch coding digest = InferenceX; all points valid); cancels past `max_wait_s` but keeps
+polling until termination is confirmed; logs every step to `results/budget_ledger.jsonl`. Verified live on
+2026-11-10: against the undeployed bridge it refused at `/health` (404) before any POST — $0 spent.
