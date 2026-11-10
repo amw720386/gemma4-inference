@@ -47,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
     fcp = sub.add_parser("flagcheck", help="check engine configs' flags against pinned engine sources (static)")
     fcp.add_argument("--refresh", action="store_true", help="re-fetch sources at the pinned tags (HTTPS)")
 
+    sub.add_parser("claims", help="render docs/CLAIMS.md (status from measured results only)")
+
     rp = sub.add_parser("report", help="(re)generate REPORT.md + throughput.svg for one run directory")
     rp.add_argument("run_dir", type=Path)
 
@@ -126,6 +128,12 @@ def main(argv: list[str] | None = None) -> int:
         res = flagcheck.check_all()
         print(json.dumps(res, indent=1))
         return 0 if all(not v for v in res.values()) else 1
+
+    if args.cmd == "claims":
+        from . import claims
+
+        print(claims.write())
+        return 0
 
     if args.cmd == "report":
         from . import report
