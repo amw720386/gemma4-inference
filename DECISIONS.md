@@ -206,3 +206,9 @@ engine-shipped packages (`scripts/check_worker_env.sh`) exposed that `GpuSampler
 job would have failed. Fixed (`_halt`) with an AST guard test that fails on the old code. The same check confirms no
 fastapi/pyarrow/httpx/modal/pydantic/pytest import on the worker path. New E1 risk recorded: Modal's host driver must
 support CUDA 13 (metadata captures `driver_version`).
+
+**D-032 (2026-11-10) First-order gap attribution in every exact-hardware report.** `gap.py`: TPOT ≈ step/AL ⇒ step =
+TPOT × AL; bandwidth efficiency = roofline step ÷ measured step; AL needed to hit the article's mean TPOT (= 1000 /
+its speed-per-user) at our step time, flagged if above draft_tokens + 1; or the step speed-up needed at our AL. Shown
+against the same engine's article numbers and Backboard's. Purpose: decide after E1 whether optimization effort
+belongs in drafting/acceptance or in kernels/scheduling. Diagnostic only; assumptions printed with every table.

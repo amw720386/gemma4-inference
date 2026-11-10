@@ -240,6 +240,42 @@ def build(run_dir: Path) -> tuple[str, str]:
         if any(k[0] != "random" for k in keys):
             lines += ["", "Real-prompt arms are intentionally not compared with the article (different workload)."]
 
+    lines += ["", "## Gap attribution (first-order; acceptance vs step speed)", ""]
+    if is_mock or not exact or ref is None:
+        lines.append("Not computed: needs exact article hardware and a vLLM/SGLang run.")
+    else:
+        from . import gap
+
+        tg = compare.load_targets()
+        dt = gap.draft_tokens_for(eng)
+        lines += [f"Assumptions: {gap.ASSUMPTIONS}. Article mean TPOT = 1000 / its 'speed per user'.", "",
+                  f"| ISL | conc | our TPOT ms | our AL | step ms | BW eff. | AL needed for article {ref} | for Backboard | "
+                  "step speed-up needed (Backboard) |", "|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        rows_added = 0
+        for k in keys:
+            if k[0] != "random" or dt is None:
+                continue
+            a = agg[k]
+            spu = tg.get(f"{k[1]}x{k[2]}", {}).get("speed_per_user", {})
+            r_ref = gap.attribute(tpot_ms=mean(a, "mean_tpot_ms"), al=mean(a, "spec_acceptance_length"), conc=k[2],
+                                  isl=k[1], osl=1024, article_tpot_ms=1000 / spu[ref] if spu.get(ref) else None,
+                                  draft_tokens=dt)
+            r_bb = gap.attribute(tpot_ms=mean(a, "mean_tpot_ms"), al=mean(a, "spec_acceptance_length"), conc=k[2],
+                                 isl=k[1], osl=1024, article_tpot_ms=1000 / spu["backboard"] if spu.get("backboard") else None,
+                                 draft_tokens=dt)
+            if r_ref["state"] != "ok":
+                lines.append(f"| {k[1]} | {k[2]} | {_f(mean(a, 'mean_tpot_ms'))} | {NM} | – | – | – | – | – |")
+                continue
+            rows_added += 1
+            flag = lambda r: "" if r.get("reachable_by_acceptance_alone", True) else " (> max AL)"  # noqa: E731
+            lines.append(f"| {k[1]} | {k[2]} | {mean(a, 'mean_tpot_ms'):.3g} | {mean(a, 'spec_acceptance_length'):.3g} | "
+                         f"{r_ref['step_ms']:.3g} | {r_ref['bw_efficiency']:.2f} | "
+                         f"{_f(r_ref.get('al_needed_for_article'), '{:.2f}')}{flag(r_ref)} | "
+                         f"{_f(r_bb.get('al_needed_for_article'), '{:.2f}')}{flag(r_bb)} | "
+                         f"{_f(r_bb.get('step_speedup_needed'), '{:.2f}x')} |")
+        if not rows_added and not any(True for k in keys if k[0] == "random"):
+            lines.append(f"| – | – | {NM} | {NM} | – | – | – | – | – |")
+
     lines += ["", "## Correctness gate", ""]
     if corr is None:
         lines.append(f"{NM} (no correctness.json)")
