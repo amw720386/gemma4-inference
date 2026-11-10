@@ -64,3 +64,12 @@ def test_cost_estimate_monotone():
     one = estimate(expand(m, seeds=[0]))
     three = estimate(expand(m))
     assert 0 < one.usd < three.usd < 60
+
+
+def test_greedy_equivalence_gate():
+    from g4bench.correctness import compare_outputs
+
+    a = ["word " * 200] * 4
+    assert compare_outputs(a, a)["pass"]
+    b = ["different " * 200] * 4
+    assert not compare_outputs(a, b)["pass"]

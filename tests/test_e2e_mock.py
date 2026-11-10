@@ -23,6 +23,9 @@ def test_mock_end_to_end(tmp_path, tokenizer_dir):
     assert man["config_hash"] and man["points"][0]["point_id"]
     meta = json.loads((d / "metadata.json").read_text())
     assert meta["hardware_class"] == "cpu" and meta["exact_hardware"] is False
+    corr = json.loads((d / "correctness.json").read_text())
+    assert corr["probes"]["pass"] and corr["probes"]["n_ok"] == 8
+    assert len(corr["greedy_outputs"]) == 8
     out = analyze.run(root=tmp_path, out=tmp_path / "summary", include_mock=True)
     assert out["rows"] == 4 and out["aggregates"] == 2
     assert (tmp_path / "summary" / "SUMMARY.md").exists()

@@ -8,15 +8,13 @@ endpoint: /v1/completions
 port: 8000
 health_path: /health
 args:
-  - [--model, "{target_repo}"]
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
   - [--revision, "{target_rev}"]
   - [--tensor-parallel-size, "1"]
   - [--dtype, bfloat16]
   - [--gpu-memory-utilization, "0.90"]
   - [--no-enable-prefix-caching]
   - [--async-scheduling]
-  - [--max-model-len, "{max_model_len}"]
-  - [--limit-mm-per-prompt, '{"image":0,"audio":0}']
   - [--host, 0.0.0.0]
   - [--port, "{port}"]
 env: {}
