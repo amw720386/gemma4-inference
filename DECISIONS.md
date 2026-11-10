@@ -54,3 +54,36 @@ the article's baselines; Backboard's own result is in class (b) by its own descr
 
 **D-012 (2026-11-10) No GitHub Actions for GPU work; no billing changes.** All paid compute goes through the
 bridge with a pre-launch estimate logged in BUDGET.md.
+
+**D-013 (2026-11-10) Budget is a proposal, not an authorization.** The $100 cap in BUDGET.md is proposed
+only. No paid GPU job is launched until the user explicitly confirms a budget **and** the HTTPS bridge
+answers `/health`. CPU-side Modal steps (selftest, prefetch) are also treated as paid and wait for approval.
+
+**D-014 (2026-11-10) Real-prompt selection policy.** `numpy.random.default_rng(seed).permutation(n)` cycled to
+`num_prompts = 10·conc` requests (InferenceX request count). With 80 coding prompts, conc ≥ 16 repeats
+prompts; prefix/radix caching is off in every baseline, so repeats are recomputed. `n_unique`/`max_repeats`
+are stored per run.
+
+**D-015 (2026-11-10) SPEED-Bench coding set prepared by re-implementation + digest gate.** Instead of running
+NeMo-Skills' prepare.py (needs `datasets` and ~35 GB), `speedbench.py` re-implements its two coding branches
+(code_contests, livecodebench), fetches only the 10 rows needed from the same pinned revisions (every file
+sha256-verified; LiveCodeBench stream-hashed), and refuses to write unless the digest equals InferenceX's
+`PROMPTS_SHA256`. Result: **match** (`6f184545…`), i.e. byte-identical to InferenceX's golden-AL prompt set.
+Prompt text is not committed (SPEED-Bench ships under an NVIDIA licence, sources under various licences);
+provenance sidecars with all hashes are.
+
+**D-016 (2026-11-10) Throughput splits used as a labelled inline-only subset, not truncated.** Rows needing
+external resolution (HLE is gated; AdaLEval/BAMBOO need fetches) are excluded → 897/1536 (1k) and 808/1536
+(8k) rows; the `mixed` category is absent. Under the Gemma tokenizer + chat template the "1k" prompts average
+1210 tokens (994–3076) and "8k" 9372 (7638–12256): SPEED-Bench sized them for another tokenizer. We keep the
+text unmodified (fidelity to the dataset) and report actual lengths; these arms are never compared to the
+article. `speedbench-tp` matrix sets max_model_len 14336 for bounded-context variants; baselines use the
+engine default context, so they are unaffected.
+
+**D-017 (2026-11-10) Real-prompt arms use ignore_eos=True first** (fixed 1024-token outputs, matching the
+throughput matrix's decode load). Post-EOS text can distort acceptance either way, so an EOS-honouring
+variant (`ignore_eos: false`, point IDs suffixed `-eos`) is the planned follow-up, not a replacement.
+
+**D-018 (2026-11-10) Within-run request statistics are diagnostics.** Per-request bootstrap CIs (TTFT, TPOT,
+E2EL, ITL) and the Little's-law throughput estimator describe one run's sampling noise only; claims use
+between-run CIs (n ≥ 3). Missing/inconsistent per-request logs are reported as states, never imputed.

@@ -1,31 +1,39 @@
-# Next actions
+# Next actions (executable checkpoint)
 
-## Needs a human (blocking all GPU work)
+## A. Human-only unblockers (GPU work cannot start without all three)
 
-1. **Deploy the bridge once** — `modal_bridge/BOOTSTRAP.md` §1 (workspace `arnold-17059`).
-2. **Create a Modal proxy-auth token** and add it as a network secret on this cloud environment
-   (environment settings → network secrets, host `arnold-17059--g4repro-bridge.modal.run`, header
-   `Authorization`, value `Bearer <TokenID>.<TokenSecret>`). The in-session request was declined on
-   2026-11-10, so the agent won't ask again; add it in settings when ready.
-   *Alternative without giving the agent a token:* run the matrix yourself on any 1× RTX PRO 6000 host
-   (`g4bench run --engine vllm-0.33.0-mtp4 --matrix smoke`), or call the bridge with
-   `modal_bridge/client.py` from your own machine, then commit `results/runs/<run_id>/`. The agent
-   analyzes committed results with `g4bench analyze`.
-3. Optional: confirm or change the budget caps in BUDGET.md (proposed project cap $100).
-4. Optional: choose a licence for this repository (none added; the vendored client stays Apache-2.0).
+1. **Deploy the bridge once** from a machine with the Modal CLI — `modal_bridge/BOOTSTRAP.md` §1
+   (workspace `arnold-17059`). Expected endpoint: `https://arnold-17059--g4repro-bridge.modal.run`.
+2. **Provision access for this environment**: add a Modal proxy-auth token as a network secret on this
+   cloud environment (settings → network secrets; host `arnold-17059--g4repro-bridge.modal.run`, header
+   `Authorization`, value `Bearer <TokenID>.<TokenSecret>`). The agent will not ask for it in chat.
+   *Alternative:* run jobs yourself (`modal_bridge/client.py` or `g4bench run` on any 1× RTX PRO 6000 host)
+   and commit `results/runs/<run_id>/`; the agent analyzes committed results.
+3. **Approve a budget** in writing (BUDGET.md caps are a proposal only, D-013). Minimum useful approval:
+   E1 smoke ≈ $1.05 (+ ≈ $0.07 CPU selftest/prefetch).
 
-## Agent, as soon as the bridge answers `/health`
+## B. Agent, once A1–A3 are done (in this order; log each estimate + actual in BUDGET.md first)
 
-1. `client.py selftest` (CPU) → `client.py prefetch` (CPU) → log both in BUDGET.md.
-2. E1: `submit --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2`; `wait`; `fetch`; inspect server log for
-   effective attention backend, CUDA-graph sizes, acceptance length, max-model-len default; same for SGLang.
-3. E2/E3: seed-0 full matrix per engine (estimates $4.70 / $6.04), gate at ±25 % before E4.
-4. E4 repeats → first claims with CIs; update README table with measured columns.
-5. E5 ablations in the order listed in EXPERIMENTS.md, each with a fresh estimate.
+1. `python modal_bridge/client.py health` — must return `ok: true` and list the speedbench matrices.
+2. `client.py selftest` (CPU) → `client.py prefetch` (CPU; downloads weights **and** prepares + digest-verifies
+   SPEED-Bench into the volume; fails loudly if the coding digest ≠ InferenceX).
+3. **E1 smoke** (`--matrix smoke`, `--max-usd 2`), vLLM then SGLang. Pass = 0 failures, probes ≥ 7/8,
+   acceptance length captured, `exact_hardware=true`, GPU edition/power limit recorded. Read the server
+   log for effective attention backend, CUDA-graph sizes, max-model-len default, SGLang's effective spec
+   algorithm (NEXTN vs FROZEN_KV_MTP). `client.py fetch` the run; commit `results/runs/<run_id>/` incl. REPORT.md.
+4. **E2/E3** seed-0 full matrix per engine ($4.70 / $6.04 est.). Gate: any point > 25 % off the article ⇒
+   stop and diagnose before E4.
+5. **E4** seeds 1,2 ($21.07 est.) ⇒ first claims (n = 3, t-CIs) via `g4bench analyze`; update README table.
+6. **E5c** real prompts at matched engine configs: `speedbench-coding` then `speedbench-tp`, seed 0 first
+   ($4.47 / $10.74 est. for both engines). Compare acceptance length and throughput vs the random arm at the
+   same conc — this quantifies how much the article's random-token workload flatters or penalises MTP.
+7. Remaining E5 ablations in EXPERIMENTS.md order, each with a fresh estimate.
 
-## Agent, CPU-side work that can continue meanwhile
+## C. Agent, CPU-side work available now (no blocker)
 
-- Add a SPEED-Bench (real-prompt) dataset arm to quantify acceptance-length sensitivity (E5c), CPU-validated
-  against the mock.
-- Add a per-request bootstrap report (from `--save-detailed` per-request TTFT/ITL) to `g4bench analyze`.
-- Add a per-run HTML/markdown report with throughput-by-concurrency and latency curves.
+1. EOS-honouring real-prompt variant (`ignore_eos: false`, D-017) — matrix + validation already supported;
+   add a CPU test and a cost estimate.
+2. Cross-run comparison report (vLLM vs SGLang at matched load) in `g4bench analyze`: per-workload ratio with
+   bootstrap CI from `stats.bootstrap_ratio`, gated on both engines passing correctness.
+3. Torch-profiler trace parsing (for E5g) against a recorded fixture.
+4. Optional: licence choice for this repository (owner decision; none added).

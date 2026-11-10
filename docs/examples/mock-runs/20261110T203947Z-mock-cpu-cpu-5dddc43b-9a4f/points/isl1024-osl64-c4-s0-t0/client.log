@@ -1,0 +1,55 @@
+[transformers] PyTorch was not found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+Namespace(backend='vllm', base_url='http://127.0.0.1:18000', host='127.0.0.1', port=8000, endpoint='/v1/completions', dataset_name='random', dataset_path=None, max_concurrency=4, model='google/gemma-4-12B-it', tokenizer='/root/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/43c9d014b231474fa7212dbb48a762566c2b255d', best_of=1, use_beam_search=False, num_prompts=8, logprobs=None, request_rate=inf, burstiness=1.0, seed=0, trust_remote_code=False, disable_tqdm=False, profile=False, save_result=True, save_detailed=True, metadata=None, result_dir='docs/examples/mock-runs/20261110T203947Z-mock-cpu-cpu-5dddc43b-9a4f/points/isl1024-osl64-c4-s0-t0', result_filename='inferencex_result.json', ignore_eos=True, percentile_metrics='ttft,tpot,itl,e2el', metric_percentiles='50,90,99,99.9', goodput=None, sonnet_input_len=550, sonnet_output_len=150, sonnet_prefix_len=200, sharegpt_output_len=None, random_input_len=1024, random_output_len=64, random_range_ratio=0.8, random_prefix_len=0, use_chat_template=True, random_num_workers=0, dsv4=False, hf_subset=None, hf_split=None, hf_output_len=None, tokenizer_mode='auto', served_model_name=None, lora_modules=None, num_warmups=4)
+Generating 8 prompts using 4 worker processes...
+Prompt generation completed in 4.1s
+-------------------  Input/Output Length Statistics  -------------------
+ input_lens : min=830   max=1016  mean=934.00   avg_token_mismatch=13.25 
+ output_lens: min=53    max=59    mean=56.38   
+------------------------------------------------------------------------ 
+
+Starting initial single prompt test run...
+Warming up with 4 requests...
+  0%|          | 0/4 [00:00<?, ?it/s]100%|██████████| 4/4 [00:00<00:00, 63.98it/s]
+Warmup completed.
+Traffic request rate: inf
+Burstiness factor: 1.0 (Poisson process)
+Maximum request concurrency: 4
+  0%|          | 0/8 [00:00<?, ?it/s]Starting main benchmark run...
+ 62%|██████▎   | 5/8 [00:00<00:00, 49.60it/s]100%|██████████| 8/8 [00:00<00:00, 67.52it/s]
+============ Serving Benchmark Result ============
+Successful requests:                     8         
+Benchmark duration (s):                  0.12      
+Total input tokens:                      7472      
+Total generated tokens:                  451       
+Request throughput (req/s):              67.47     
+Output token throughput (tok/s):         3803.34   
+Total Token throughput (tok/s):          66815.68  
+---------------Time to First Token----------------
+Mean TTFT (ms):                          28.88     
+Median TTFT (ms):                        30.68     
+P50 TTFT (ms):                           30.68     
+P90 TTFT (ms):                           34.41     
+P99 TTFT (ms):                           35.58     
+P99.9 TTFT (ms):                         35.70     
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          0.47      
+Median TPOT (ms):                        0.46      
+P50 TPOT (ms):                           0.46      
+P90 TPOT (ms):                           0.53      
+P99 TPOT (ms):                           0.58      
+P99.9 TPOT (ms):                         0.58      
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           1.45      
+Median ITL (ms):                         1.30      
+P50 ITL (ms):                            1.30      
+P90 ITL (ms):                            2.22      
+P99 ITL (ms):                            2.32      
+P99.9 ITL (ms):                          2.33      
+----------------End-to-end Latency----------------
+Mean E2EL (ms):                          55.13     
+Median E2EL (ms):                        56.68     
+P50 E2EL (ms):                           56.68     
+P90 E2EL (ms):                           59.63     
+P99 E2EL (ms):                           62.83     
+P99.9 E2EL (ms):                         63.15     
+==================================================
