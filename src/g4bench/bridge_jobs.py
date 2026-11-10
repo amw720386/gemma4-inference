@@ -15,16 +15,35 @@ DEADLINE_HEADROOM_S = 120.0
 
 
 def guarded(fn: Callable[[dict[str, Any]], dict[str, Any]], spec: dict[str, Any],
-            clock: Callable[[], float] = time.time) -> dict[str, Any]:
-    """Never raise (so poll errors are only platform-level); refuse to start after the reservation deadline."""
+            clock: Callable[[], float] = time.time, *, hard_kill: bool = False) -> dict[str, Any]:
+    """Run a worker body under the reservation's time bounds.
+
+    * refuse to start after ``start_deadline_unix`` (= reserved_at + startup margin), so start + Modal timeout can
+      never pass the reservation's ``deadline_unix`` - this is what makes worst-case settlement a true bound;
+    * ordinary exceptions are returned as ``{"error": ...}`` (a finished call with an error payload); cancellation /
+      interrupts (BaseException) propagate so Modal can terminate the input;
+    * ``hard_kill``: arm a timer that ``os._exit``s the process at ``deadline_unix`` (production only).
+    """
     started = clock()
-    if spec.get("deadline_unix") and started > float(spec["deadline_unix"]):
-        return {"aborted": "started after reservation deadline (restart/preemption?)", "started_unix": started,
-                "ended_unix": clock(), "job_id": spec.get("job_id")}
+    start_by = spec.get("start_deadline_unix", spec.get("deadline_unix"))
+    if start_by and started > float(start_by):
+        return {"aborted": "started after reservation start deadline (queue delay/restart/preemption?)",
+                "started_unix": started, "ended_unix": clock(), "job_id": spec.get("job_id")}
+    timer = None
+    if hard_kill and spec.get("deadline_unix"):
+        import os
+        import threading
+
+        timer = threading.Timer(max(float(spec["deadline_unix"]) - time.time(), 0.0), lambda: os._exit(70))
+        timer.daemon = True
+        timer.start()
     try:
         out = fn(spec)
-    except BaseException as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         out = {"error": repr(e)[:4000]}
+    finally:
+        if timer is not None:
+            timer.cancel()
     out.update(started_unix=started, ended_unix=clock(), job_id=spec.get("job_id"))
     return out
 

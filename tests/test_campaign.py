@@ -99,3 +99,23 @@ def test_campaign_files_reference_allowlisted_configs():
             if st["kind"] == "job":
                 assert st["spec"]["engine"] in ALLOWED_ENGINES and st["spec"]["matrix"] in ALLOWED_MATRICES
                 assert st["spec"]["max_usd"] <= 2.0
+
+
+def test_campaign_stops_polling_after_deadline_grace(tmp_path):
+    be = FakeBackend()
+    d = Driver(be, GOOD)
+    t = [be.clock[0]]
+
+    def never_finish(method, path, json=None):
+        r = d.c.request(method, path, json=json)
+        if r.status_code >= 400:
+            raise C.CampaignStop(r.text)
+        return r.json()
+
+    steps = {"name": "x", "require": E1["require"], "steps": [E1["steps"][2]]}
+
+    def sleep(s):
+        t[0] += s
+
+    outs = C.run(steps, never_finish, execute=True, sleep=sleep, ledger=None, now=lambda: t[0], poll_s=600)
+    assert outs[-1].status == "failed" and "stopped polling" in outs[-1].detail

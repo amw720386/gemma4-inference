@@ -93,3 +93,42 @@ def test_worker_refuses_after_deadline_and_wall_budget_is_bounded(tmp_path):
     res = run_job({"engine": "mock-cpu", "matrix": "mock-ci", "seeds": [0], "max_wall_s": 9999,
                    "deadline_unix": time.time() + 10}, tmp_path, correctness=False, tokenizer="unused")
     assert res["n_valid"] == 0 and res["n_points"] == 2
+
+
+def test_guard_uses_start_deadline_and_propagates_cancellation():
+    now = time.time()
+    out = guarded(lambda s: {"ran": True}, {"start_deadline_unix": now - 1, "deadline_unix": now + 1000})
+    assert "aborted" in out and "ran" not in out
+    ok = guarded(lambda s: {"ran": True}, {"start_deadline_unix": now + 100, "deadline_unix": now + 1000})
+    assert ok["ran"]
+
+    class FakeCancel(BaseException):
+        pass
+
+    def body(s):
+        raise FakeCancel()
+
+    with pytest.raises(FakeCancel):
+        guarded(body, {"start_deadline_unix": now + 100})
+
+
+def test_modal_poll_classification_with_real_exception_classes(monkeypatch):
+    modal = pytest.importorskip("modal")
+    import modal.exception as me
+    import sys
+    from g4bench.paths import REPO
+
+    sys.path.insert(0, str(REPO / "modal_bridge"))
+    import app as bridge_app  # noqa: PLC0415
+
+    cases = [(me.TimeoutError(), "running"), (TimeoutError(), "running"), (me.FunctionTimeoutError("t"), "failed"),
+             (me.OutputExpiredError(), "expired"), (me.RemoteError("terminated"), "failed"),
+             (me.InternalFailure("x"), "failed"), (me.ExecutionError("crash"), "failed"),
+             (me.ConnectionError("net"), "unknown"), (OSError("reset"), "unknown")]
+    for exc, want in cases:
+        class FC:
+            def get(self, timeout=None, _e=exc):
+                raise _e
+
+        monkeypatch.setattr(modal.FunctionCall, "from_id", staticmethod(lambda cid, _fc=FC(): _fc))
+        assert bridge_app.ModalBackend().poll("fc-x")[0] == want, type(exc).__name__
