@@ -125,3 +125,9 @@ SGLang v0.5.23 (`arg_groups/fields/*.py` field names, `cli_name`, `aliases`), co
 (`configs/engine_flags/`), and the runner refuses to start a server whose argv (incl. `--extra-server-arg`) has an
 unknown flag. Result on 2026-11-10: all four real engine configs clean (344 vLLM / 562 SGLang flags known). Limits:
 static existence only — it cannot catch invalid *values* or runtime incompatibilities (that is what E1 smoke is for).
+
+**D-024 (2026-11-10) The paid worker body is CPU-rehearsed.** `_guarded`/`_run_job` moved from `modal_bridge/app.py` into
+`g4bench/bridge_jobs.py` (app.py keeps only Volume reload/commit). `tests/test_bridge_rehearsal.py` drives the real
+HTTP API → ledger → worker body → runner on the mock engine → poll → settle path, so job-spec/RunOptions mismatches
+and deadline/wall-budget handling are exercised for free. Test-only allowlist overrides live in `BridgeConfig`;
+production allowlists are unchanged.

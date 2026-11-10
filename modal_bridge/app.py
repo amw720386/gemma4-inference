@@ -116,44 +116,24 @@ def _commit_loop(stop: "threading.Event") -> None:  # noqa: F821
 
 
 def _guarded(fn, spec: dict) -> dict:
-    """Never raise (so poll errors are only Modal-level); refuse to run past the reservation's deadline."""
-    started = time.time()
-    if spec.get("deadline_unix") and started > float(spec["deadline_unix"]):
-        return {"aborted": "started after reservation deadline (restart/preemption?)", "started_unix": started,
-                "ended_unix": time.time()}
-    try:
-        out = fn(spec)
-    except BaseException as e:  # noqa: BLE001
-        out = {"error": repr(e)[:4000]}
-    out.update(started_unix=started, ended_unix=time.time(), job_id=spec.get("job_id"))
-    return out
+    from g4bench.bridge_jobs import guarded
+
+    return guarded(fn, spec)
 
 
 def _run_job(spec: dict) -> dict:
     import threading
 
-    from g4bench.runner import RunOptions, run
+    from g4bench.bridge_jobs import run_job
 
     hf_vol.reload()
-    remaining = float(spec["deadline_unix"]) - time.time() - 120
     stop = threading.Event()
     threading.Thread(target=_commit_loop, args=(stop,), daemon=True).start()
     try:
-        run_dir = run(RunOptions(
-            engine=spec["engine"], matrix=spec["matrix"], seeds=spec.get("seeds"), trials=spec.get("trials"),
-            only_keys=spec.get("only"), results_root=pathlib.Path(RESULTS_MOUNT) / "runs",
-            max_wall_s=max(min(float(spec["max_wall_s"]), remaining), 0.0), notes=spec.get("notes", ""),
-            dry_run=bool(spec.get("dry_run")),
-        ))
+        return run_job(spec, pathlib.Path(RESULTS_MOUNT) / "runs")
     finally:
         stop.set()
         res_vol.commit()
-    rows = []
-    f = run_dir / "results.jsonl"
-    if f.exists():
-        rows = [json.loads(x) for x in f.read_text().splitlines() if x.strip()]
-    return {"run_id": run_dir.name, "n_points": len(rows), "n_valid": sum(1 for r in rows if r.get("valid")),
-            "rows": rows}
 
 
 _gpu_kw = dict(gpu=GPU_JOB.gpu, timeout=GPU_DEFAULT_TIMEOUT_S, volumes={HF_HOME: hf_vol, RESULTS_MOUNT: res_vol},

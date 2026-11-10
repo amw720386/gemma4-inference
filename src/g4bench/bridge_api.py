@@ -56,6 +56,8 @@ class BridgeConfig:
     app_name: str = "g4repro-bridge"
     estimator: Callable[[dict[str, Any]], dict[str, Any]] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    allowed_engines: dict[str, str] | None = None   # tests only (e.g. the mock engine); production uses defaults
+    allowed_matrices: set[str] | None = None
 
 
 def default_estimator(spec: dict[str, Any]) -> dict[str, Any]:
@@ -66,7 +68,7 @@ def default_estimator(spec: dict[str, Any]) -> dict[str, Any]:
     pts = expand(mat, seeds=spec.get("seeds"), trials=spec.get("trials"), only_keys=spec.get("only"))
     if not pts:
         raise ValueError("no points selected")
-    kind = ALLOWED_ENGINES[spec["engine"]]
+    kind = ALLOWED_ENGINES.get(spec["engine"], "vllm")
     e = estimate(pts, spec["gpu"].rstrip("!"), fresh_server_per_point=bool(mat.get("fresh_server_per_point", True)),
                  tok_s_ref="sglang" if kind == "sglang" else "vllm")
     return {"points": len(pts), "est_gpu_s": round(e.gpu_seconds), "summary": e.summary()}
@@ -79,6 +81,8 @@ def build_api(backend: Backend, cfg: BridgeConfig):
 
     api = FastAPI(title="g4repro bridge")
     estimator = cfg.estimator or default_estimator
+    engines = cfg.allowed_engines or ALLOWED_ENGINES
+    matrices = cfg.allowed_matrices or ALLOWED_MATRICES
 
     class JobSpec(BaseModel):
         engine: str
@@ -135,9 +139,9 @@ def build_api(backend: Backend, cfg: BridgeConfig):
                 "timeout_s": timeout_s, "deadline_unix": job["deadline_unix"]}
 
     def _plan(spec: JobSpec) -> dict[str, Any]:
-        if spec.engine not in ALLOWED_ENGINES:
+        if spec.engine not in engines:
             raise HTTPException(400, f"engine not allowed: {spec.engine}")
-        if spec.matrix not in ALLOWED_MATRICES:
+        if spec.matrix not in matrices:
             raise HTTPException(400, f"matrix not allowed: {spec.matrix}")
         if spec.gpu not in ALLOWED_GPUS:
             raise HTTPException(400, f"gpu not allowed: {spec.gpu}")
@@ -162,8 +166,8 @@ def build_api(backend: Backend, cfg: BridgeConfig):
             snap, ledger_ok = {}, False
         return {"ok": ledger_ok, "app": cfg.app_name, "ledger_ok": ledger_ok, "cap_usd": cfg.cap_usd,
                 "per_job_cap_usd": cfg.per_job_cap_usd, "max_active": cfg.max_active,
-                "available_usd": snap.get("available_usd"), "engines": sorted(ALLOWED_ENGINES),
-                "matrices": sorted(ALLOWED_MATRICES), "gpus": sorted(ALLOWED_GPUS), **cfg.extra}
+                "available_usd": snap.get("available_usd"), "engines": sorted(engines),
+                "matrices": sorted(matrices), "gpus": sorted(ALLOWED_GPUS), **cfg.extra}
 
     @api.get("/budget")
     def get_budget():
@@ -181,7 +185,7 @@ def build_api(backend: Backend, cfg: BridgeConfig):
             raise HTTPException(402, f"estimated {p['est_gpu_s']} s does not fit the {p['timeout_s']} s that a "
                                      f"${p['reservation_cap_usd']:.2f} reservation buys at ${p['rate_usd_s']*3600:.2f}/h; "
                                      "split the job with `only` or seeds")
-        kind = "gpu:" + ALLOWED_ENGINES[spec.engine]
+        kind = "gpu:" + engines[spec.engine]
         out = _launch(kind, GPU_JOB, spec.model_dump(), gpu=spec.gpu, timeout_s=p["timeout_s"],
                       meta={"engine": spec.engine, "matrix": spec.matrix, "gpu": spec.gpu, "points": p["points"],
                             "est_gpu_s": p["est_gpu_s"], "notes": spec.notes})
