@@ -14,7 +14,8 @@ from .paths import RESULTS
 AGG_METRICS = ["output_throughput", "mean_ttft_ms", "median_ttft_ms", "p90_ttft_ms", "p99_ttft_ms",
                "mean_tpot_ms", "median_tpot_ms", "p90_tpot_ms", "p99_tpot_ms", "mean_e2el_ms",
                "median_e2el_ms", "p90_e2el_ms", "p99_e2el_ms", "speed_per_user_tok_s",
-               "spec_acceptance_length", "failure_rate", "gpu_mem_peak_mib", "gpu_power_mean_w"]
+               "spec_acceptance_length", "failure_rate", "gpu_mem_peak_mib", "gpu_power_mean_w",
+               "req_littles_law_rel_gap"]
 
 
 def load_all(root: Path = RESULTS / "runs", include_mock: bool = False) -> list[dict[str, Any]]:
@@ -37,13 +38,16 @@ def reference_engine(engine: str | None) -> str | None:
 def run(root: Path = RESULTS / "runs", out: Path = RESULTS / "summary", include_mock: bool = False) -> dict[str, Any]:
     rows = load_all(root, include_mock)
     out.mkdir(parents=True, exist_ok=True)
+    for r in rows:  # schema v1 rows predate the dataset column
+        r.setdefault("dataset", "random")
     agg = stats.aggregate(rows, AGG_METRICS, keys=("engine", "engine_config", "config_hash", "hardware_class",
-                                                    "exact_hardware", "isl", "osl", "conc"))
+                                                    "exact_hardware", "dataset", "isl", "osl", "conc"))
     _write_csv(out / "aggregate.csv", agg)
     comps: list[dict[str, Any]] = []
     for r in agg:
         for ref in {reference_engine(r.get("engine")), "backboard"} - {None}:
-            if r.get("osl") != 1024:
+            # Only the article's own workload (random tokens, OSL 1024, exact hardware) is comparable.
+            if r.get("osl") != 1024 or r.get("dataset") != "random" or not r.get("exact_hardware"):
                 continue
             comps += compare.compare([r], ref)
     _write_csv(out / "comparison.csv", comps)

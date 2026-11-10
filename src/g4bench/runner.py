@@ -82,8 +82,11 @@ def run(opts: RunOptions) -> Path:
     server_argv = eng.launcher() + eng.render_args(values) + list(opts.extra_server_args or [])
     model_name = opts.model_name or pins["model"]["target"]["repo"]
 
+    # Fail fast (before any run dir, server or GPU time): every real-prompt set must exist and re-verify.
+    ds_files = check_datasets(points)
     run_dir.mkdir(parents=True, exist_ok=False)
     manifest = {
+        "datasets": {k: v[1] for k, v in ds_files.items()},
         "run_id": run_id, "config_hash": chash, "engine_config": eng.raw, "matrix": mat,
         "pins": pins, "server_argv": server_argv, "points": [p.to_dict() for p in points],
         "cost_estimate": {"usd": est.usd, "gpu_seconds": est.gpu_seconds, "summary": est.summary()},
@@ -124,7 +127,8 @@ def run(opts: RunOptions) -> Path:
                     continue
             _run_point(run_dir, pdir, p, eng=eng, base_url=base_url, model=model_name, tokenizer=tokenizer,
                        chash=chash, run_id=run_id, meta=meta, start_s=start_s, server=server,
-                       timeout_s=opts.client_timeout_s, notes=opts.notes)
+                       timeout_s=opts.client_timeout_s, notes=opts.notes,
+                       dataset_file=ds_files.get(p.dataset, (None,))[0])
             if i == 0 and opts.correctness:
                 # After the first measured point, so the gate never perturbs a measurement.
                 _correctness(run_dir, base_url, model_name)
@@ -132,15 +136,46 @@ def run(opts: RunOptions) -> Path:
     finally:
         if server is not None:
             server.stop()
+        try:
+            from . import report
+
+            report.write(run_dir)
+        except Exception as e:  # noqa: BLE001 - a report bug must never lose results
+            print(f"[g4bench] report generation failed: {e!r}", flush=True)
     return run_dir
+
+
+class DatasetError(SystemExit):
+    pass
+
+
+def check_datasets(points: list[Point]) -> dict[str, tuple[Path, dict[str, Any]]]:
+    """Map dataset name -> (verified file, provenance summary). Raises before any server starts."""
+    from .datasets import dataset_path
+    from .speedbench import ProvenanceError, load_prepared
+
+    out: dict[str, tuple[Path, dict[str, Any]]] = {}
+    for name in sorted({p.dataset for p in points} - {"random"}):
+        f = dataset_path(name)
+        if not f.exists():
+            raise DatasetError(f"dataset {name!r} not prepared at {f}; run `g4bench speedbench prepare`")
+        try:
+            rows, prov = load_prepared(f)
+        except ProvenanceError as e:
+            raise DatasetError(f"dataset {name!r} failed verification: {e}") from e
+        if name == "speedbench-coding" and not prov.get("matches_inferencex_digest"):
+            raise DatasetError("speedbench-coding does not match InferenceX's PROMPTS_SHA256")
+        out[name] = (f, {k: prov.get(k) for k in ("dataset", "n_prompts", "prompt_digest", "file_sha256",
+                                                  "matches_inferencex_digest", "SUBSET_WARNING")})
+    return out
 
 
 def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_url: str, model: str,
                tokenizer: str, chash: str, run_id: str, meta: dict, start_s: float | None,
-               server: Server, timeout_s: float, notes: str) -> dict[str, Any]:
+               server: Server, timeout_s: float, notes: str, dataset_file: Path | None = None) -> dict[str, Any]:
     result_path = pdir / "inferencex_result.json"
     argv = client_argv(p, base_url=base_url, model=model, backend=eng.client_backend, result=result_path,
-                       tokenizer=tokenizer, endpoint=eng.endpoint)
+                       tokenizer=tokenizer, endpoint=eng.endpoint, dataset_file=dataset_file)
     (pdir / "client_argv.json").write_text(json.dumps(argv))
     before = promscrape.scrape(base_url)
     sampler = GpuSampler(pdir / "gpu_samples.csv")
@@ -171,7 +206,8 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
     if result_path.exists():
         raw = json.loads(result_path.read_text())
         rec = results.normalize(raw, context=ctx)
-        problems = results.validate(rec, osl=p.osl, range_ratio=p.random_range_ratio)
+        problems = results.validate(rec, osl=p.osl, range_ratio=p.random_range_ratio, ignore_eos=p.ignore_eos,
+                                    real_prompts=p.dataset != "random")
     else:
         rec = results.normalize({}, context=ctx)
         rec["status"] = "no-result"

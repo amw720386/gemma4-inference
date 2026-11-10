@@ -40,11 +40,11 @@ SGLANG_IMAGE = "lmsysorg/sglang@sha256:f7876bef696ccf9cf75a2bf7ccb82970f5fac577f
 
 IGNORE = [".git", ".venv", "**/__pycache__", "results/runs", "results/scratch", "*.pyc"]
 ENV = {"PYTHONPATH": f"{REPO_REMOTE}/src", "HF_HOME": HF_HOME, "HF_HUB_ENABLE_HF_TRANSFER": "0",
-       "TOKENIZERS_PARALLELISM": "false"}
+       "TOKENIZERS_PARALLELISM": "false", "G4_DATA_DIR": f"{HF_HOME}/g4data/speedbench"}
 
 ALLOWED_ENGINES = {"vllm-0.33.0-mtp4": "vllm", "vllm-0.33.0-mtp4-textonly": "vllm", "vllm-0.33.0-nospec": "vllm",
                    "sglang-0.5.23-nextn": "sglang"}
-ALLOWED_MATRICES = {"smoke", "backboard-repro"}
+ALLOWED_MATRICES = {"smoke", "backboard-repro", "speedbench-coding", "speedbench-tp"}
 ALLOWED_GPUS = {"RTX-PRO-6000", "L40S", "A100-80GB", "H100!", "H200", "B200"}
 HARD_TIMEOUT_S = 6 * 3600
 
@@ -63,7 +63,7 @@ bridge_image = (modal.Image.debian_slim(python_version="3.13")
                 # Exactly the versions the CPU test-suite passed with (see STATUS.md).
                 .pip_install("fastapi[standard]==0.162.4", "pyyaml==6.0.3", "numpy==2.5.4", "requests==2.34.2",
                              "huggingface_hub==2.4.0", "aiohttp==3.14.5", "transformers==5.22.2", "tqdm==4.70.1",
-                             "jinja2==3.1.6", "pytest==9.2.0")
+                             "jinja2==3.1.6", "pytest==9.2.0", "pyarrow==26.0.1")
                 .env(ENV).add_local_dir(str(REPO_LOCAL), REPO_REMOTE, ignore=IGNORE))
 
 hf_vol = modal.Volume.from_name("g4repro-hf-cache", create_if_missing=True)
@@ -123,7 +123,8 @@ def run_sglang(spec: dict) -> dict:
 
 @app.function(image=bridge_image, timeout=3600, volumes={HF_HOME: hf_vol}, cpu=2.0, memory=4096)
 def prefetch_weights() -> dict:
-    """CPU-only: download pinned target + draft snapshots into the HF cache Volume."""
+    """CPU-only: download pinned target + draft snapshots, and prepare + verify the SPEED-Bench
+    prompt sets, into the HF cache Volume (so GPU containers never download anything big)."""
     from huggingface_hub import snapshot_download
 
     from g4bench.config import load_pins
@@ -135,6 +136,14 @@ def prefetch_weights() -> dict:
         t0 = time.time()
         path = snapshot_download(m["repo"], revision=m["revision"])
         out[role] = {"repo": m["repo"], "revision": m["revision"], "path": path, "seconds": round(time.time() - t0, 1)}
+    from g4bench import speedbench
+
+    data, cache = pathlib.Path(os.environ["G4_DATA_DIR"]), pathlib.Path(HF_HOME) / "g4data" / "cache"
+    out["speedbench"] = {
+        "tp1k": speedbench.prepare_throughput_inline("throughput_1k", data, cache)["prompt_digest"],
+        "tp8k": speedbench.prepare_throughput_inline("throughput_8k", data, cache)["prompt_digest"],
+        "coding": speedbench.prepare_coding(data, cache)["prompt_digest"],  # raises unless InferenceX digest
+    }
     hf_vol.commit()
     return out
 

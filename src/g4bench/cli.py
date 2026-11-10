@@ -44,6 +44,14 @@ def main(argv: list[str] | None = None) -> int:
                    help="append one raw server argv token (repeatable); changes config hash via notes only, "
                         "so ALSO set --notes")
 
+    rp = sub.add_parser("report", help="(re)generate REPORT.md + throughput.svg for one run directory")
+    rp.add_argument("run_dir", type=Path)
+
+    sb = sub.add_parser("speedbench", help="prepare/verify SPEED-Bench real-prompt sets (CPU, network)")
+    sb.add_argument("action", choices=["prepare", "verify"])
+    sb.add_argument("--which", default="all", choices=["all", "coding", "tp1k", "tp8k"])
+    sb.add_argument("--cache", type=Path, default=Path(".cache/speedbench"))
+
     a = sub.add_parser("analyze", help="aggregate all runs and compare to article targets")
     a.add_argument("--root", type=Path)
     a.add_argument("--out", type=Path)
@@ -104,6 +112,31 @@ def main(argv: list[str] | None = None) -> int:
                            max_wall_s=args.max_wall_s, tokenizer=args.tokenizer, model_name=args.model_name,
                            extra_server_args=args.extra_server_arg, dry_run=args.dry_run, notes=args.notes, **kw))
         print(str(d))
+        return 0
+
+    if args.cmd == "report":
+        from . import report
+
+        print(report.write(args.run_dir))
+        return 0
+
+    if args.cmd == "speedbench":
+        from . import speedbench
+        from .datasets import data_dir, dataset_path
+
+        out = data_dir()
+        names = {"coding": "speedbench-coding", "tp1k": "speedbench-tp1k-inline", "tp8k": "speedbench-tp8k-inline"}
+        which = list(names) if args.which == "all" else [args.which]
+        res: dict = {}
+        for w in which:
+            if args.action == "prepare":
+                prov = (speedbench.prepare_coding(out, args.cache) if w == "coding" else
+                        speedbench.prepare_throughput_inline({"tp1k": "throughput_1k", "tp8k": "throughput_8k"}[w],
+                                                             out, args.cache))
+            else:
+                _, prov = speedbench.load_prepared(dataset_path(names[w]))
+            res[names[w]] = {k: prov.get(k) for k in ("n_prompts", "prompt_digest", "matches_inferencex_digest")}
+        print(json.dumps(res, indent=2))
         return 0
 
     if args.cmd == "analyze":
