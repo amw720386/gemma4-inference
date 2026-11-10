@@ -140,3 +140,16 @@ def test_check_limits_passes_on_fresh_correct_server_and_fails_closed():
 
     with pytest.raises(C.CampaignStop):
         C.check_limits(broken, {"cap_usd": 10.0, "per_job_cap_usd_max": 2.0, "max_active": 1}, need_usd=0.0)
+
+
+def test_stale_bridge_without_safety_features_is_refused():
+    d = Driver(FakeBackend(), GOOD)
+
+    def stale(method, path, json=None):  # an old deploy: /health without the features list
+        out = d(method, path, json=json)
+        if path == "/health":
+            out = {k: v for k, v in out.items() if k != "features"}
+        return out
+
+    with pytest.raises(C.CampaignStop, match="lacks safety features"):
+        C.check_limits(stale, {"cap_usd": 10.0, "per_job_cap_usd_max": 2.0, "max_active": 1}, need_usd=0.0)

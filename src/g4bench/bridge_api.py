@@ -24,6 +24,9 @@ ALLOWED_ENGINES = {"vllm-0.33.0-mtp4": "vllm", "vllm-0.33.0-mtp4-textonly": "vll
 ALLOWED_MATRICES = {"smoke", "backboard-repro", "speedbench-coding", "speedbench-tp"}
 ALLOWED_GPUS = {"RTX-PRO-6000", "L40S", "A100-80GB", "H100!", "H200", "B200"}
 TERMINAL = {"finished", "failed", "cancelled", "expired"}
+# Safety features this code provides; clients refuse bridges that lack any of REQUIRED_FEATURES (stale deploys).
+FEATURES = ["ledger-cas-commit", "platform-metering", "orphan-worst-case", "poll-terminal-v2", "start-deadline-guard",
+            "py312-thread-fix"]
 
 
 @dataclass(frozen=True)
@@ -200,7 +203,7 @@ def build_api(backend: Backend, cfg: BridgeConfig):
             ledger_ok = True
         except Exception:  # noqa: BLE001
             snap, ledger_ok = {}, False
-        return {"ok": ledger_ok, "app": cfg.app_name, "ledger_ok": ledger_ok, "cap_usd": cfg.cap_usd,
+        return {"ok": ledger_ok, "app": cfg.app_name, "ledger_ok": ledger_ok, "features": FEATURES, "cap_usd": cfg.cap_usd,
                 "per_job_cap_usd": cfg.per_job_cap_usd, "max_active": cfg.max_active,
                 "available_usd": snap.get("available_usd"), "engines": sorted(engines),
                 "matrices": sorted(matrices), "gpus": sorted(ALLOWED_GPUS), **cfg.extra}

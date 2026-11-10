@@ -58,11 +58,29 @@ PLATFORM_RESERVE_USD = float(os.environ.get("G4_PLATFORM_RESERVE_USD", "0.50"))
 LEDGER_CFG = B.LedgerConfig(cap_usd=PROJECT_CAP_USD, platform_reserve_usd=PLATFORM_RESERVE_USD,
                             per_job_cap_usd=PER_JOB_CAP_USD, max_active=MAX_ACTIVE)
 
+def _code_sha() -> str:
+    if os.environ.get("G4_CODE_SHA"):
+        return os.environ["G4_CODE_SHA"]
+    import subprocess
+
+    try:
+        sha = subprocess.run(["git", "-C", str(REPO_LOCAL), "rev-parse", "HEAD"], capture_output=True, text=True,
+                             timeout=10).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(REPO_LOCAL), "status", "--porcelain"], capture_output=True, text=True,
+                               timeout=10).stdout.strip()
+        return (sha + ("-dirty" if dirty else "")) if sha else "unknown"
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+
+
+CODE_SHA = _code_sha()  # baked into the image env at deploy time; reported by /health
+
 IGNORE = [".git", ".venv", "**/__pycache__", "results/runs", "results/scratch", "*.pyc", ".cache", "data/speedbench/*.jsonl"]
 ENV = {"PYTHONPATH": f"{REPO_REMOTE}/src", "HF_HOME": HF_HOME, "HF_HUB_ENABLE_HF_TRANSFER": "0",
        "TOKENIZERS_PARALLELISM": "false", "G4_DATA_DIR": f"{HF_HOME}/g4data/speedbench",
        "G4_PROJECT_CAP_USD": str(PROJECT_CAP_USD), "G4_PER_JOB_CAP_USD": str(PER_JOB_CAP_USD),
-       "G4_BRIDGE_MAX_ACTIVE": str(MAX_ACTIVE), "G4_PLATFORM_RESERVE_USD": str(PLATFORM_RESERVE_USD)}
+       "G4_BRIDGE_MAX_ACTIVE": str(MAX_ACTIVE), "G4_PLATFORM_RESERVE_USD": str(PLATFORM_RESERVE_USD),
+       "G4_CODE_SHA": CODE_SHA}
 
 # GPU job default timeout = the longest a per-job-cap reservation can buy (spawns pass a tighter one).
 GPU_DEFAULT_TIMEOUT_S = B.timeout_for_budget(GPU_JOB.rate(), PER_JOB_CAP_USD)
@@ -270,5 +288,5 @@ class ModalBackend:
 def bridge():
     return build_api(ModalBackend(), BridgeConfig(
         cap_usd=PROJECT_CAP_USD, per_job_cap_usd=PER_JOB_CAP_USD, max_active=MAX_ACTIVE, app_name=APP_NAME,
-        extra={"platform_reserve_usd": PLATFORM_RESERVE_USD, "gpu_default_timeout_s": GPU_DEFAULT_TIMEOUT_S,
+        extra={"code_sha": CODE_SHA, "platform_reserve_usd": PLATFORM_RESERVE_USD, "gpu_default_timeout_s": GPU_DEFAULT_TIMEOUT_S,
                "billing_note": B.DISCLAIMER}))
