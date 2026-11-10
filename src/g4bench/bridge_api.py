@@ -26,7 +26,7 @@ ALLOWED_GPUS = {"RTX-PRO-6000", "L40S", "A100-80GB", "H100!", "H200", "B200"}
 TERMINAL = {"finished", "failed", "cancelled", "expired"}
 # Safety features this code provides; clients refuse bridges that lack any of REQUIRED_FEATURES (stale deploys).
 FEATURES = ["ledger-cas-commit", "platform-metering", "orphan-worst-case", "poll-terminal-v2", "start-deadline-guard",
-            "py312-thread-fix"]
+            "py312-thread-fix", "run-file-listing"]
 
 
 @dataclass(frozen=True)
@@ -53,6 +53,7 @@ class Backend(Protocol):
     def poll(self, call_id: str) -> tuple[str, Any]: ...
     def cancel(self, call_id: str) -> None: ...
     def list_runs(self) -> list[str]: ...
+    def list_run_files(self, run_id: str) -> list[dict[str, Any]] | None: ...
     def read_run_file(self, run_id: str, path: str) -> str | None: ...
 
 
@@ -258,6 +259,13 @@ def build_api(backend: Backend, cfg: BridgeConfig):
     @api.get("/runs")
     def runs():
         return backend.list_runs()
+
+    @api.get("/runfiles/{run_id}")
+    def run_files(run_id: str):
+        files = backend.list_run_files(run_id)
+        if files is None:
+            raise HTTPException(404, "unknown run")
+        return files
 
     @api.get("/runs/{run_id}/{path:path}", response_class=PlainTextResponse)
     def run_file(run_id: str, path: str):

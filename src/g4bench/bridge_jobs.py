@@ -65,3 +65,23 @@ def run_job(spec: dict[str, Any], results_root: Path, clock: Callable[[], float]
         rows = [json.loads(x) for x in f.read_text().splitlines() if x.strip()]
     return {"run_id": run_dir.name, "n_points": len(rows), "n_valid": sum(1 for r in rows if r.get("valid")),
             "rows": rows}
+
+
+MAX_FETCH_BYTES = 20_000_000
+
+
+def list_run_files(runs_root: Path, run_id: str) -> list[dict[str, Any]] | None:
+    """All regular files of one run (relative path + size), or None if the run does not exist / escapes the root."""
+    root = (Path(runs_root) / run_id).resolve()
+    if Path(runs_root).resolve() not in root.parents or not root.is_dir():
+        return None
+    return [{"path": str(f.relative_to(root)), "bytes": f.stat().st_size}
+            for f in sorted(root.rglob("*")) if f.is_file()]
+
+
+def read_run_file(runs_root: Path, run_id: str, path: str) -> str | None:
+    root = (Path(runs_root) / run_id).resolve()
+    f = (root / path).resolve()
+    if root not in f.parents or not f.is_file() or f.stat().st_size > MAX_FETCH_BYTES:
+        return None
+    return f.read_text(errors="replace")
