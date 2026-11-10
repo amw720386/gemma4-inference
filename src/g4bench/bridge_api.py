@@ -15,10 +15,18 @@ from typing import Any, Callable, Protocol
 from . import budget as B
 
 ALLOWED_ENGINES = {"vllm-0.33.0-mtp4": "vllm", "vllm-0.33.0-mtp4-textonly": "vllm", "vllm-0.33.0-nospec": "vllm",
-                   "sglang-0.5.23-nextn": "sglang"}
+                   "sglang-0.5.23-nextn": "sglang",
+                   # E5/E6 variants (flag-checked against pinned sources; D-034)
+                   "vllm-0.33.0-mtp2": "vllm", "vllm-0.33.0-mtp3": "vllm", "vllm-0.33.0-mtp5": "vllm",
+                   "vllm-0.33.0-mtp6": "vllm", "vllm-0.33.0-mtp-bsched": "vllm", "vllm-0.33.0-mtp4-draftfp8": "vllm",
+                   "sglang-0.5.23-nextn3": "sglang", "sglang-0.5.23-nextn4": "sglang",
+                   "sglang-0.5.23-nextn-adaptive": "sglang"}
 ALLOWED_MATRICES = {"smoke", "backboard-repro", "speedbench-coding", "speedbench-tp"}
 ALLOWED_GPUS = {"RTX-PRO-6000", "L40S", "A100-80GB", "H100!", "H200", "B200"}
 TERMINAL = {"finished", "failed", "cancelled", "expired"}
+# Safety features this code provides; clients refuse bridges that lack any of REQUIRED_FEATURES (stale deploys).
+FEATURES = ["ledger-cas-commit", "platform-metering", "orphan-worst-case", "poll-terminal-v2", "start-deadline-guard",
+            "py312-thread-fix"]
 
 
 @dataclass(frozen=True)
@@ -56,6 +64,8 @@ class BridgeConfig:
     app_name: str = "g4repro-bridge"
     estimator: Callable[[dict[str, Any]], dict[str, Any]] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    allowed_engines: dict[str, str] | None = None   # tests only (e.g. the mock engine); production uses defaults
+    allowed_matrices: set[str] | None = None
 
 
 def default_estimator(spec: dict[str, Any]) -> dict[str, Any]:
@@ -66,7 +76,7 @@ def default_estimator(spec: dict[str, Any]) -> dict[str, Any]:
     pts = expand(mat, seeds=spec.get("seeds"), trials=spec.get("trials"), only_keys=spec.get("only"))
     if not pts:
         raise ValueError("no points selected")
-    kind = ALLOWED_ENGINES[spec["engine"]]
+    kind = ALLOWED_ENGINES.get(spec["engine"], "vllm")
     e = estimate(pts, spec["gpu"].rstrip("!"), fresh_server_per_point=bool(mat.get("fresh_server_per_point", True)),
                  tok_s_ref="sglang" if kind == "sglang" else "vllm")
     return {"points": len(pts), "est_gpu_s": round(e.gpu_seconds), "summary": e.summary()}
@@ -79,6 +89,19 @@ def build_api(backend: Backend, cfg: BridgeConfig):
 
     api = FastAPI(title="g4repro bridge")
     estimator = cfg.estimator or default_estimator
+
+    @api.middleware("http")
+    async def meter(request, call_next):
+        # Every request keeps the bridge (and ledger) containers warm: meter it into the ledger (D-030).
+        import anyio
+
+        try:
+            await anyio.to_thread.run_sync(lambda: backend.ledger("touch"))
+        except Exception:  # noqa: BLE001 - paid endpoints fail closed on their own ledger calls
+            pass
+        return await call_next(request)
+    engines = cfg.allowed_engines or ALLOWED_ENGINES
+    matrices = cfg.allowed_matrices or ALLOWED_MATRICES
 
     class JobSpec(BaseModel):
         engine: str
@@ -114,30 +137,50 @@ def build_api(backend: Backend, cfg: BridgeConfig):
 
     def _reconcile() -> None:
         for j in list(_ledger("snapshot")["active"].values()):
+            if j["state"] == "reserved" and not j.get("call_id"):
+                try:  # ambiguous spawn / lost attach: settles at full reservation once its deadline has passed
+                    backend.ledger("settle_orphan", job_id=j["job_id"])
+                except B.LedgerStateError:
+                    pass  # too early: keep holding
+                continue
             _refresh(j)
 
     def _launch(kind: str, res: Resources, payload: dict[str, Any], *, gpu: str | None, timeout_s: int,
-                meta: dict[str, Any]) -> dict[str, Any]:
+                meta: dict[str, Any], ceiling_usd: float | None = None) -> dict[str, Any]:
         rate = res.rate(gpu)
         worst = B.worst_case_usd(rate, timeout_s)
         _reconcile()
-        usd = min(cfg.per_job_cap_usd, math.ceil(worst * 100) / 100)  # >= worst because timeout_s was floored
+        ceiling = min(cfg.per_job_cap_usd, ceiling_usd if ceiling_usd is not None else cfg.per_job_cap_usd)
+        usd = min(ceiling, math.ceil(worst * 100) / 100)  # >= worst because timeout_s was floored from ceiling
         job = _ledger("reserve", kind=kind, usd=usd, rate_usd_s=rate, timeout_s=timeout_s, meta=meta)
         payload = dict(payload, job_id=job["job_id"], deadline_unix=job["deadline_unix"],
+                       start_deadline_unix=job["start_deadline_unix"],
                        max_wall_s=max(timeout_s - SOFT_WALL_HEADROOM_S, 60))
         try:
             call_id = backend.spawn(kind, payload, gpu=gpu, timeout_s=timeout_s)
-        except Exception as e:  # noqa: BLE001 - spawn never happened: give the reservation back
-            _ledger("release", job_id=job["job_id"], reason=f"spawn failed: {e!r}"[:300])
-            raise HTTPException(502, f"spawn failed; reservation released: {e!r}"[:500]) from e
-        job = _ledger("attach", job_id=job["job_id"], call_id=call_id)
+        except ValueError as e:  # raised before any RPC (e.g. unknown kind): provably never started
+            _ledger("release", job_id=job["job_id"], reason=f"spawn rejected locally: {e!r}"[:300])
+            raise HTTPException(400, f"spawn rejected; reservation released: {e!r}"[:500]) from e
+        except Exception as e:  # noqa: BLE001 - outcome unknown: Modal may have accepted the call
+            raise HTTPException(502, f"spawn outcome unknown ({e!r}); reservation {job['job_id']} stays held and "
+                                     "settles at full reservation after its deadline"[:600]) from e
+        last: Exception | None = None
+        for _ in range(3):
+            try:
+                job = backend.ledger("attach", job_id=job["job_id"], call_id=call_id)
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+        else:
+            raise HTTPException(502, f"job spawned as call {call_id} but ledger attach failed ({last!r}); "
+                                     f"reservation {job['job_id']} stays held (orphan, worst-case settlement)")
         return {"job_id": job["job_id"], "call_id": call_id, "reserved_usd": job["reserved_usd"],
                 "timeout_s": timeout_s, "deadline_unix": job["deadline_unix"]}
 
     def _plan(spec: JobSpec) -> dict[str, Any]:
-        if spec.engine not in ALLOWED_ENGINES:
+        if spec.engine not in engines:
             raise HTTPException(400, f"engine not allowed: {spec.engine}")
-        if spec.matrix not in ALLOWED_MATRICES:
+        if spec.matrix not in matrices:
             raise HTTPException(400, f"matrix not allowed: {spec.matrix}")
         if spec.gpu not in ALLOWED_GPUS:
             raise HTTPException(400, f"gpu not allowed: {spec.gpu}")
@@ -160,10 +203,10 @@ def build_api(backend: Backend, cfg: BridgeConfig):
             ledger_ok = True
         except Exception:  # noqa: BLE001
             snap, ledger_ok = {}, False
-        return {"ok": ledger_ok, "app": cfg.app_name, "ledger_ok": ledger_ok, "cap_usd": cfg.cap_usd,
+        return {"ok": ledger_ok, "app": cfg.app_name, "ledger_ok": ledger_ok, "features": FEATURES, "cap_usd": cfg.cap_usd,
                 "per_job_cap_usd": cfg.per_job_cap_usd, "max_active": cfg.max_active,
-                "available_usd": snap.get("available_usd"), "engines": sorted(ALLOWED_ENGINES),
-                "matrices": sorted(ALLOWED_MATRICES), "gpus": sorted(ALLOWED_GPUS), **cfg.extra}
+                "available_usd": snap.get("available_usd"), "engines": sorted(engines),
+                "matrices": sorted(matrices), "gpus": sorted(ALLOWED_GPUS), **cfg.extra}
 
     @api.get("/budget")
     def get_budget():
@@ -181,9 +224,9 @@ def build_api(backend: Backend, cfg: BridgeConfig):
             raise HTTPException(402, f"estimated {p['est_gpu_s']} s does not fit the {p['timeout_s']} s that a "
                                      f"${p['reservation_cap_usd']:.2f} reservation buys at ${p['rate_usd_s']*3600:.2f}/h; "
                                      "split the job with `only` or seeds")
-        kind = "gpu:" + ALLOWED_ENGINES[spec.engine]
+        kind = "gpu:" + engines[spec.engine]
         out = _launch(kind, GPU_JOB, spec.model_dump(), gpu=spec.gpu, timeout_s=p["timeout_s"],
-                      meta={"engine": spec.engine, "matrix": spec.matrix, "gpu": spec.gpu, "points": p["points"],
+                      ceiling_usd=p["reservation_cap_usd"], meta={"engine": spec.engine, "matrix": spec.matrix, "gpu": spec.gpu, "points": p["points"],
                             "est_gpu_s": p["est_gpu_s"], "notes": spec.notes})
         return {**out, "estimate": p}
 

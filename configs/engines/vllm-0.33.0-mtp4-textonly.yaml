@@ -3,6 +3,9 @@
 # models/Google/gemma-4-12B-it.yaml (recipes commit fa1173a1). Article: MTP 4 tokens,
 # async scheduling, gpu-mem-util 0.90, prefix caching off.
 name: vllm-0.33.0-mtp4-textonly
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E5d
 engine: vllm
 version: "0.33.0"
 client_backend: vllm          # InferenceX benchmark_serving --backend

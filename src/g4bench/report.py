@@ -192,16 +192,37 @@ def build(run_dir: Path) -> tuple[str, str]:
         lines.append(f"| {k[0]} | {k[1] or 'natural'} | {k[2]} | {_f(mean(a, 'spec_acceptance_length'), '{:.3f}')} | "
                      f"{_f(mean(a, 'gpu_mem_peak_mib'), '{:.0f}')} | {_f(mean(a, 'gpu_power_mean_w'), '{:.0f}')} |")
 
+    lines += ["", "## Effective engine configuration (parsed from server logs)", "",
+              "| attention backend | spec algorithm | KV-cache tokens | max running requests | seen in |",
+              "|---|---|---:|---:|---|"]
+    effs = sorted({(r.get("eff_attention_backend"), r.get("eff_spec_algorithm"), r.get("eff_kv_cache_tokens"),
+                    r.get("eff_max_running_requests")) for r in rows if r.get("status") != "skipped"},
+                  key=lambda t: tuple(str(x) for x in t))
+    for e in effs:
+        n = sum(1 for r in rows if (r.get("eff_attention_backend"), r.get("eff_spec_algorithm"),
+                                    r.get("eff_kv_cache_tokens"), r.get("eff_max_running_requests")) == e)
+        lines.append(f"| {e[0] or NM} | {e[1] or NM} | {_f(e[2], '{:,}')} | {_f(e[3], '{:d}')} | {n} point-run(s) |")
+    if not effs:
+        lines.append(f"| {NM} | {NM} | {NM} | {NM} | – |")
+
     # ---- comparison to the article
     lines += ["", "## Comparison with article baselines", ""]
-    ref = {"vllm": "vllm", "sglang": "sglang"}.get(engine_kind or "")
+    role, adm = eng.get("role", "variant"), str(eng.get("admissibility", "c"))
+    ref = {"vllm": "vllm", "sglang": "sglang"}.get(engine_kind or "") if role == "baseline" else None
+    lines.append(f"Config role: **{role}**, admissibility class **{adm}** (DECISIONS D-011)."
+                 + ("" if role == "baseline" else " Variants are not compared with the article's open baselines.") + "")
     targets_svg: dict[str, list[tuple[int, float]]] = {}
-    if is_mock:
+    if adm == "c" and not is_mock:
+        lines.append("Not compared: admissibility class c (not comparable).")
+    elif is_mock:
         lines.append("Not compared: mock engine.")
     elif not exact:
         lines.append("Not compared: not the article's hardware (proxy run).")
-    elif ref is None:
+    elif ref is None and role == "baseline":
         lines.append("Not compared: engine has no article counterpart.")
+    elif ref is None:
+        lines.append("Variant run: see `g4bench analyze` (results/summary/comparison.csv) for the comparison with "
+                     "Backboard's reported numbers, labelled by admissibility class.")
     else:
         tg = compare.load_targets()
         lines += [f"Reference: article `{ref}` (and Backboard) numbers for random-token prompts. Classification uses the "
@@ -226,6 +247,42 @@ def build(run_dir: Path) -> tuple[str, str]:
             lines.append(f"| – | – | {NM} | 0 | – | – | – | – | – |")
         if any(k[0] != "random" for k in keys):
             lines += ["", "Real-prompt arms are intentionally not compared with the article (different workload)."]
+
+    lines += ["", "## Gap attribution (first-order; acceptance vs step speed)", ""]
+    if is_mock or not exact or ref is None:
+        lines.append("Not computed: needs exact article hardware and a vLLM/SGLang run.")
+    else:
+        from . import gap
+
+        tg = compare.load_targets()
+        dt = gap.draft_tokens_for(eng)
+        lines += [f"Assumptions: {gap.ASSUMPTIONS}. Article mean TPOT = 1000 / its 'speed per user'.", "",
+                  f"| ISL | conc | our TPOT ms | our AL | step ms | BW eff. | AL needed for article {ref} | for Backboard | "
+                  "step speed-up needed (Backboard) |", "|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        rows_added = 0
+        for k in keys:
+            if k[0] != "random" or dt is None:
+                continue
+            a = agg[k]
+            spu = tg.get(f"{k[1]}x{k[2]}", {}).get("speed_per_user", {})
+            r_ref = gap.attribute(tpot_ms=mean(a, "mean_tpot_ms"), al=mean(a, "spec_acceptance_length"), conc=k[2],
+                                  isl=k[1], osl=1024, article_tpot_ms=1000 / spu[ref] if spu.get(ref) else None,
+                                  draft_tokens=dt)
+            r_bb = gap.attribute(tpot_ms=mean(a, "mean_tpot_ms"), al=mean(a, "spec_acceptance_length"), conc=k[2],
+                                 isl=k[1], osl=1024, article_tpot_ms=1000 / spu["backboard"] if spu.get("backboard") else None,
+                                 draft_tokens=dt)
+            if r_ref["state"] != "ok":
+                lines.append(f"| {k[1]} | {k[2]} | {_f(mean(a, 'mean_tpot_ms'))} | {NM} | – | – | – | – | – |")
+                continue
+            rows_added += 1
+            flag = lambda r: "" if r.get("reachable_by_acceptance_alone", True) else " (> max AL)"  # noqa: E731
+            lines.append(f"| {k[1]} | {k[2]} | {mean(a, 'mean_tpot_ms'):.3g} | {mean(a, 'spec_acceptance_length'):.3g} | "
+                         f"{r_ref['step_ms']:.3g} | {r_ref['bw_efficiency']:.2f} | "
+                         f"{_f(r_ref.get('al_needed_for_article'), '{:.2f}')}{flag(r_ref)} | "
+                         f"{_f(r_bb.get('al_needed_for_article'), '{:.2f}')}{flag(r_bb)} | "
+                         f"{_f(r_bb.get('step_speedup_needed'), '{:.2f}x')} |")
+        if not rows_added and not any(True for k in keys if k[0] == "random"):
+            lines.append(f"| – | – | {NM} | {NM} | – | – | – | – | – |")
 
     lines += ["", "## Correctness gate", ""]
     if corr is None:

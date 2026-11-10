@@ -1,6 +1,9 @@
 # CPU-only fake engine for harness tests. Numbers produced with it are meaningless
 # and are tagged engine=mock; never compare them to targets.
 name: mock-cpu
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: c       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E0
 engine: mock
 version: "0"
 client_backend: vllm
