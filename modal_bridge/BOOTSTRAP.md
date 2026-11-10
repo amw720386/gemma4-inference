@@ -1,17 +1,35 @@
-# One-time Modal bridge bootstrap (human step, ~5 minutes, ~$0)
+# One-time Modal bridge bootstrap (human step, ~5 minutes)
 
-The agent environment can reach `*.modal.run` over HTTPS but cannot use Modal's gRPC
-control plane (CLI/SDK). So a human deploys the bridge **once** from a normal machine;
-afterwards the agent submits, polls and cancels jobs over HTTPS only.
+The agent environment can reach `*.modal.run` over HTTPS but must not use Modal's gRPC control plane
+(CLI/SDK). So **you** deploy the bridge once from your own machine; afterwards the agent submits, polls and
+cancels jobs over HTTPS only, and every paid launch is gated by the bridge's budget ledger.
 
-Target workspace: **Team Arnold (`arnold-17059`)**. Expected bridge URL:
-`https://arnold-17059--g4repro-bridge.modal.run` (as of 2026-11-10 that host answers
-`modal-http: invalid function call`, i.e. nothing deployed yet).
+Target workspace: **Team Arnold (`arnold-17059`)**. Expected URL:
+`https://arnold-17059--g4repro-bridge.modal.run` (as of 2026-11-10 it answers
+`modal-http: invalid function call`, i.e. nothing deployed).
 
-Deploying creates only: one app `g4repro-bridge`, two Volumes (`g4repro-hf-cache`,
-`g4repro-results`) and one Dict (`g4repro-jobs`). It touches no other app, secret, or
-billing setting, and needs **no secrets** (both models are ungated on Hugging Face).
-Idle cost is $0: GPU functions run only when a job is submitted.
+## What gets created
+
+One app `g4repro-bridge` with functions `bridge` (web, proxy-auth), `ledger_op` (budget ledger, 1 container),
+`run_vllm`, `run_sglang` (GPU, RTX-PRO-6000), `prefetch_weights`, `selftest` (CPU); two Volumes
+(`g4repro-hf-cache`, `g4repro-results`); one Dict **`g4repro-budget`** (the spend ledger — do not delete it while
+the project is active, or the spend history is lost and the cap restarts from $0). No secrets (both models are
+ungated); no billing settings touched. Idle cost ≈ $0 (nothing runs until a request arrives).
+
+## Budget configuration (baked into the deployment)
+
+| Env var at deploy time | Default | Meaning |
+|---|---|---|
+| `G4_PROJECT_CAP_USD` | **10** | approved project-wide cap (2026-11-10) |
+| `G4_PER_JOB_CAP_USD` | **2** | max reservation per job; also bounds each job's Modal timeout (876 s GPU) |
+| `G4_BRIDGE_MAX_ACTIVE` | 1 | open reservations at once, across GPU jobs, prefetch and selftest |
+| `G4_PLATFORM_RESERVE_USD` | 0.50 | set aside for bridge/ledger containers (not metered) |
+
+The defaults equal the approved values, so **no env vars are needed**. To change a value, redeploy with the variable
+set, e.g. `G4_PROJECT_CAP_USD=10 modal deploy …`; the agent cannot change it. Lowering the cap is always safe;
+spend already in the ledger stays counted. The ledger is a conservative estimate that gates launches through the
+bridge — **it is not a Modal billing hard stop**. If you want an account-level guard as well, set one yourself in
+the Modal dashboard (the agent does not touch billing settings).
 
 ## 1. Deploy (on your own machine)
 
@@ -20,15 +38,15 @@ git clone -b agent/gemma4-repro https://github.com/amw720386/gemma4-inference-re
 ```
 
 ```bash
-cd gemma4-inference-repro && python3 -m pip install "modal==1.6.3"
+cd gemma4-inference-repro && python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[bridge]"
 ```
 
 ```bash
 modal profile current
 ```
 
-Make sure the active profile is the `arnold-17059` workspace (otherwise `modal profile activate <profile>`,
-or `modal token new` and pick that workspace), then:
+Ensure the active profile is the `arnold-17059` workspace (otherwise `modal profile activate <profile>`, or
+`modal token new` and choose that workspace), then:
 
 ```bash
 modal deploy modal_bridge/app.py
@@ -36,46 +54,38 @@ modal deploy modal_bridge/app.py
 
 The output lists the web endpoint URL; it should be the URL above. If it differs, note it.
 
-Optional, recommended guard rails (defaults shown; set before deploy if you want different values):
-`G4_BRIDGE_HARD_CAP_USD=40` (max estimated $ per job) and `G4_BRIDGE_MAX_ACTIVE=1` are read from the
-bridge container environment; to change them, edit the `ENV` dict in `modal_bridge/app.py` and redeploy.
+## 2. Create a scoped proxy-auth token
 
-## 2. Create a proxy-auth token
+Modal dashboard → workspace `arnold-17059` → Settings → **Proxy Auth Tokens** → create a token used only for this
+bridge (or `modal workspace proxy-tokens` per Modal docs). Per Modal's docs it authenticates requests to
+proxy-auth web endpoints; it is distinct from the Modal API token used for `modal deploy`, which stays on your machine.
 
-Modal dashboard → workspace `arnold-17059` → Settings → **Proxy Auth Tokens** → create one
-(or `modal workspace proxy-tokens` per Modal docs). You get a *Token ID* (`wk-…`) and a *Token Secret* (`ws-…`).
+## 3. Give this cloud environment access
 
-## 3. Give the agent access (pick one; never paste secrets into chat)
+Add it as a **network secret** on the cloud environment (environment settings → network secrets): host
+`arnold-17059--g4repro-bridge.modal.run`, header `Authorization`, value `Bearer <TokenID>.<TokenSecret>`
+(Modal documents this as equivalent to the `Modal-Key`/`Modal-Secret` headers). The token then never enters the
+repo, logs or chat. If the URL differs, also set the non-secret env var `G4_BRIDGE_URL=<url>`.
 
-**Preferred:** when the agent asks via the secure credential form for host
-`arnold-17059--g4repro-bridge.modal.run`, enter **`<TokenID>.<TokenSecret>`** (joined by a period) as a
-Bearer token. Modal documents `Authorization: Bearer <id>.<secret>` as equivalent to the
-`Modal-Key`/`Modal-Secret` headers. The environment's proxy then injects it; the token never enters the repo or logs.
-
-If the URL differs from the expected one, also set the non-secret environment variable
-`G4_BRIDGE_URL=<url>` in the cloud environment settings.
-
-## 4. Verify (agent side, HTTPS only)
+## 4. Verification the agent performs before any paid work (HTTPS only, free)
 
 ```bash
 python modal_bridge/client.py health
 ```
 
-```bash
-python modal_bridge/client.py selftest
-```
-
-Then the first paid step (≈ $0.05 CPU, then ≈ $0.52 GPU), each logged in BUDGET.md first:
+Must show `ok: true`, `ledger_ok: true`, `cap_usd: 10.0`, `per_job_cap_usd: 2.0`, `max_active: 1`.
 
 ```bash
-python modal_bridge/client.py prefetch
+python modal_bridge/client.py budget
 ```
 
-```bash
-python modal_bridge/client.py submit --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2
-```
+Must show `cap_usd: 10.0`, `committed_usd: 0.5` (platform reserve only), `available_usd: 9.5`, no active jobs.
+Only then, one at a time, each logged in BUDGET.md first and stopping if `/budget` cannot cover the next job:
+`selftest` (≤ $0.10) → `prefetch` (≤ $0.16) → `submit --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2`.
 
 ## Stopping things
 
-- Cancel a job: `python modal_bridge/client.py cancel <call_id>` (agent) or the Modal dashboard.
-- Remove everything: `modal app stop g4repro-bridge` (and delete the two Volumes / the Dict in the dashboard if desired).
+- Cancel a job: `python modal_bridge/client.py cancel <job_id>` (reservation stays held until termination is confirmed),
+  or the Modal dashboard.
+- Remove everything: `modal app stop g4repro-bridge`; delete the Volumes / the Dict in the dashboard only when the
+  project is finished (the Dict holds the spend ledger).
