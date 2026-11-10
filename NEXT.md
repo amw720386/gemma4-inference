@@ -1,4 +1,4 @@
-# Next actions (executable checkpoint 3)
+# Next actions (executable checkpoint 4)
 
 ## A. User (in progress, per user 2026-11-10) — the agent waits; it does not deploy or request credentials
 
@@ -28,10 +28,20 @@ With ~$7.5 left after steps 1–4, step 5 affords ≈ 8 single-point jobs (≈ 4
 n = 1 results: **descriptive only**, never claims (EXPERIMENTS criterion 2). More seeds or the full matrix need a
 new, explicit budget approval.
 
-## C. Agent, CPU-side work available now
+## C. Agent, CPU-side work available now (each as its own `feat/…` branch + PR off `main`)
 
 1. ~~vLLM-vs-SGLang matched-load comparison~~ ✅ done (cycle 1: `engine_compare.py`, D-022).
-2. ~~Static flag preflight~~ ✅ done (cycle 2, D-023).
+2. ~~Static flag preflight~~ ✅ done (D-023). ~~Free /estimate preflight~~ (#5), ~~one-command setup~~ (#6),
+   ~~claims register~~ (#7) ✅ done.
 3. ~~EOS-honouring real-prompt variant~~ ✅ done (cycle 8, D-029).
 4. Torch-profiler trace parsing (for E5g) against a recorded fixture.
 5. Optional: licence choice for this repository (owner decision; none added).
+
+## D. After each measured job
+
+`g4bench analyze && g4bench claims` → commit `results/runs/<run_id>/`, `results/summary/`, `docs/CLAIMS.md` on a
+`feat/results-…` branch with the run's REPORT.md quoted in the PR (real numbers only, n and CIs stated).
+
+## E. Repository housekeeping (needs the GitHub UI; ref deletion pushes are 403 from this environment)
+
+Delete merged branches `feat/smoke-readiness`, `feat/one-command-setup`, `feat/claims-register`.

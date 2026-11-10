@@ -1,8 +1,12 @@
-# Status — 2026-11-10 (checkpoint 3)
+# Status — 2026-11-10 (checkpoint 4)
 
-**One-line state:** harness, real-prompt arm, reporting and a **server-side $10 project spend limit** in the bridge
-are built and CPU-tested (120 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
-GPU work waits only on the user's one-time bridge deploy + scoped proxy token. Spend to date: **$0.00**.
+**One-line state:** everything CPU-side is on `main` (merged PRs #2–#7) and tested (125 tests; fresh-clone
+`scripts/setup.sh` verified). **Zero GPU measurements exist.** The only blocker for E1 is the Modal bridge deployment
+(HTTPS 404 at both hosts, last checked 2026-11-10 22:45 UTC). Budget: **$10 total / ≤ $2 per job approved; $0.00 spent.**
+
+Workflow (CLAUDE.md): Git author Ahamed Mohamed Wajibu + `Co-Authored-By: Claude Opus 5.5`; one semantic branch per
+change (`feat/…`, `fix/…`, `docs/…`) off `main`; focused PR with executed test output and NOT-RUN limits; merge
+commit after verification. No GitHub Actions; `agent/*` branches are retired.
 
 ## Summary
 
@@ -26,6 +30,7 @@ GPU work waits only on the user's one-time bridge deploy + scoped proxy token. S
 | Worker verified on Python 3.12 with engine-image-only deps (`scripts/check_worker_env.sh`); fixed a bug that would have crashed every GPU job | ✅ | DECISIONS D-031 |
 | Gap attribution (acceptance length vs step speed vs roofline) in per-run reports | ✅ | src/g4bench/gap.py |
 | E5/E6 optimization arms (depth sweep, depth-by-batch-size, draft LM-head FP8, SGLang adaptive) as flag-checked configs; role/admissibility gating in analysis | ✅ prepared, not run | configs/engines/, D-034 |
+| Free `/estimate` preflight in campaigns; one-command setup + dependency lock; claims register (`docs/CLAIMS.md`) | ✅ | PRs #5, #6, #7 |
 | Budget-gated campaign runner (plan-only default; re-checks /health+/budget limits before every paid step) | ✅ verified refusing against undeployed bridge ($0) | src/g4bench/campaign.py, configs/campaigns/, results/budget_ledger.jsonl |
 | GPU experiments E1–E6 | ⛔ blocked (see below) | — |
 
@@ -76,5 +81,5 @@ g4bench speedbench prepare && python -m pytest -q
 ```
 
 Expected: SPEED-Bench coding digest `6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18`,
-`matches_inferencex_digest: true`; 120 tests pass (without `speedbench prepare`, the one network-marked
+`matches_inferencex_digest: true`; 125 tests pass (without `speedbench prepare`, the one network-marked
 digest test is skipped; without `modal` installed, the bridge-definition test is skipped).
