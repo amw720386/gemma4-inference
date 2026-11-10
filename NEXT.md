@@ -3,7 +3,7 @@
 ## A. User (in progress, per user 2026-11-10) — the agent waits; it does not deploy or request credentials
 
 1. Deploy the bridge once: `modal_bridge/BOOTSTRAP.md` §1 (defaults already = approved $10 / $2 / 1 active).
-2. Provision a separate scoped proxy token as a network secret for host `arnold-17059--g4repro-bridge.modal.run`
+2. Provision a separate scoped proxy token as a network secret for host `arnold-17059--g4repro-bridge.us-east.modal.run`
    (BOOTSTRAP §2–3).
 
 ## B. Agent, after A — strictly in this order, stop at the first failure or when `/budget` cannot cover the next step

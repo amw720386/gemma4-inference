@@ -212,3 +212,10 @@ TPOT × AL; bandwidth efficiency = roofline step ÷ measured step; AL needed to 
 its speed-per-user) at our step time, flagged if above draft_tokens + 1; or the step speed-up needed at our AL. Shown
 against the same engine's article numbers and Backboard's. Purpose: decide after E1 whether optimization effort
 belongs in drafting/acceptance or in kernels/scheduling. Diagnostic only; assumptions printed with every table.
+
+**D-033 (2026-11-10) Bridge URL and approval variables aligned with the configured environment.** The cloud
+environment's network secret is bound to `arnold-17059--g4repro-bridge.us-east.modal.run` (regional host), not the
+unregional host the client defaulted to; both return 404 today (not deployed). The client now defaults to the
+regional host (`G4_BRIDGE_URL` still wins once visible after a session restart). The environment also defines
+`G4_PROJECT_BUDGET_USD` and `G4_JOB_CAP_USD`: the campaign uses them to *tighten* (never relax) the limits it requires
+the server to report, and the bridge accepts them as deploy-time aliases of `G4_PROJECT_CAP_USD` / `G4_PER_JOB_CAP_USD`.

@@ -55,6 +55,23 @@ def load(name_or_path: str) -> dict[str, Any]:
     return c
 
 
+def approved_limits(require: dict[str, Any], env: dict[str, str] | None = None) -> dict[str, Any]:
+    """Campaign ``require`` tightened by the approval recorded in the agent's environment, if present.
+
+    ``G4_PROJECT_BUDGET_USD`` / ``G4_JOB_CAP_USD`` (set by the user in the cloud environment) win when stricter; a
+    looser environment value never relaxes the campaign file.
+    """
+    import os
+
+    env = dict(os.environ) if env is None else env
+    out = dict(require)
+    if env.get("G4_PROJECT_BUDGET_USD"):
+        out["cap_usd"] = min(float(out["cap_usd"]), float(env["G4_PROJECT_BUDGET_USD"]))
+    if env.get("G4_JOB_CAP_USD"):
+        out["per_job_cap_usd_max"] = min(float(out["per_job_cap_usd_max"]), float(env["G4_JOB_CAP_USD"]))
+    return out
+
+
 def check_limits(call: Call, require: dict[str, Any], need_usd: float) -> dict[str, Any]:
     h = call("GET", "/health")
     if not (h.get("ok") and h.get("ledger_ok")):
@@ -97,7 +114,7 @@ def run(campaign: dict[str, Any], call: Call, *, execute: bool = False, poll_s: 
         max_wait_s: float = 3600.0, sleep: Callable[[float], None] = time.sleep,
         ledger: Path | None = LEDGER, now: Callable[[], float] = time.time) -> list[StepOutcome]:
     out: list[StepOutcome] = []
-    req = campaign["require"]
+    req = approved_limits(campaign["require"])
     for step in campaign["steps"]:
         spec = step.get("spec") or {}
         need = min(float(spec.get("max_usd", req["per_job_cap_usd_max"])), float(req["per_job_cap_usd_max"]))

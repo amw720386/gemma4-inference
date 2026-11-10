@@ -119,3 +119,12 @@ def test_campaign_stops_polling_after_deadline_grace(tmp_path):
 
     outs = C.run(steps, never_finish, execute=True, sleep=sleep, ledger=None, now=lambda: t[0], poll_s=600)
     assert outs[-1].status == "failed" and "stopped polling" in outs[-1].detail
+
+
+def test_environment_approval_only_tightens_limits():
+    req = {"cap_usd": 10.0, "per_job_cap_usd_max": 2.0, "max_active": 1}
+    assert C.approved_limits(req, {}) == req
+    t = C.approved_limits(req, {"G4_PROJECT_BUDGET_USD": "8", "G4_JOB_CAP_USD": "1.5"})
+    assert t["cap_usd"] == 8.0 and t["per_job_cap_usd_max"] == 1.5
+    loose = C.approved_limits(req, {"G4_PROJECT_BUDGET_USD": "100", "G4_JOB_CAP_USD": "40"})
+    assert loose["cap_usd"] == 10.0 and loose["per_job_cap_usd_max"] == 2.0

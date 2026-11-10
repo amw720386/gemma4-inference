@@ -5,7 +5,7 @@ The agent environment can reach `*.modal.run` over HTTPS but must not use Modal'
 cancels jobs over HTTPS only, and every paid launch is gated by the bridge's budget ledger.
 
 Target workspace: **Team Arnold (`arnold-17059`)**. Expected URL:
-`https://arnold-17059--g4repro-bridge.modal.run` (as of 2026-11-10 it answers
+`https://arnold-17059--g4repro-bridge.us-east.modal.run` (regional host the environment's network secret is bound to; the unregional `…--g4repro-bridge.modal.run` also answered 404) (as of 2026-11-10 it answers
 `modal-http: invalid function call`, i.e. nothing deployed).
 
 ## What gets created
@@ -23,7 +23,11 @@ ungated); no billing settings touched. Idle cost ≈ $0 (nothing runs until a re
 | `G4_PROJECT_CAP_USD` | **10** | approved project-wide cap (2026-11-10) |
 | `G4_PER_JOB_CAP_USD` | **2** | max reservation per job; also bounds each job's Modal timeout (876 s GPU) |
 | `G4_BRIDGE_MAX_ACTIVE` | 1 | open reservations at once, across GPU jobs, prefetch and selftest |
-| `G4_PLATFORM_RESERVE_USD` | 0.50 | set aside for bridge/ledger containers (not metered) |
+| `G4_PLATFORM_RESERVE_USD` | 0.50 | floor for bridge/ledger container spend (metered usage above it also counts) |
+
+Aliases accepted at deploy time: `G4_PROJECT_BUDGET_USD` (= `G4_PROJECT_CAP_USD`), `G4_JOB_CAP_USD` (= `G4_PER_JOB_CAP_USD`).
+On the agent side, the same two names in the cloud environment can only *tighten* the limits the campaign requires
+the server to report.
 
 The defaults equal the approved values, so **no env vars are needed**. To change a value, redeploy with the variable
 set, e.g. `G4_PROJECT_CAP_USD=10 modal deploy …`; the agent cannot change it. Lowering the cap is always safe;

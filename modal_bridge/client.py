@@ -1,7 +1,7 @@
 """HTTPS client for the deployed bridge. Uses only documented Modal web-endpoint auth.
 
 Configuration (never printed):
-  G4_BRIDGE_URL        e.g. https://arnold-17059--g4repro-bridge.modal.run
+  G4_BRIDGE_URL        e.g. https://arnold-17059--g4repro-bridge.us-east.modal.run (default)
   Auth, one of:
     - nothing, when an egress proxy injects ``Authorization: Bearer <id>.<secret>`` for the host
     - MODAL_PROXY_TOKEN_ID + MODAL_PROXY_TOKEN_SECRET  (sent as Modal-Key / Modal-Secret)
@@ -32,7 +32,9 @@ import time
 
 import requests
 
-DEFAULT_URL = "https://arnold-17059--g4repro-bridge.modal.run"
+# The cloud environment's network secret is bound to the regional host (checked 2026-11-10 via the environment's
+# settings); G4_BRIDGE_URL, when present in the process environment, always wins.
+DEFAULT_URL = "https://arnold-17059--g4repro-bridge.us-east.modal.run"
 
 
 def _session() -> tuple[requests.Session, str]:
