@@ -1,0 +1,52 @@
+{
+  "_provenance": {
+    "source_url": "https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference",
+    "title": "Gemma 4: Up to 2.2x faster throughput than vLLM and SGLang",
+    "author": "Rob Imbeault (Backboard)",
+    "published": "2026-11-09",
+    "retrieved": "2026-11-10",
+    "html_sha256_at_retrieval": "a3c2af43b5b4fe20f8487a6cb42f42a6a6ac06d92e23a4968593ff3fd4c7a964",
+    "nature": "Vendor-published benchmark. Numbers transcribed from the article's tables; NOT measured by this project.",
+    "notes": [
+      "Article publishes only: output throughput (all points), p99 TPOT, p99 E2EL, p90 TTFT, 'speed per user' (tokens/s/request), and per-metric ratio tables (13 metrics x 8 points x 2 competitors).",
+      "Mean/median TTFT/TPOT/E2EL absolute values are NOT published; only Backboard/competitor ratios.",
+      "All points seed 0, one run; 8K/c4 is a mean of seeds 0,1,2.",
+      "Speed-per-user values 204.1 recur for three Backboard points, consistent with 1000/round(mean TPOT,1 decimal)=1000/4.9; treat as derived/rounded."
+    ]
+  },
+  "units": {"output_throughput": "tok/s", "p99_tpot": "ms", "p99_e2el": "ms", "p90_ttft": "ms", "speed_per_user": "tok/s/request"},
+  "points": [
+    {"isl":1024,"osl":1024,"conc":1, "output_throughput":{"backboard":203.6,"vllm":186.8,"sglang":122.6},"p99_tpot":{"backboard":5.0,"vllm":5.6,"sglang":8.4},"p99_e2el":{"backboard":5074,"vllm":5432,"sglang":8494},"p90_ttft":{"backboard":85.2,"vllm":102.1,"sglang":122.5},"speed_per_user":{"backboard":204.1,"vllm":188.7,"sglang":122.0}},
+    {"isl":1024,"osl":1024,"conc":4, "output_throughput":{"backboard":779.4,"vllm":649.0,"sglang":456.8},"p99_tpot":{"backboard":6.1,"vllm":6.6,"sglang":10.0},"p99_e2el":{"backboard":5846,"vllm":6272,"sglang":8958},"p90_ttft":{"backboard":176.2,"vllm":191.6,"sglang":233.7},"speed_per_user":{"backboard":204.1,"vllm":169.5,"sglang":120.5}},
+    {"isl":1024,"osl":1024,"conc":16,"output_throughput":{"backboard":2082,"vllm":1861,"sglang":1122},"p99_tpot":{"backboard":8.7,"vllm":10.1,"sglang":17.7},"p99_e2el":{"backboard":8452,"vllm":9488,"sglang":17592},"p90_ttft":{"backboard":244.6,"vllm":282.4,"sglang":355.1},"speed_per_user":{"backboard":137.0,"vllm":123.5,"sglang":74.6}},
+    {"isl":1024,"osl":1024,"conc":64,"output_throughput":{"backboard":3822,"vllm":3634,"sglang":1750},"p99_tpot":{"backboard":19.4,"vllm":19.9,"sglang":42.1},"p99_e2el":{"backboard":20123,"vllm":20564,"sglang":40818},"p90_ttft":{"backboard":547.3,"vllm":622.6,"sglang":764.1},"speed_per_user":{"backboard":62.9,"vllm":59.5,"sglang":28.3}},
+    {"isl":8192,"osl":1024,"conc":1, "output_throughput":{"backboard":179.1,"vllm":159.6,"sglang":82.5},"p99_tpot":{"backboard":6.0,"vllm":7.6,"sglang":16.9},"p99_e2el":{"backboard":6276,"vllm":7871,"sglang":16855},"p90_ttft":{"backboard":548.6,"vllm":656.2,"sglang":668.4},"speed_per_user":{"backboard":204.1,"vllm":185.2,"sglang":90.1}},
+    {"isl":8192,"osl":1024,"conc":4, "output_throughput":{"backboard":529.6,"vllm":395.7,"sglang":269.5},"p99_tpot":{"backboard":10.3,"vllm":13.2,"sglang":20.1},"p99_e2el":{"backboard":10414,"vllm":13247,"sglang":19608},"p90_ttft":{"backboard":724.1,"vllm":1262,"sglang":992.5},"speed_per_user":{"backboard":158.7,"vllm":114.9,"sglang":79.4},"seeds":[0,1,2],"aggregation":"mean of seeds"},
+    {"isl":8192,"osl":1024,"conc":16,"output_throughput":{"backboard":961.8,"vllm":794.5,"sglang":533.7},"p99_tpot":{"backboard":23.6,"vllm":27.0,"sglang":43.4},"p99_e2el":{"backboard":23806,"vllm":28516,"sglang":42054},"p90_ttft":{"backboard":1537,"vllm":1822,"sglang":2038},"speed_per_user":{"backboard":68.0,"vllm":56.2,"sglang":38.6}},
+    {"isl":8192,"osl":1024,"conc":64,"output_throughput":{"backboard":1254,"vllm":1079,"sglang":673.6},"p99_tpot":{"backboard":73.8,"vllm":87.8,"sglang":146.2},"p99_e2el":{"backboard":78977,"vllm":92515,"sglang":140351},"p90_ttft":{"backboard":3102,"vllm":3612,"sglang":5484},"speed_per_user":{"backboard":21.2,"vllm":18.3,"sglang":11.4}}
+  ],
+  "ratio_tables": {
+    "_columns": ["output_throughput","mean_ttft","median_ttft","p90_ttft","p99_ttft","mean_tpot","median_tpot","p90_tpot","p99_tpot","mean_e2el","median_e2el","p90_e2el","p99_e2el"],
+    "_definition": "competitor latency / Backboard latency, or Backboard throughput / competitor throughput (>1 = Backboard better)",
+    "vs_vllm": {
+      "1024x1":[1.09,1.14,1.18,1.20,1.19,1.09,1.08,1.13,1.11,1.09,1.10,1.07,1.07],
+      "1024x4":[1.20,1.17,1.24,1.09,1.11,1.20,1.21,1.18,1.08,1.20,1.23,1.21,1.07],
+      "1024x16":[1.12,1.32,1.53,1.15,1.12,1.11,1.11,1.11,1.17,1.12,1.11,1.13,1.12],
+      "1024x64":[1.05,1.16,1.23,1.14,1.08,1.05,1.05,1.05,1.03,1.05,1.05,1.05,1.02],
+      "8192x1":[1.12,1.18,1.18,1.20,1.18,1.11,1.10,1.09,1.26,1.12,1.10,1.14,1.25],
+      "8192x4":[1.34,1.24,1.22,1.74,1.20,1.35,1.37,1.29,1.28,1.34,1.34,1.32,1.27],
+      "8192x16":[1.21,1.27,1.25,1.19,1.20,1.20,1.21,1.19,1.14,1.21,1.20,1.15,1.20],
+      "8192x64":[1.16,1.22,1.26,1.16,1.19,1.16,1.16,1.16,1.19,1.16,1.16,1.17,1.17]
+    },
+    "vs_sglang": {
+      "1024x1":[1.66,1.35,1.38,1.44,1.43,1.67,1.69,1.68,1.66,1.66,1.65,1.69,1.67],
+      "1024x4":[1.71,1.37,1.54,1.33,1.12,1.71,1.71,1.69,1.64,1.70,1.73,1.72,1.53],
+      "1024x16":[1.85,1.71,2.06,1.45,1.13,1.86,1.84,1.86,2.04,1.85,1.85,1.84,2.08],
+      "1024x64":[2.18,1.42,1.59,1.40,1.10,2.21,2.22,2.20,2.17,2.18,2.20,2.14,2.03],
+      "8192x1":[2.17,1.21,1.22,1.22,1.15,2.28,2.25,2.24,2.81,2.17,2.03,2.25,2.69],
+      "8192x4":[1.97,1.29,1.27,1.37,1.19,2.01,2.00,1.96,1.95,1.94,1.94,1.97,1.88],
+      "8192x16":[1.80,1.40,1.37,1.33,1.27,1.80,1.77,1.80,1.84,1.78,1.75,1.72,1.77],
+      "8192x64":[1.86,1.29,1.43,1.77,1.15,1.89,1.86,1.93,1.98,1.85,1.84,1.83,1.78]
+    }
+  }
+}

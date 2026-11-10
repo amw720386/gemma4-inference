@@ -1,0 +1,12 @@
+name: mock-ci
+isl: [1024]
+osl: [64]
+conc: [1, 4]
+seeds: [0, 1]
+trials_per_seed: 1
+random_range_ratio: 0.8
+use_chat_template: true
+num_prompts_per_conc: 2
+num_warmups_per_conc: 1
+max_model_len: 4096
+fresh_server_per_point: false

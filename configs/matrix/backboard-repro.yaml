@@ -1,0 +1,21 @@
+# Main matrix mirroring the Backboard article: ISL {1K, 8K} x OSL 1K x conc {1,4,16,64}.
+# Client policy mirrors InferenceX fixed_seq.client_argv (commit 0b991451):
+#   random dataset, --ignore-eos, --request-rate inf, num_prompts = 10*conc,
+#   num_warmups = 2*conc, --use-chat-template (article: "InferenceX client and chat template").
+name: backboard-repro
+isl: [1024, 8192]
+osl: [1024]
+conc: [1, 4, 16, 64]
+# Article: seed 0 everywhere; seeds 1,2 additionally at 8K/c4. We go further: 3 seeds at
+# EVERY point plus independent server restarts ("trials") so we can report uncertainty.
+seeds_article: {default: [0], "8192x4": [0, 1, 2]}
+seeds: [0, 1, 2]
+trials_per_seed: 1
+# InferenceX srt_slurm/generate.py uses RANDOM_RANGE_RATIO=0.8; article does not say.
+# Primary = 0.8 (InferenceX convention); sensitivity arm = 1.0 (fixed lengths). See DECISIONS D-004.
+random_range_ratio: 0.8
+use_chat_template: true
+num_prompts_per_conc: 10
+num_warmups_per_conc: 2
+max_model_len: 10240        # 8192 + 1024 + chat template headroom
+fresh_server_per_point: true
