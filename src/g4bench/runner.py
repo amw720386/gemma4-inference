@@ -82,7 +82,9 @@ def run(opts: RunOptions) -> Path:
     server_argv = eng.launcher() + eng.render_args(values) + list(opts.extra_server_args or [])
     model_name = opts.model_name or pins["model"]["target"]["repo"]
 
-    # Fail fast (before any run dir, server or GPU time): every real-prompt set must exist and re-verify.
+    # Fail fast (before any run dir, server or GPU time): flags must exist in the pinned engine source,
+    # and every real-prompt set must exist and re-verify.
+    check_flags(eng, server_argv[len(eng.launcher()):])
     ds_files = check_datasets(points)
     run_dir.mkdir(parents=True, exist_ok=False)
     manifest = {
@@ -147,6 +149,23 @@ def run(opts: RunOptions) -> Path:
 
 class DatasetError(SystemExit):
     pass
+
+
+class FlagError(SystemExit):
+    pass
+
+
+def check_flags(eng: EngineConfig, argv: list[str]) -> None:
+    if eng.engine == "mock":
+        return
+    from . import flagcheck
+
+    p = flagcheck.snapshot_path(eng.engine, eng.version)
+    if not p.exists():
+        raise FlagError(f"no flag snapshot for {eng.engine} {eng.version}; run `g4bench flagcheck --refresh`")
+    problems = flagcheck.check(eng, json.loads(p.read_text()), argv)
+    if problems:
+        raise FlagError("refusing to start server: " + "; ".join(problems))
 
 
 def check_datasets(points: list[Point]) -> dict[str, tuple[Path, dict[str, Any]]]:

@@ -13,7 +13,7 @@ record the settled estimate. Never run two jobs at once (the bridge refuses anyw
 
 | # | Command (`python modal_bridge/client.py …`) | Reserved | Expected settle | Gate to continue |
 |---|---|---:|---:|---|
-| 0 | `health`, `budget` (free) | 0 | 0 | `ok`, `ledger_ok`, cap 10, per-job ≤ 2, available 9.50, no active jobs |
+| 0 | `g4bench flagcheck` (local, free), then `health`, `budget` (free) | 0 | 0 | `ok`, `ledger_ok`, cap 10, per-job ≤ 2, available 9.50, no active jobs |
 | 1 | `selftest` | 0.10 | ≤ 0.10 | tests pass inside Modal |
 | 2 | `prefetch` | 0.16 | ≤ 0.16 | weights cached; SPEED-Bench coding digest = InferenceX |
 | 3 | `submit --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2`, then `wait <job_id>` | 2.00 | ~0.7 | 0 failures, probes ≥ 7/8, acceptance length captured, `exact_hardware=true`; `fetch` + commit `results/runs/<run_id>/` |
@@ -27,6 +27,7 @@ new, explicit budget approval.
 ## C. Agent, CPU-side work available now
 
 1. ~~vLLM-vs-SGLang matched-load comparison~~ ✅ done (cycle 1: `engine_compare.py`, D-022).
-2. EOS-honouring real-prompt variant (`ignore_eos: false`, D-017): CPU test + estimate.
-3. Torch-profiler trace parsing (for E5g) against a recorded fixture.
-4. Optional: licence choice for this repository (owner decision; none added).
+2. ~~Static flag preflight~~ ✅ done (cycle 2, D-023).
+3. EOS-honouring real-prompt variant (`ignore_eos: false`, D-017): CPU test + estimate.
+4. Torch-profiler trace parsing (for E5g) against a recorded fixture.
+5. Optional: licence choice for this repository (owner decision; none added).

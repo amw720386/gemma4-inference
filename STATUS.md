@@ -1,7 +1,7 @@
 # Status — 2026-11-10 (checkpoint 3)
 
 **One-line state:** harness, real-prompt arm, reporting and a **server-side $10 project spend limit** in the bridge
-are built and CPU-tested (77 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
+are built and CPU-tested (82 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
 GPU work waits only on the user's one-time bridge deploy + scoped proxy token. Spend to date: **$0.00**.
 
 ## Summary
@@ -19,6 +19,7 @@ GPU work waits only on the user's one-time bridge deploy + scoped proxy token. S
 | **Bridge budget ledger** ($10 project cap, $2/job, 1 active, reserve-before-launch, race/restart-safe, `/budget`) | ✅ CPU-tested | src/g4bench/budget.py, src/g4bench/bridge_api.py, tests/test_budget.py, tests/test_bridge_api.py |
 | Modal HTTPS bridge | 🟨 written + definition-validated (modal 1.6.3); **not deployed** | modal_bridge/ |
 | vLLM vs SGLang matched-load comparison (paired by seed, correctness-gated, CIs) | ✅ CPU-tested | src/g4bench/engine_compare.py, results/summary/engine_comparison.csv |
+| Static engine-flag preflight vs pinned vLLM/SGLang source (runner refuses unknown flags) | ✅ all 4 configs clean | src/g4bench/flagcheck.py, configs/engine_flags/ |
 | GPU experiments E1–E6 | ⛔ blocked (see below) | — |
 
 ## Measured results
@@ -62,5 +63,5 @@ g4bench speedbench prepare && python -m pytest -q
 ```
 
 Expected: SPEED-Bench coding digest `6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18`,
-`matches_inferencex_digest: true`; 77 tests pass (without `speedbench prepare`, the one network-marked
+`matches_inferencex_digest: true`; 82 tests pass (without `speedbench prepare`, the one network-marked
 digest test is skipped; without `modal` installed, the bridge-definition test is skipped).

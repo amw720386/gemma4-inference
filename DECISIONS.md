@@ -117,3 +117,11 @@ ignore_eos and num_prompts all match, and the same seed (=> identical request st
 is GATED (no ratio printed) unless both point-runs are valid, both runs' correctness probes passed, and model pins
 match. Ratios use the article's "advantage" convention; CIs are bootstrap-of-means and paired log-ratio t-CIs;
 n < 3 is labelled descriptive. The article's implied vLLM/SGLang ratio is shown as a reference column only.
+
+**D-023 (2026-11-10) Static flag preflight against pinned engine sources.** With $10 total, a server dying on a
+mistyped flag is the cheapest avoidable loss. `flagcheck.py` extracts flag names with `ast` from vLLM v0.33.0
+(`arg_utils.py`, `entrypoints/common/cli_args.py`; `SpeculativeConfig` fields for `--speculative-config` JSON) and
+SGLang v0.5.23 (`arg_groups/fields/*.py` field names, `cli_name`, `aliases`), commits snapshots with per-file sha256
+(`configs/engine_flags/`), and the runner refuses to start a server whose argv (incl. `--extra-server-arg`) has an
+unknown flag. Result on 2026-11-10: all four real engine configs clean (344 vLLM / 562 SGLang flags known). Limits:
+static existence only — it cannot catch invalid *values* or runtime incompatibilities (that is what E1 smoke is for).
