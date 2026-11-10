@@ -151,3 +151,11 @@ present), that no job is active and that `available_usd` covers the step; stops 
 expectation (selftest rc 0; prefetch coding digest = InferenceX; all points valid); cancels past `max_wait_s` but keeps
 polling until termination is confirmed; logs every step to `results/budget_ledger.jsonl`. Verified live on
 2026-11-10: against the undeployed bridge it refused at `/health` (404) before any POST — $0 spent.
+
+**D-027 (2026-11-10) A Backboard-independent target for the open baselines.** Dividing the article's Backboard/SGLang
+ratio table by its Backboard/vLLM table cancels Backboard and yields the article's implied vLLM-vs-SGLang advantage
+for all 13 metrics at all 8 points (incl. mean/median metrics never published in absolute form), with ±0.005
+rounding bounds per published ratio. Matches the absolute table where both exist (1K/c1 throughput 1.523 vs
+186.8/122.6 = 1.524). `engine_compare` now reports it per metric plus a descriptive `consistent_with_article` flag
+(our bootstrap CI overlaps the article bounds). Table: docs/analysis/article_vllm_vs_sglang.md. Finding: the
+article's SGLang gap is a decode (TPOT) gap; p99 TTFT is at parity (0.97–1.06) at 8K.

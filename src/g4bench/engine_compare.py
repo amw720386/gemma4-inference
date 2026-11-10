@@ -25,10 +25,34 @@ import numpy as np
 
 from . import compare, stats
 
-METRICS: dict[str, bool] = {  # column -> higher is better
-    "output_throughput": True, "mean_ttft_ms": False, "p90_ttft_ms": False, "p99_ttft_ms": False,
-    "mean_tpot_ms": False, "p99_tpot_ms": False, "mean_e2el_ms": False, "p99_e2el_ms": False,
+METRICS: dict[str, bool] = {  # column -> higher is better (the article's 13 metrics)
+    "output_throughput": True,
+    "mean_ttft_ms": False, "median_ttft_ms": False, "p90_ttft_ms": False, "p99_ttft_ms": False,
+    "mean_tpot_ms": False, "median_tpot_ms": False, "p90_tpot_ms": False, "p99_tpot_ms": False,
+    "mean_e2el_ms": False, "median_e2el_ms": False, "p90_e2el_ms": False, "p99_e2el_ms": False,
 }
+RATIO_COL = {m: ("output_throughput" if m == "output_throughput" else m.removesuffix("_ms")) for m in METRICS}
+
+
+def article_implied(key: str) -> dict[str, dict[str, float]]:
+    """Article-implied vLLM-vs-SGLang advantage for all 13 metrics at ``{isl}x{conc}``, Backboard cancelled out.
+
+    vs_sglang/vs_vllm = (BB/S)/(BB/V) = V/S for throughput and (S/BB)/(V/BB) = S/V for latencies, i.e. the vLLM
+    advantage in the article's convention. Published ratios have 2 decimals, so bounds propagate +-0.005 on each.
+    """
+    import json
+
+    from .paths import TARGETS
+
+    rt = json.loads(TARGETS.read_text())["ratio_tables"]
+    cols = rt["_columns"]
+    if key not in rt["vs_vllm"]:
+        return {}
+    v, sg = rt["vs_vllm"][key], rt["vs_sglang"][key]
+    out = {}
+    for i, c in enumerate(cols):
+        out[c] = {"est": sg[i] / v[i], "lo": (sg[i] - 0.005) / (v[i] + 0.005), "hi": (sg[i] + 0.005) / (v[i] - 0.005)}
+    return out
 TARGET_NAME = {"output_throughput": "output_throughput", "p99_tpot_ms": "p99_tpot", "p99_e2el_ms": "p99_e2el",
                "p90_ttft_ms": "p90_ttft"}
 WORKLOAD_FIELDS = ("hardware_class", "dataset", "dataset_digest", "isl", "osl", "conc", "random_range_ratio",
@@ -96,9 +120,17 @@ def compare_engines(rows: list[dict[str, Any]], *, a: str = "vllm", b: str = "sg
                            paired_ci=_paired_log_ci(va, vb, higher),
                            evidence="claim (n>=3)" if len(seeds) >= 3 else "descriptive (n<3)")
             tn = TARGET_NAME.get(m)
-            if tkey and tn and tkey in targets:
+            if tkey and tn and tkey in targets and (a, b) == ("vllm", "sglang"):
                 t = targets[tkey][tn]
-                row["article_advantage"] = (t[a] / t[b]) if higher else (t[b] / t[a])
+                row["article_advantage"] = (t[a] / t[b]) if higher else (t[b] / t[a])  # from absolute values
+            if tkey and (a, b) == ("vllm", "sglang"):
+                imp = article_implied(tkey).get(RATIO_COL[m])
+                if imp:
+                    row["article_advantage_from_ratios"] = imp["est"]
+                    row["article_bounds"] = [imp["lo"], imp["hi"]]
+                    row.setdefault("article_advantage", imp["est"])
+                    ci = row.get("boot_ci")
+                    row["consistent_with_article"] = (None if not ci else bool(ci[0] <= imp["hi"] and imp["lo"] <= ci[1]))
             out.append(row)
     return out
 
@@ -106,13 +138,16 @@ def compare_engines(rows: list[dict[str, Any]], *, a: str = "vllm", b: str = "sg
 def markdown(rows: list[dict[str, Any]], metric: str = "output_throughput") -> str:
     sel = [r for r in rows if r["metric"] == metric]
     lines = [f"| hw | dataset | ISL | conc | n | {sel[0]['engine_a'] if sel else 'A'} | {sel[0]['engine_b'] if sel else 'B'} | "
-             "advantage | 95% CI (boot) | article | evidence / gate |",
-             "|---|---|---:|---:|---:|---:|---:|---:|---|---:|---|"]
+             "advantage | 95% CI (boot) | article (bounds) | consistent? | evidence / gate |",
+             "|---|---|---:|---:|---:|---:|---:|---:|---|---|---|---|"]
     for r in sel:
         f = (lambda v: "not measured" if v is None else f"{v:.4g}")  # noqa: E731
         ci = f"[{r['boot_ci'][0]:.3f}, {r['boot_ci'][1]:.3f}]" if r["boot_ci"] else "–"
         art = f"{r['article_advantage']:.3f}" if r.get("article_advantage") else "–"
+        if r.get("article_bounds"):
+            art += f" [{r['article_bounds'][0]:.3f}, {r['article_bounds'][1]:.3f}]"
+        cons = {True: "yes", False: "NO", None: "–"}[r.get("consistent_with_article")]
         ev = r["evidence"] if not r["gated"] else "GATED: " + "; ".join(r["gate_reasons"])
         lines.append(f"| {r['hardware_class']} | {r['dataset']} | {r['isl'] or 'natural'} | {r['conc']} | {r['n_paired']} | "
-                     f"{f(r['a_mean'])} | {f(r['b_mean'])} | {f(r['advantage'])} | {ci} | {art} | {ev} |")
+                     f"{f(r['a_mean'])} | {f(r['b_mean'])} | {f(r['advantage'])} | {ci} | {art} | {cons} | {ev} |")
     return "\n".join(lines)
