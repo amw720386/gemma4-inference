@@ -128,3 +128,15 @@ def test_environment_approval_only_tightens_limits():
     assert t["cap_usd"] == 8.0 and t["per_job_cap_usd_max"] == 1.5
     loose = C.approved_limits(req, {"G4_PROJECT_BUDGET_USD": "100", "G4_JOB_CAP_USD": "40"})
     assert loose["cap_usd"] == 10.0 and loose["per_job_cap_usd_max"] == 2.0
+
+
+def test_check_limits_passes_on_fresh_correct_server_and_fails_closed():
+    d = Driver(FakeBackend(), GOOD)
+    b = C.check_limits(d, {"cap_usd": 10.0, "per_job_cap_usd_max": 2.0, "max_active": 1}, need_usd=0.0)
+    assert b["available_usd"] == 9.5 and b["cap_usd"] == 10.0
+
+    def broken(method, path, json=None):
+        raise C.CampaignStop("HTTP 404 /health: modal-http: invalid function call")
+
+    with pytest.raises(C.CampaignStop):
+        C.check_limits(broken, {"cap_usd": 10.0, "per_job_cap_usd_max": 2.0, "max_active": 1}, need_usd=0.0)

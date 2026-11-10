@@ -16,7 +16,7 @@ record the settled estimate. Never run two jobs at once (the bridge refuses anyw
 
 | # | Command (`python modal_bridge/client.py …`) | Reserved | Expected settle | Gate to continue |
 |---|---|---:|---:|---|
-| 0 | `g4bench flagcheck` + `scripts/check_worker_env.sh <tok>` (local, free), then `health`, `budget` (free) | 0 | 0 | `ok`, `ledger_ok`, cap 10, per-job ≤ 2, available 9.50, no active jobs |
+| 0 | `g4bench flagcheck` + `scripts/check_worker_env.sh <tok>` (local, free), then `client.py verify` (free: /health + /budget must show $10 / ≤ $2 / 1 active) | 0 | 0 | `ok`, `ledger_ok`, cap 10, per-job ≤ 2, available 9.50, no active jobs |
 | 1 | `selftest` | 0.10 | ≤ 0.10 | tests pass inside Modal |
 | 2 | `prefetch` | 0.16 | ≤ 0.16 | weights cached; SPEED-Bench coding digest = InferenceX |
 | 3 | `submit --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2`, then `wait <job_id>` | 2.00 | ~0.7 | 0 failures, probes ≥ 7/8, acceptance length captured, `exact_hardware=true`, effective attention backend recorded (REPORT.md table); `fetch` + commit `results/runs/<run_id>/` |

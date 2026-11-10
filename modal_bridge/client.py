@@ -70,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("health")
     sub.add_parser("budget")
+    sub.add_parser("verify", help="free: check /health + /budget show the approved $10 / <= $2 / 1-active limits")
     sub.add_parser("runs")
     sub.add_parser("jobs")
     sub.add_parser("prefetch")
@@ -96,7 +97,26 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("dest")
     a = ap.parse_args(argv)
 
-    if a.cmd == "health":
+    if a.cmd == "verify":
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
+        from g4bench import campaign as C
+
+        req = C.approved_limits({"cap_usd": 10.0, "per_job_cap_usd_max": 2.0, "max_active": 1})
+
+        def call(method, path, json=None):
+            try:
+                return _call(method, path)
+            except SystemExit as e:
+                raise C.CampaignStop(str(e)) from None
+
+        try:
+            b = C.check_limits(call, req, need_usd=0.0)
+            out = {"verified": True, "required": req, "available_usd": b["available_usd"],
+                   "committed_usd": b["committed_usd"], "note": "free check; no job launched"}
+        except C.CampaignStop as e:
+            print(json.dumps({"verified": False, "required": req, "reason": str(e)}, indent=2))
+            return 1
+    elif a.cmd == "health":
         out = _call("GET", "/health")
     elif a.cmd == "budget":
         out = _call("GET", "/budget")
