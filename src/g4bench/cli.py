@@ -44,6 +44,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="append one raw server argv token (repeatable); changes config hash via notes only, "
                         "so ALSO set --notes")
 
+    fcp = sub.add_parser("flagcheck", help="check engine configs' flags against pinned engine sources (static)")
+    fcp.add_argument("--refresh", action="store_true", help="re-fetch sources at the pinned tags (HTTPS)")
+
     rp = sub.add_parser("report", help="(re)generate REPORT.md + throughput.svg for one run directory")
     rp.add_argument("run_dir", type=Path)
 
@@ -113,6 +116,16 @@ def main(argv: list[str] | None = None) -> int:
                            extra_server_args=args.extra_server_arg, dry_run=args.dry_run, notes=args.notes, **kw))
         print(str(d))
         return 0
+
+    if args.cmd == "flagcheck":
+        from . import flagcheck
+
+        if args.refresh:
+            for e in ("vllm", "sglang"):
+                print("refreshed", flagcheck.refresh(e))
+        res = flagcheck.check_all()
+        print(json.dumps(res, indent=1))
+        return 0 if all(not v for v in res.values()) else 1
 
     if args.cmd == "report":
         from . import report
