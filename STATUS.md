@@ -1,7 +1,7 @@
 # Status — 2026-11-10 (checkpoint 3)
 
 **One-line state:** harness, real-prompt arm, reporting and a **server-side $10 project spend limit** in the bridge
-are built and CPU-tested (96 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
+are built and CPU-tested (98 tests); **zero GPU measurements exist**. Budget: **$10 total approved** (per-job ≤ $2).
 GPU work waits only on the user's one-time bridge deploy + scoped proxy token. Spend to date: **$0.00**.
 
 ## Summary
@@ -70,5 +70,5 @@ g4bench speedbench prepare && python -m pytest -q
 ```
 
 Expected: SPEED-Bench coding digest `6f1845452f1cfbc1930ea779ba6c3d5b437a9d5853eca199dd9b7619b20a0c18`,
-`matches_inferencex_digest: true`; 96 tests pass (without `speedbench prepare`, the one network-marked
+`matches_inferencex_digest: true`; 98 tests pass (without `speedbench prepare`, the one network-marked
 digest test is skipped; without `modal` installed, the bridge-definition test is skipped).

@@ -122,14 +122,14 @@ def run(opts: RunOptions) -> Path:
                 server = Server(server_argv, env=env, log_path=pdir / "server.log", base_url=base_url,
                                 health_path=eng.health_path)
                 try:
-                    start_s = server.start(timeout_s=opts.server_timeout_s)
+                    start_s = server.start(timeout_s=_bounded(opts.server_timeout_s, opts.max_wall_s, t_start))
                 except ServerError as e:
                     _record_skip(run_dir, p, f"server failed: {e}")
                     server = None
                     continue
             _run_point(run_dir, pdir, p, eng=eng, base_url=base_url, model=model_name, tokenizer=tokenizer,
                        chash=chash, run_id=run_id, meta=meta, start_s=start_s, server=server,
-                       timeout_s=opts.client_timeout_s, notes=opts.notes,
+                       timeout_s=_bounded(opts.client_timeout_s, opts.max_wall_s, t_start), notes=opts.notes,
                        dataset_file=ds_files.get(p.dataset, (None,))[0])
             if i == 0 and opts.correctness:
                 # After the first measured point, so the gate never perturbs a measurement.
@@ -145,6 +145,19 @@ def run(opts: RunOptions) -> Path:
         except Exception as e:  # noqa: BLE001 - a report bug must never lose results
             print(f"[g4bench] report generation failed: {e!r}", flush=True)
     return run_dir
+
+
+MIN_STEP_TIMEOUT_S = 30.0
+
+
+def _bounded(step_timeout_s: float, max_wall_s: float, t_start: float) -> float:
+    """Never let one server start / client run outlive the run's wall budget.
+
+    On the bridge, max_wall_s ends before the Modal timeout (bridge_jobs), so a slow point is cut by us, recorded
+    as invalid, and the results + report are still written - instead of Modal killing the container mid-point.
+    """
+    remaining = max_wall_s - (time.monotonic() - t_start)
+    return max(min(step_timeout_s, remaining), MIN_STEP_TIMEOUT_S)
 
 
 class DatasetError(SystemExit):
