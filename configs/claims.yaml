@@ -1,0 +1,80 @@
+# Register of the Backboard article's claims (https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference, 2026-11-09)
+# and how this project can (or cannot) check each one. `g4bench claims` renders docs/CLAIMS.md and computes the
+# evidence status of measurable claims ONLY from measured results (results/runs -> g4bench analyze). Never edit a
+# status by hand.
+#
+# kind:
+#   measurable           - checkable by running the open engines on the article's workload and hardware
+#   verified-source      - checked against primary sources (no measurement needed); evidence cited
+#   verified-analysis    - checked by analysis of the article's own numbers; evidence cited
+#   untestable           - cannot be checked by an independent party (proprietary / unpublished)
+# budget ($10 total approved): in-budget | partial | out-of-budget | n/a
+claims:
+  - id: C01
+    text: "vLLM 0.33.0 (MTP 4 tokens, async scheduling, gpu-mem 0.90, prefix caching off) output throughput on 1x RTX PRO 6000, Gemma 4 12B BF16, at ISL {1K,8K} x conc {1,4,16,64}, OSL 1K"
+    kind: measurable
+    engine: vllm
+    metric: output_throughput
+    keys: ["1024x1", "1024x4", "1024x16", "1024x64", "8192x1", "8192x4", "8192x16", "8192x64"]
+    budget: partial
+    plan: "E2: within $10 only 1024x1 and 8192x4 at seed 0 (n=1, descriptive); full matrix ~$6.08 + repeats ~$13.6 need new approval"
+  - id: C02
+    text: "SGLang 0.5.23 (NEXTN 5 steps / 6 draft tokens, mem 0.85, radix cache off) output throughput at the same 8 workloads"
+    kind: measurable
+    engine: sglang
+    metric: output_throughput
+    keys: ["1024x1", "1024x4", "1024x16", "1024x64", "8192x1", "8192x4", "8192x16", "8192x64"]
+    budget: partial
+    plan: "E3: within $10 only 1024x1 and 8192x4 at seed 0 (n=1); full matrix ~$7.81"
+  - id: C03
+    text: "Open-engine latency figures: p99 TPOT, p99 E2EL and p90 TTFT for vLLM and SGLang at the 8 workloads"
+    kind: measurable
+    engine: [vllm, sglang]
+    metric: [p99_tpot_ms, p99_e2el_ms, p90_ttft_ms]
+    keys: ["1024x1", "1024x4", "1024x16", "1024x64", "8192x1", "8192x4", "8192x16", "8192x64"]
+    budget: partial
+    plan: "measured by the same runs as C01/C02"
+  - id: C04
+    text: "vLLM outperforms SGLang by 1.4-2.1x in throughput/TPOT at every workload (implied by the article's ratio tables; Backboard cancels out)"
+    kind: measurable
+    engine: [vllm, sglang]
+    metric: engine_ratio
+    keys: ["1024x1", "8192x4"]
+    budget: partial
+    plan: "paired seed-matched comparison (g4bench analyze -> engine_comparison.csv); 2 workloads in budget, n=1"
+  - id: C05
+    text: "Backboard's engine achieves the reported throughput/latency and wins 208/208 metric comparisons"
+    kind: untestable
+    budget: n/a
+    reason: "Backboard's engine, kernels and raw data are proprietary/unpublished; only its reported numbers exist. We can at most bound them against open-engine results on the same workload."
+  - id: C06
+    text: "Backboard's draft head shortlists candidates in 4-bit and rescores in BF16 without changing the BF16 target output"
+    kind: untestable
+    budget: n/a
+    reason: "Implementation unavailable. The closest open analogue (vLLM draft_lm_head_quantization=fp8, config vllm-0.33.0-mtp4-draftfp8, admissibility b) is prepared but out of the $10 budget."
+  - id: C07
+    text: "The competitor flags stated in the article match the engines' published recipes (and exist at the pinned versions)"
+    kind: verified-source
+    budget: n/a
+    evidence: "Engine flags match vllm-project/recipes gemma-4-12B-it.yaml (fa1173a1) and the SGLang Gemma4 cookbook; every flag exists at the pinned tags (configs/engine_flags/, D-023). Unstated defaults (max-model-len, scheduler limits, attention backend) are recorded per run from server logs (D-025)."
+  - id: C08
+    text: "Inferred from the article's own numbers: output lengths varied per request (not fixed at 1024 tokens)"
+    kind: verified-analysis
+    budget: n/a
+    evidence: "16/24 published (p99 E2EL, p99 TPOT) pairs are impossible with fixed 1024-token outputs (src/g4bench/inference_checks.py), consistent with InferenceX RANDOM_RANGE_RATIO=0.8 (D-004)."
+  - id: C09
+    text: "Hardware: one NVIDIA RTX PRO 6000 Blackwell 96 GB per server, default clocks and power"
+    kind: measurable
+    metric: hardware
+    budget: in-budget
+    plan: "Every run records nvidia-smi name, power limits, clocks, driver; exact_hardware flag. Edition (Server/Workstation/Max-Q) of Modal's GPU is unknown until E1."
+  - id: C10
+    text: "Results are from one run per point (three seeds averaged at 8K/c4)"
+    kind: verified-source
+    budget: n/a
+    evidence: "Stated in the article's limitations; our design uses seeds 0,1,2 at every point with t-CIs (D-005) when budget allows, and labels n<3 results descriptive."
+  - id: C11
+    text: "The exact client run: InferenceX bench_serving commit, random range ratio and chat-template handling used by Backboard"
+    kind: untestable
+    budget: n/a
+    reason: "Not stated in the article. We pin InferenceX 0b991451 and range ratio 0.8 (the InferenceX default), fingerprint the resulting request streams for seeds 0-2, and report the choice as an assumption."
