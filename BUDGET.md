@@ -20,7 +20,7 @@ Server-side in the deployed bridge (`modal_bridge/app.py` + `src/g4bench/budget.
 | Control | Value | Mechanism |
 |---|---|---|
 | Project cap | **$10.00** (`G4_PROJECT_CAP_USD`) | ledger in Modal Dict `g4repro-budget`; reservation refused if platform reserve + open reservations + settled estimates would exceed it |
-| Platform reserve | $0.50 (`G4_PLATFORM_RESERVE_USD`) | set aside, not metered, for the bridge (≤ 1 core / 1 GiB) + ledger (≤ 0.5 core / 0.5 GiB) containers: ≈ $0.08/h while warm ⇒ ≈ 6 h of continuous polling; poll every ≥ 120 s → **usable for jobs: $9.50** |
+| Platform spend | committed = max($0.50 reserve, **metered**) | every bridge request is metered: bridge (≤ 1 core / 1 GiB, `max_containers=1`) + ledger (≤ 0.5 core / 0.5 GiB) warm time at ≈ $0.08/h; idle gaps count as one 60 s window → **usable for jobs ≤ $9.50**, less if the bridge is polled for > ~6 h |
 | Per-job cap | **$2.00** (`G4_PER_JOB_CAP_USD`) | each job's Modal `timeout` is derived from its reservation so Modal kills it before the worst case |
 | Concurrency | 1 open reservation (`G4_BRIDGE_MAX_ACTIVE`) | covers `/jobs`, `/prefetch` and `/selftest` alike |
 | Race safety | single-container, one-input ledger function + Dict lease lock (atomic put-if-absent) | 40-thread and 12-request parallel tests never exceed the cap |
@@ -31,11 +31,12 @@ Worst-case reservation = rate at the container's **limits** × (Modal timeout + 
 scaledown margin). Rates: GPU job (RTX PRO 6000 + 8 cores + 64 GiB limits) **$0.001089/s = $3.92/h**; CPU
 prefetch/selftest (2 cores, 4 GiB) $0.126/h. A $2 reservation buys a **876 s** GPU timeout.
 
-Settlement: held at the full reservation until Modal confirms the call terminal; then cost = rate × (job's
-reported end − reservation time + 60 s), i.e. counted from *before* the container started, never capped (overruns
-are recorded). Unknown/transient poll errors keep the reservation; expired outputs settle at the worst case;
-a spawn that failed (no call id) is the only thing ever released. Jobs abort if (re)started after their deadline
-(preemption restarts); a restart already in flight can overrun by at most one attempt, which settlement records.
+Settlement: held at the full reservation until Modal confirms the call terminal. A job that finished and reported
+its end: cost = rate × (end − reservation time + 60 s), counted from *before* the container started, never capped.
+Timeouts, crashes, cancellations and expired outputs settle at the **worst case**. Workers refuse to start later than
+reservation + 900 s and hard-exit at the reservation deadline, so start + Modal timeout cannot pass it. Only a spawn
+rejected locally before any RPC is released; an ambiguous spawn or lost attach is held as an orphan and settled at its
+full reservation after its deadline. Transient poll errors keep holding. (Independent review fixes: DECISIONS D-030.)
 
 **This is a conservative *estimate* that gates launches made through this bridge. It is NOT a Modal billing hard
 stop**, it cannot see anything launched outside the bridge, and Modal's invoice is authoritative. Estimated
@@ -57,10 +58,13 @@ so each fits the 876 s timeout (`--only <key>`). The plan within $10 is in NEXT.
 
 ## Ledger (agent's copy; the bridge's `/budget` is the source of truth once deployed)
 
+Machine-readable per-step log: `results/budget_ledger.jsonl` (written by the campaign runner).
+
 | Date (UTC) | Job id | Experiment | GPU | Reserved $ | Settled est. $ | Notes |
 |---|---|---|---|---:|---:|---|
 | 2026-11-10 | – | E0 CPU-only (this container) | none | 0 | **0.00** | no paid compute |
 | 2026-11-10 | – | E5c data prep (this container) | none | 0 | **0.00** | SPEED-Bench prepared locally |
+| 2026-11-10 | – | e1-smoke `--execute` gate test | none | 0 | **0.00** | refused at /health (404, not deployed) before any POST |
 
 **Total spent to date: $0.00.** Bridge not deployed; no Modal compute has run.
 

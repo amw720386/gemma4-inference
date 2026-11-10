@@ -82,7 +82,9 @@ def run(opts: RunOptions) -> Path:
     server_argv = eng.launcher() + eng.render_args(values) + list(opts.extra_server_args or [])
     model_name = opts.model_name or pins["model"]["target"]["repo"]
 
-    # Fail fast (before any run dir, server or GPU time): every real-prompt set must exist and re-verify.
+    # Fail fast (before any run dir, server or GPU time): flags must exist in the pinned engine source,
+    # and every real-prompt set must exist and re-verify.
+    check_flags(eng, server_argv[len(eng.launcher()):])
     ds_files = check_datasets(points)
     run_dir.mkdir(parents=True, exist_ok=False)
     manifest = {
@@ -120,14 +122,14 @@ def run(opts: RunOptions) -> Path:
                 server = Server(server_argv, env=env, log_path=pdir / "server.log", base_url=base_url,
                                 health_path=eng.health_path)
                 try:
-                    start_s = server.start(timeout_s=opts.server_timeout_s)
+                    start_s = server.start(timeout_s=_bounded(opts.server_timeout_s, opts.max_wall_s, t_start))
                 except ServerError as e:
                     _record_skip(run_dir, p, f"server failed: {e}")
                     server = None
                     continue
             _run_point(run_dir, pdir, p, eng=eng, base_url=base_url, model=model_name, tokenizer=tokenizer,
                        chash=chash, run_id=run_id, meta=meta, start_s=start_s, server=server,
-                       timeout_s=opts.client_timeout_s, notes=opts.notes,
+                       timeout_s=_bounded(opts.client_timeout_s, opts.max_wall_s, t_start), notes=opts.notes,
                        dataset_file=ds_files.get(p.dataset, (None,))[0])
             if i == 0 and opts.correctness:
                 # After the first measured point, so the gate never perturbs a measurement.
@@ -145,8 +147,38 @@ def run(opts: RunOptions) -> Path:
     return run_dir
 
 
+MIN_STEP_TIMEOUT_S = 30.0
+
+
+def _bounded(step_timeout_s: float, max_wall_s: float, t_start: float) -> float:
+    """Never let one server start / client run outlive the run's wall budget.
+
+    On the bridge, max_wall_s ends before the Modal timeout (bridge_jobs), so a slow point is cut by us, recorded
+    as invalid, and the results + report are still written - instead of Modal killing the container mid-point.
+    """
+    remaining = max_wall_s - (time.monotonic() - t_start)
+    return max(min(step_timeout_s, remaining), MIN_STEP_TIMEOUT_S)
+
+
 class DatasetError(SystemExit):
     pass
+
+
+class FlagError(SystemExit):
+    pass
+
+
+def check_flags(eng: EngineConfig, argv: list[str]) -> None:
+    if eng.engine == "mock":
+        return
+    from . import flagcheck
+
+    p = flagcheck.snapshot_path(eng.engine, eng.version)
+    if not p.exists():
+        raise FlagError(f"no flag snapshot for {eng.engine} {eng.version}; run `g4bench flagcheck --refresh`")
+    problems = flagcheck.check(eng, json.loads(p.read_text()), argv)
+    if problems:
+        raise FlagError("refusing to start server: " + "; ".join(problems))
 
 
 def check_datasets(points: list[Point]) -> dict[str, tuple[Path, dict[str, Any]]]:
@@ -194,14 +226,23 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
     log_text = server.log_path.read_text(encoding="utf-8", errors="replace") if server.log_path.exists() else ""
     acc_log = promscrape.acceptance_from_log(log_text)
     (pdir / "spec_metrics.json").write_text(json.dumps({"delta": d, "acceptance": acc, "log": acc_log}, indent=2))
+    from . import serverlog
+
+    eff = serverlog.parse(log_text, eng.engine if eng.engine in ("vllm", "sglang") else None)
+    (pdir / "effective_config.json").write_text(json.dumps(eff, indent=2))
     ctx = {
         "run_id": run_id, "config_hash": chash, "engine": eng.engine, "engine_config": eng.name,
-        "engine_version": eng.version, "hardware_class": meta["hardware_class"],
+        "engine_version": eng.version, "engine_role": eng.raw.get("role", "variant"),
+        "admissibility": str(eng.raw.get("admissibility", "c")), "hardware_class": meta["hardware_class"],
         "gpu_name": (meta["gpus"][0]["name"] if meta["gpus"] else None), "gpu_count": len(meta["gpus"]),
         "exact_hardware": meta["exact_hardware"], **{k: v for k, v in p.to_dict().items()},
         "spec_acceptance_length": acc.get("acceptance_length") or acc_log.get("acceptance_length_log_mean"),
         "spec_draft_acceptance_rate": acc.get("draft_acceptance_rate"),
         "server_start_s": start_s, "started_utc": started, "notes": notes, **gpu,
+        "eff_attention_backend": eff.get("attention_backend") or eff.get("gemma4_backend_decision"),
+        "eff_spec_algorithm": eff.get("speculative_algorithm"),
+        "eff_kv_cache_tokens": eff.get("kv_cache_tokens"),
+        "eff_max_running_requests": eff.get("max_running_requests"),
     }
     if result_path.exists():
         raw = json.loads(result_path.read_text())

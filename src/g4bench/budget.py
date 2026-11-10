@@ -15,10 +15,18 @@ Invariants (each tested in tests/test_budget.py):
    with the write that adds a reservation. Violations raise; nothing is launched.
 3. **Release only what provably never ran.** A reservation is released only when the spawn call itself
    failed (no call id). Anything with a call id stays fully reserved until it is confirmed terminal.
-4. **Settle conservatively.** On confirmed completion, cost = rate x (end - reserved_at + scaledown
-   margin), where ``reserved_at`` precedes container start and ``end`` is the job's own reported end time
-   (or, if unknown, the latest it could have run: reserved_at + timeout + startup margin). Never capped at
-   the reservation, so overruns are recorded, not hidden.
+4. **Settle conservatively.** A job that finished and reported its own end: cost = rate x (end - reserved_at +
+   scaledown margin) - counted from before container start, never capped. Any other terminal outcome
+   (timeout, crash, cancel, expired) settles at the worst case ``latest = start_deadline + timeout``: workers
+   refuse to start after ``start_deadline = reserved_at + startup margin``, so Modal's timeout ends them by then.
+   A reservation that never obtained a call id (ambiguous spawn, lost attach) is settled at its full reservation
+   once ``latest`` has passed ("orphan").
+7. **The bridge's own spend is metered.** Every ledger op is a bridge request; warm time of the bridge + ledger
+   containers is accrued (gaps > warm window count as one window) and committed as
+   ``max(platform reserve, metered platform cost)``, so a forgotten poll loop eats into the cap instead of
+   escaping it.
+8. **Compare-and-swap writes.** Besides the lease lock, each save claims ``ledger/commit/<version>`` with atomic
+   put-if-absent; losing that race aborts the op (no lost updates even if two writers overlap).
 5. **Serialized, restart-safe writes.** The whole ledger lives under one key and is rewritten in one put.
    Mutations hold a lease lock acquired with atomic put-if-absent. In app.py every mutation additionally
    runs inside a single-container, one-input-at-a-time Modal function, so the only way a lease goes stale
@@ -40,6 +48,7 @@ from typing import Any, Protocol
 
 LEDGER_KEY = "ledger/v1"
 LOCK_KEY = "ledger/lock"
+COMMIT_PREFIX = "ledger/commit/"
 DISCLAIMER = ("Conservative estimate maintained by the g4repro bridge. NOT a Modal billing hard stop and not "
               "Modal's invoice; it only gates launches made through this bridge.")
 
@@ -114,14 +123,21 @@ def timeout_for_budget(rate_usd_s: float, usd: float) -> int:
     return max(int(math.floor(usd / rate_usd_s - STARTUP_MARGIN_S - SCALEDOWN_MARGIN_S)), 0)
 
 
+# Bridge web (<= 1 core, 1 GiB) + ledger (<= 0.5 core, 0.5 GiB) containers at their limits.
+PLATFORM_RATE_USD_S = 1.5 * PRICE["cpu_core_s"] + 1.5 * PRICE["mem_gib_s"]
+PLATFORM_WARM_S = 60.0   # scaledown_window of both functions
+
+
 @dataclass(frozen=True)
 class LedgerConfig:
     cap_usd: float = 10.0
-    platform_reserve_usd: float = 0.25   # bridge/ledger web containers, Dict/Volume ops; set aside, never spent
+    platform_reserve_usd: float = 0.25   # floor for bridge/ledger container spend; metered usage above it counts too
     per_job_cap_usd: float = 2.0
     max_active: int = 1
     lease_s: float = 60.0
     lock_wait_s: float = 30.0
+    platform_rate_usd_s: float = PLATFORM_RATE_USD_S
+    platform_warm_s: float = PLATFORM_WARM_S
 
 
 class Ledger:
@@ -166,9 +182,33 @@ class Ledger:
         return st
 
     def _save(self, st: dict[str, Any]) -> None:
-        st["version"] = int(st["version"]) + 1
-        st["updated"] = self.clock()
+        new = int(st["version"]) + 1
+        key = f"{COMMIT_PREFIX}{new}"
+        if not self.kv.put(key, {"at": self.clock()}, skip_if_exists=True):
+            claim = self.kv.get(key) or {}
+            # A claim with no matching ledger write, older than the lease, is a writer that crashed in between.
+            if claim.get("at", self.clock()) < self.clock() - self.cfg.lease_s and self.kv.pop(key, None) is not None \
+                    and self.kv.put(key, {"at": self.clock()}, skip_if_exists=True):
+                pass
+            else:
+                raise LedgerStateError(f"lost commit race at version {new}; retry")
+        st["version"], st["updated"] = new, self.clock()
         self.kv.put(LEDGER_KEY, st)
+        self.kv.pop(f"{COMMIT_PREFIX}{new - 2}", None)  # keep the CAS keyspace bounded
+
+    # ---------------- platform (bridge/ledger containers) metering
+    def _touch(self, st: dict[str, Any]) -> None:
+        p = st.setdefault("platform", {"last_t": None, "accrued_s": 0.0})
+        now = self.clock()
+        if p["last_t"] is not None:
+            gap = max(now - p["last_t"], 0.0)
+            p["accrued_s"] += min(gap, self.cfg.platform_warm_s)
+        p["last_t"] = now
+
+    def _platform_usd(self, st: dict[str, Any]) -> float:
+        p = st.get("platform") or {}
+        tail = self.cfg.platform_warm_s if p.get("last_t") is not None else 0.0  # still-warm window after last op
+        return (float(p.get("accrued_s", 0.0)) + tail) * self.cfg.platform_rate_usd_s
 
     # ---------------- accounting
     @staticmethod
@@ -183,10 +223,21 @@ class Ledger:
         jobs = st["jobs"].values()
         reserved = sum(self._open_usd(j) for j in jobs)
         settled = sum(self._settled_usd(j) for j in jobs)
-        committed = self.cfg.platform_reserve_usd + reserved + settled
+        metered = self._platform_usd(st)
+        platform = max(self.cfg.platform_reserve_usd, metered)
+        committed = platform + reserved + settled
         return {"reserved_usd": reserved, "settled_estimate_usd": settled,
-                "platform_reserve_usd": self.cfg.platform_reserve_usd, "committed_usd": committed,
+                "platform_reserve_usd": self.cfg.platform_reserve_usd, "platform_metered_usd": metered,
+                "platform_committed_usd": platform, "committed_usd": committed,
                 "available_usd": max(self.cfg.cap_usd - committed, 0.0)}
+
+    def touch(self) -> dict[str, Any]:
+        """Record bridge activity (called once per bridge HTTP request)."""
+        with self._locked():
+            st = self._load()
+            self._touch(st)
+            self._save(st)
+            return {"platform_metered_usd": self._platform_usd(st)}
 
     def snapshot(self) -> dict[str, Any]:
         st = self._load()
@@ -217,9 +268,11 @@ class Ledger:
                                   f"(cap ${self.cfg.cap_usd:.2f}, committed ${t['committed_usd']:.2f})")
             jid = f"j{st['version'] + 1:05d}-{secrets.token_hex(3)}"
             now = self.clock()
+            self._touch(st)
             st["jobs"][jid] = {"job_id": jid, "kind": kind, "state": "reserved", "reserved_usd": float(usd),
                                "rate_usd_s": float(rate_usd_s), "timeout_s": float(timeout_s),
-                               "reserved_at": now, "deadline_unix": now + timeout_s + STARTUP_MARGIN_S,
+                               "reserved_at": now, "start_deadline_unix": now + STARTUP_MARGIN_S,
+                               "deadline_unix": now + STARTUP_MARGIN_S + timeout_s,
                                "call_id": None, "meta": meta or {}}
             self._save(st)
             return st["jobs"][jid]
@@ -254,15 +307,27 @@ class Ledger:
                 return j
             if j["state"] != "running":
                 raise LedgerStateError(f"cannot settle {job_id} in state {j['state']}")
-            latest = j["reserved_at"] + j["timeout_s"] + STARTUP_MARGIN_S
-            end = job_reported_end if job_reported_end is not None else min(self.clock(), latest)
-            if job_reported_end is None and outcome == "expired":
-                end = latest  # we never saw it finish: assume it ran as long as Modal allowed
-            end = max(end, j["reserved_at"])
+            latest = j["deadline_unix"]
+            if outcome == "finished" and job_reported_end is not None:
+                end, basis = max(job_reported_end, j["reserved_at"]), "job-reported end"
+            else:
+                end, basis = latest, f"worst case ({outcome}; end unknown)"
             j["settled_usd"] = j["rate_usd_s"] * (end - j["reserved_at"] + SCALEDOWN_MARGIN_S)
-            j.update(state="settled", outcome=outcome, ended_at=end, settled_at=self.clock(),
-                     settlement_basis="job-reported end" if job_reported_end is not None else
-                     ("worst case (timeout)" if outcome == "expired" else "observed by bridge"))
+            j.update(state="settled", outcome=outcome, ended_at=end, settled_at=self.clock(), settlement_basis=basis)
+            self._save(st)
+            return j
+
+    def settle_orphan(self, job_id: str) -> dict[str, Any]:
+        """Close a reservation that never got a call id, once anything it might have started must have ended."""
+        with self._locked():
+            st = self._load()
+            j = self._job(st, job_id)
+            if j["state"] != "reserved" or j["call_id"]:
+                raise LedgerStateError(f"{job_id} is not an orphan (state {j['state']})")
+            if self.clock() <= j["deadline_unix"] + SCALEDOWN_MARGIN_S:
+                raise LedgerStateError(f"{job_id}: too early to settle orphan (deadline not passed)")
+            j.update(state="settled", outcome="orphan", settled_usd=float(j["reserved_usd"]), ended_at=j["deadline_unix"],
+                     settled_at=self.clock(), settlement_basis="orphan: full reservation (spawn outcome unknown)")
             self._save(st)
             return j
 
@@ -278,7 +343,8 @@ class Ledger:
     def op(self, name: str, **kw: Any) -> dict[str, Any]:
         """Single dispatch point (what the serialized Modal function calls)."""
         fn = {"snapshot": self.snapshot, "reserve": self.reserve, "attach": self.attach, "release": self.release,
-              "settle": self.settle, "job": self.job}.get(name)
+              "settle": self.settle, "settle_orphan": self.settle_orphan, "touch": self.touch,
+              "job": self.job}.get(name)
         if fn is None:
             raise LedgerStateError(f"unknown ledger op {name}")
         return fn(**kw)

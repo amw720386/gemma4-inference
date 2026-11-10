@@ -9,9 +9,14 @@ Gemma 4 12B serving numbers reported by Backboard on 2026-11-09
 > (vLLM 0.33.0, SGLang 0.5.23) with an InferenceX-style harness, report our own measurements
 > with uncertainty, and treat Backboard's numbers purely as external targets.
 
-**Current state:** harness, real-prompt (SPEED-Bench) arm, per-run reporting and a server-side **$10
-project spend limit** in the Modal bridge are complete and CPU-validated (71 tests); **no GPU measurements yet**
-— waiting on the one-time bridge deploy and a scoped proxy token (see [STATUS.md](STATUS.md), [BUDGET.md](BUDGET.md)). No number in this repo is a measured GPU
+**Current state (2026-11-10):** harness, real-prompt (SPEED-Bench) arm, per-run reports, vLLM-vs-SGLang
+matched-load comparison, gap attribution, static engine-flag preflight, prepared E5/E6 optimization arms, and a
+server-side **$10 project / $2 per-job spend ledger** in the Modal bridge (independently reviewed, D-030) are complete
+and CPU-validated (120 tests, incl. a Python-3.12 engine-image rehearsal of the worker). **No GPU measurements yet** —
+the bridge is not deployed. See [STATUS.md](STATUS.md), [NEXT.md](NEXT.md), [BUDGET.md](BUDGET.md).
+
+Once deployed, the paid path is: `python modal_bridge/client.py verify` (free; checks the server shows $10 / ≤ $2 /
+1 active) → `python modal_bridge/campaign.py e1-smoke` (plan) → `… --execute` (stops at the first failed gate). No number in this repo is a measured GPU
 result unless it appears in `results/runs/*/results.csv` with a run ID.
 
 ## What the article reports (targets, not our results)

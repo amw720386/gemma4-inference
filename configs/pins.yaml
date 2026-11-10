@@ -21,11 +21,18 @@ engines:
     image: vllm/vllm-openai:v0.33.0
     image_index_digest: sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
     image_amd64_digest: sha256:91ee972ab751fb7180bc71c175865e36b091686600dca783d52b2511399810b3
+    # from the amd64 image config (registry, 2026-11-10): PYTHON_VERSION=3.12, CUDA_VERSION=13.0.2,
+    # TORCH_CUDA_ARCH_LIST includes 12.0 (sm_120 = RTX PRO 6000). Needs a CUDA-13-capable driver.
+    image_python: "3.12"
+    image_cuda: "13.0.2"
   sglang:
     version: "0.5.23"                    # PyPI upload 2026-10-30
     image: lmsysorg/sglang:v0.5.23
     image_index_digest: sha256:f832b5c39559c9caa900b22ad37c76fcce66470676855c42052102c537812f1f
     image_amd64_digest: sha256:f7876bef696ccf9cf75a2bf7ccb82970f5fac577f082fb8ca95c9a59d2160eb5
+    # from the amd64 image config: PYTHON_VERSION=3.12 (uv-managed, /opt/sglang/bin first on PATH), CUDA_VERSION=13.0.3
+    image_python: "3.12"
+    image_cuda: "13.0.3"
 client:
   name: InferenceX bench_serving (vendored)
   repo: https://github.com/SemiAnalysisAI/InferenceX

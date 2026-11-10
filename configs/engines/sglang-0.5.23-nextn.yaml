@@ -1,6 +1,9 @@
 # Baseline B: SGLang cookbook Gemma4 12B MTP command (docs.sglang.io/cookbook/autoregressive/Google/Gemma4),
 # matches article: NEXTN, 5 steps, 6 draft tokens, mem-fraction-static 0.85, radix cache disabled.
 name: sglang-0.5.23-nextn
+role: baseline            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E3
 engine: sglang
 version: "0.5.23"
 client_backend: vllm          # InferenceX maps FRAMEWORK=sglang -> --backend vllm (fixed_seq.py SINGLE_NODE_BACKENDS)

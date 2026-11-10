@@ -110,3 +110,123 @@ A definition test also caught that web functions cannot take `retries` (deploy w
 **D-021 (2026-11-10) Estimates priced like the ledger.** `g4bench plan` now prices GPU jobs at GPU + CPU/memory limits
 ($3.92/h on RTX PRO 6000, +29 % vs GPU-only), so plans and ledger reservations agree. Under $10 the full seed-0 matrix
 for both engines (~$13.9) does not fit; work is planned as single-point jobs, smoke first (NEXT.md).
+
+**D-022 (2026-11-10) Engine comparisons are paired by seed at identical workload.** `engine_compare.py` pairs vLLM and
+SGLang rows only when hardware class, dataset + prompt digest, ISL, OSL, concurrency, range ratio, chat template,
+ignore_eos and num_prompts all match, and the same seed (=> identical request stream) exists on both sides. A pair
+is GATED (no ratio printed) unless both point-runs are valid, both runs' correctness probes passed, and model pins
+match. Ratios use the article's "advantage" convention; CIs are bootstrap-of-means and paired log-ratio t-CIs;
+n < 3 is labelled descriptive. The article's implied vLLM/SGLang ratio is shown as a reference column only.
+
+**D-023 (2026-11-10) Static flag preflight against pinned engine sources.** With $10 total, a server dying on a
+mistyped flag is the cheapest avoidable loss. `flagcheck.py` extracts flag names with `ast` from vLLM v0.33.0
+(`arg_utils.py`, `entrypoints/common/cli_args.py`; `SpeculativeConfig` fields for `--speculative-config` JSON) and
+SGLang v0.5.23 (`arg_groups/fields/*.py` field names, `cli_name`, `aliases`), commits snapshots with per-file sha256
+(`configs/engine_flags/`), and the runner refuses to start a server whose argv (incl. `--extra-server-arg`) has an
+unknown flag. Result on 2026-11-10: all four real engine configs clean (344 vLLM / 562 SGLang flags known). Limits:
+static existence only — it cannot catch invalid *values* or runtime incompatibilities (that is what E1 smoke is for).
+
+**D-024 (2026-11-10) The paid worker body is CPU-rehearsed.** `_guarded`/`_run_job` moved from `modal_bridge/app.py` into
+`g4bench/bridge_jobs.py` (app.py keeps only Volume reload/commit). `tests/test_bridge_rehearsal.py` drives the real
+HTTP API → ledger → worker body → runner on the mock engine → poll → settle path, so job-spec/RunOptions mismatches
+and deadline/wall-budget handling are exercised for free. Test-only allowlist overrides live in `BridgeConfig`;
+production allowlists are unchanged.
+
+**D-025 (2026-11-10) Record the engine's effective configuration per point.** Source reading (vLLM v0.33.0
+`Gemma4Config.verify_and_update_config`): because Gemma 4 mixes head_dim 256 (sliding) and 512 (global), vLLM uses
+FA4 for all layers when FA4 is available, otherwise **forces TRITON_ATTN**; the MTP proposer carries the target's
+backend into draft layers. Which branch fires on sm_120 (RTX PRO 6000) is unknown until E1, and the backend
+plausibly dominates the vLLM-vs-Backboard gap, so `serverlog.py` parses (verbatim format strings from the pinned
+sources) the backend decision, selected attention backend, KV-cache tokens and max concurrency, CUDA-graph capture
+time/memory, and SGLang's effective `server_args` (attention backend, effective speculative algorithm — e.g. NEXTN
+vs FROZEN_KV_MTP — cuda_graph_max_bs, max_running_requests). Results schema v3 adds `eff_*` columns; each point
+writes `effective_config.json`; reports show an "Effective engine configuration" table. Absent lines stay `None`.
+No flags were changed: the article says default recipes, and both engines select backends automatically.
+
+**D-026 (2026-11-10) Paid steps run only through a gated campaign.** `g4bench/campaign.py` +
+`modal_bridge/campaign.py` execute `configs/campaigns/*.yaml` (e1-smoke, e2-pairs) strictly sequentially. Default is
+plan-only; `--execute` re-checks before *every* step that `/health` is ok with the ledger reachable, that both
+`/health` and `/budget` report exactly the approved limits (cap $10, per-job ≤ $2, max_active 1, ledger disclaimer
+present), that no job is active and that `available_usd` covers the step; stops at the first failed gate or failed
+expectation (selftest rc 0; prefetch coding digest = InferenceX; all points valid); cancels past `max_wait_s` but keeps
+polling until termination is confirmed; logs every step to `results/budget_ledger.jsonl`. Verified live on
+2026-11-10: against the undeployed bridge it refused at `/health` (404) before any POST — $0 spent.
+
+**D-027 (2026-11-10) A Backboard-independent target for the open baselines.** Dividing the article's Backboard/SGLang
+ratio table by its Backboard/vLLM table cancels Backboard and yields the article's implied vLLM-vs-SGLang advantage
+for all 13 metrics at all 8 points (incl. mean/median metrics never published in absolute form), with ±0.005
+rounding bounds per published ratio. Matches the absolute table where both exist (1K/c1 throughput 1.523 vs
+186.8/122.6 = 1.524). `engine_compare` now reports it per metric plus a descriptive `consistent_with_article` flag
+(our bootstrap CI overlaps the article bounds). Table: docs/analysis/article_vllm_vs_sglang.md. Finding: the
+article's SGLang gap is a decode (TPOT) gap; p99 TTFT is at parity (0.97–1.06) at 8K.
+
+**D-028 (2026-11-10) Step timeouts never outlive the wall budget.** Server-start (1800 s) and per-point client
+(3600 s) timeouts exceeded the 876 s Modal timeout a $2 reservation buys, so a slow point would have been killed by
+Modal before results/report were written (paid data lost). The runner now bounds each step by the remaining wall
+budget (min 30 s); on the bridge that budget ends ≥ 180 s before the Modal timeout, so slow points are cut, recorded
+invalid, and the run still returns its results.
+
+**D-029 (2026-11-10) EOS-honouring real-prompt arm implemented.** `speedbench-coding-eos` (same 80 prompts, `ignore_eos:
+false`, max 1024 tokens). Keys get a `+eos` suffix and point ids `-eos`, so it can never pool with the ignore-EOS
+arm; validation accepts outputs in [1, OSL]. Throughput is not comparable across the two arms (different decode work);
+the readout is acceptance length and TPOT. Planned only — not in the $10 campaigns (est. $5.78 seed 0, both engines,
+pessimistic since outputs are assumed full length).
+
+**D-030 (2026-11-10) Independent review of the budget path; 8 findings fixed before any deploy.** A fresh reviewer
+(not anchored on my reasoning) read the ledger, API, Modal wiring and campaign against the modal 1.6.3 source. I
+verified each claim in the SDK source, then fixed:
+1. *High*: `FunctionTimeoutError` and `OutputExpiredError` subclass `modal.exception.TimeoutError`, so my poll mapped
+   timed-out/expired jobs to "running" forever (holding $2 and blocking all launches). Now most-specific first.
+2. *High*: cancelled/crashed/OOM calls return a non-success result raised as RemoteError/ExecutionError/
+   InternalFailure — now terminal ("failed"); cancel uses `terminate_containers=True`; the worker no longer swallows
+   BaseException (cancellation propagates).
+3. *High*: bridge/ledger container spend was an unmetered $0.50 set-aside. Every request now touches the ledger; warm
+   time is metered (gaps > 60 s count as one window) and committed as max(reserve, metered); the web function has
+   `max_containers=1`; the campaign stops polling 30 min after a job's deadline.
+4. *Med-high*: any spawn exception released the reservation although Modal may have accepted the call. Now only
+   pre-RPC `ValueError` releases; anything else stays held and becomes an orphan.
+5. *Med*: a failed attach left a running job without call id. Attach is retried; failures return the call id; orphans
+   (reserved, no call id) settle at their full reservation once their deadline has passed.
+6. *Med*: Modal's timeout starts at input start, so queueing/preemption could push real cost past the reservation,
+   and non-finished outcomes settled at min(now, latest). Now workers refuse to start after
+   `start_deadline = reserved_at + 900 s` (so start + timeout ≤ `deadline_unix`), arm a hard `os._exit` at
+   `deadline_unix`, GPU `startup_timeout=900`, CPU `startup_timeout=600`; every non-finished outcome settles at the
+   worst case.
+7. *Low*: stale-lock stealing was not compare-and-swap. Each save now claims `ledger/commit/<version>` with atomic
+   put-if-absent (stale claims older than the lease are recoverable).
+8. *Low*: reservations could exceed `max_usd` by < 1 cent through rounding — now capped at the requested ceiling.
+Not fixable in this design and documented: workers can still be invoked directly with a workspace token, bypassing the
+ledger; the ledger remains an estimate that gates bridge launches only.
+
+**D-031 (2026-11-10) Worker verified under engine-image conditions; a crash-every-job bug fixed.** Both pinned engine
+images run Python 3.12 (read from their registry image configs: vLLM CUDA 13.0.2 with `TORCH_CUDA_ARCH_LIST` incl.
+12.0 = sm_120; SGLang CUDA 13.0.3). Our dev venv is 3.13. Running the bridge worker body on Python 3.12 with only
+engine-shipped packages (`scripts/check_worker_env.sh`) exposed that `GpuSampler(threading.Thread)` stored its event as
+`self._stop`, shadowing `Thread._stop()` used by `join()` on ≤ 3.12 → `TypeError` on every point, i.e. every paid GPU
+job would have failed. Fixed (`_halt`) with an AST guard test that fails on the old code. The same check confirms no
+fastapi/pyarrow/httpx/modal/pydantic/pytest import on the worker path. New E1 risk recorded: Modal's host driver must
+support CUDA 13 (metadata captures `driver_version`).
+
+**D-032 (2026-11-10) First-order gap attribution in every exact-hardware report.** `gap.py`: TPOT ≈ step/AL ⇒ step =
+TPOT × AL; bandwidth efficiency = roofline step ÷ measured step; AL needed to hit the article's mean TPOT (= 1000 /
+its speed-per-user) at our step time, flagged if above draft_tokens + 1; or the step speed-up needed at our AL. Shown
+against the same engine's article numbers and Backboard's. Purpose: decide after E1 whether optimization effort
+belongs in drafting/acceptance or in kernels/scheduling. Diagnostic only; assumptions printed with every table.
+
+**D-033 (2026-11-10) Bridge URL and approval variables aligned with the configured environment.** The cloud
+environment's network secret is bound to `arnold-17059--g4repro-bridge.us-east.modal.run` (regional host), not the
+unregional host the client defaulted to; both return 404 today (not deployed). The client now defaults to the
+regional host (`G4_BRIDGE_URL` still wins once visible after a session restart). The environment also defines
+`G4_PROJECT_BUDGET_USD` and `G4_JOB_CAP_USD`: the campaign uses them to *tighten* (never relax) the limits it requires
+the server to report, and the bridge accepts them as deploy-time aliases of `G4_PROJECT_CAP_USD` / `G4_PER_JOB_CAP_USD`.
+
+**D-034 (2026-11-10) Optimization arms prepared; every config carries role + admissibility.** From the pinned sources:
+vLLM v0.33.0 `SpeculativeConfig` exposes `num_speculative_tokens_per_batch_size` (depth by batch size) and
+`draft_lm_head_quantization` ("fp8"/"nvfp4", MRv2 only; "the target verifies with its own head, so only the acceptance
+length can change") — the closest open analogue of Backboard's 4-bit shortlist; SGLang v0.5.23 exposes
+`--speculative-adaptive` and draft-model quantization. New flag-checked configs: vLLM mtp2/3/5/6 (E5b depth sweep),
+mtp-bsched (E6, schedule to be re-derived from E5b), mtp4-draftfp8 (E6, class **b**); SGLang nextn3/nextn4 (E5b),
+nextn-adaptive (E6). All configs now declare `role` (only the two article recipes are `baseline`) and
+`admissibility` (a/b/c). Analysis compares only baselines with the article's open-engine numbers and pairs only
+baselines in vLLM-vs-SGLang; variants are compared with Backboard only, labelled by class; class c never. All are on
+the bridge allowlist; none is scheduled under the current $10 approval (each single-point job ≈ $0.8–1.0).

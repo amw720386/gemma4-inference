@@ -49,18 +49,38 @@ VLLM_IMAGE = "vllm/vllm-openai@sha256:91ee972ab751fb7180bc71c175865e36b091686600
 SGLANG_IMAGE = "lmsysorg/sglang@sha256:f7876bef696ccf9cf75a2bf7ccb82970f5fac577f082fb8ca95c9a59d2160eb5"
 
 # Budget configuration is baked into the deployed image env: changing it requires a (human) redeploy.
-PROJECT_CAP_USD = float(os.environ.get("G4_PROJECT_CAP_USD", "10"))
-PER_JOB_CAP_USD = min(float(os.environ.get("G4_PER_JOB_CAP_USD", "2")), PROJECT_CAP_USD)
+# G4_PROJECT_BUDGET_USD / G4_JOB_CAP_USD are accepted as aliases (names used in the agent's cloud environment).
+PROJECT_CAP_USD = float(os.environ.get("G4_PROJECT_CAP_USD") or os.environ.get("G4_PROJECT_BUDGET_USD") or "10")
+PER_JOB_CAP_USD = min(float(os.environ.get("G4_PER_JOB_CAP_USD") or os.environ.get("G4_JOB_CAP_USD") or "2"),
+                      PROJECT_CAP_USD)
 MAX_ACTIVE = int(os.environ.get("G4_BRIDGE_MAX_ACTIVE", "1"))
 PLATFORM_RESERVE_USD = float(os.environ.get("G4_PLATFORM_RESERVE_USD", "0.50"))
 LEDGER_CFG = B.LedgerConfig(cap_usd=PROJECT_CAP_USD, platform_reserve_usd=PLATFORM_RESERVE_USD,
                             per_job_cap_usd=PER_JOB_CAP_USD, max_active=MAX_ACTIVE)
 
+def _code_sha() -> str:
+    if os.environ.get("G4_CODE_SHA"):
+        return os.environ["G4_CODE_SHA"]
+    import subprocess
+
+    try:
+        sha = subprocess.run(["git", "-C", str(REPO_LOCAL), "rev-parse", "HEAD"], capture_output=True, text=True,
+                             timeout=10).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(REPO_LOCAL), "status", "--porcelain"], capture_output=True, text=True,
+                               timeout=10).stdout.strip()
+        return (sha + ("-dirty" if dirty else "")) if sha else "unknown"
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+
+
+CODE_SHA = _code_sha()  # baked into the image env at deploy time; reported by /health
+
 IGNORE = [".git", ".venv", "**/__pycache__", "results/runs", "results/scratch", "*.pyc", ".cache", "data/speedbench/*.jsonl"]
 ENV = {"PYTHONPATH": f"{REPO_REMOTE}/src", "HF_HOME": HF_HOME, "HF_HUB_ENABLE_HF_TRANSFER": "0",
        "TOKENIZERS_PARALLELISM": "false", "G4_DATA_DIR": f"{HF_HOME}/g4data/speedbench",
        "G4_PROJECT_CAP_USD": str(PROJECT_CAP_USD), "G4_PER_JOB_CAP_USD": str(PER_JOB_CAP_USD),
-       "G4_BRIDGE_MAX_ACTIVE": str(MAX_ACTIVE), "G4_PLATFORM_RESERVE_USD": str(PLATFORM_RESERVE_USD)}
+       "G4_BRIDGE_MAX_ACTIVE": str(MAX_ACTIVE), "G4_PLATFORM_RESERVE_USD": str(PLATFORM_RESERVE_USD),
+       "G4_CODE_SHA": CODE_SHA}
 
 # GPU job default timeout = the longest a per-job-cap reservation can buy (spawns pass a tighter one).
 GPU_DEFAULT_TIMEOUT_S = B.timeout_for_budget(GPU_JOB.rate(), PER_JOB_CAP_USD)
@@ -116,47 +136,27 @@ def _commit_loop(stop: "threading.Event") -> None:  # noqa: F821
 
 
 def _guarded(fn, spec: dict) -> dict:
-    """Never raise (so poll errors are only Modal-level); refuse to run past the reservation's deadline."""
-    started = time.time()
-    if spec.get("deadline_unix") and started > float(spec["deadline_unix"]):
-        return {"aborted": "started after reservation deadline (restart/preemption?)", "started_unix": started,
-                "ended_unix": time.time()}
-    try:
-        out = fn(spec)
-    except BaseException as e:  # noqa: BLE001
-        out = {"error": repr(e)[:4000]}
-    out.update(started_unix=started, ended_unix=time.time(), job_id=spec.get("job_id"))
-    return out
+    from g4bench.bridge_jobs import guarded
+
+    return guarded(fn, spec, hard_kill=True)  # os._exit at the reservation's end deadline (D-030)
 
 
 def _run_job(spec: dict) -> dict:
     import threading
 
-    from g4bench.runner import RunOptions, run
+    from g4bench.bridge_jobs import run_job
 
     hf_vol.reload()
-    remaining = float(spec["deadline_unix"]) - time.time() - 120
     stop = threading.Event()
     threading.Thread(target=_commit_loop, args=(stop,), daemon=True).start()
     try:
-        run_dir = run(RunOptions(
-            engine=spec["engine"], matrix=spec["matrix"], seeds=spec.get("seeds"), trials=spec.get("trials"),
-            only_keys=spec.get("only"), results_root=pathlib.Path(RESULTS_MOUNT) / "runs",
-            max_wall_s=max(min(float(spec["max_wall_s"]), remaining), 0.0), notes=spec.get("notes", ""),
-            dry_run=bool(spec.get("dry_run")),
-        ))
+        return run_job(spec, pathlib.Path(RESULTS_MOUNT) / "runs")
     finally:
         stop.set()
         res_vol.commit()
-    rows = []
-    f = run_dir / "results.jsonl"
-    if f.exists():
-        rows = [json.loads(x) for x in f.read_text().splitlines() if x.strip()]
-    return {"run_id": run_dir.name, "n_points": len(rows), "n_valid": sum(1 for r in rows if r.get("valid")),
-            "rows": rows}
 
 
-_gpu_kw = dict(gpu=GPU_JOB.gpu, timeout=GPU_DEFAULT_TIMEOUT_S, volumes={HF_HOME: hf_vol, RESULTS_MOUNT: res_vol},
+_gpu_kw = dict(gpu=GPU_JOB.gpu, timeout=GPU_DEFAULT_TIMEOUT_S, startup_timeout=int(B.STARTUP_MARGIN_S), volumes={HF_HOME: hf_vol, RESULTS_MOUNT: res_vol},
                max_containers=1, retries=0, scaledown_window=SCALEDOWN_WINDOW_S,
                cpu=(4.0, GPU_JOB.cpu_limit), memory=(32768, int(GPU_JOB.mem_limit_gib * 1024)))
 
@@ -194,7 +194,8 @@ def _prefetch(spec: dict) -> dict:
     return out
 
 
-@app.function(image=bridge_image, timeout=PREFETCH.timeout_s, volumes={HF_HOME: hf_vol}, retries=0, max_containers=1,
+@app.function(image=bridge_image, timeout=PREFETCH.timeout_s, startup_timeout=600, volumes={HF_HOME: hf_vol},
+              retries=0, max_containers=1,
               scaledown_window=SCALEDOWN_WINDOW_S, cpu=(PREFETCH.cpu_limit, PREFETCH.cpu_limit),
               memory=(int(PREFETCH.mem_limit_gib * 1024), int(PREFETCH.mem_limit_gib * 1024)))
 def prefetch_weights(spec: dict) -> dict:
@@ -210,7 +211,7 @@ def _selftest(spec: dict) -> dict:
     return {"rc": p.returncode, "tail": (p.stdout + p.stderr)[-4000:]}
 
 
-@app.function(image=bridge_image, timeout=SELFTEST.timeout_s, retries=0, max_containers=1,
+@app.function(image=bridge_image, timeout=SELFTEST.timeout_s, startup_timeout=600, retries=0, max_containers=1,
               scaledown_window=SCALEDOWN_WINDOW_S, cpu=(SELFTEST.cpu_limit, SELFTEST.cpu_limit),
               memory=(int(SELFTEST.mem_limit_gib * 1024), int(SELFTEST.mem_limit_gib * 1024)))
 def selftest(spec: dict) -> dict:
@@ -225,7 +226,10 @@ class ModalBackend:
             "LedgerStateError": B.LedgerStateError}
 
     def ledger(self, op: str, **kw):
-        r = ledger_op.remote(op, kw)
+        try:
+            r = ledger_op.remote(op, kw)
+        except Exception as e:  # noqa: BLE001 - transport/Modal errors: fail closed (HTTP 503)
+            raise B.LedgerStateError(f"ledger call failed: {e!r}"[:500]) from e
         if not r.get("ok"):
             raise self._ERR.get(r.get("error"), B.LedgerStateError)(r.get("message"))
         return r["value"]
@@ -246,19 +250,22 @@ class ModalBackend:
 
         try:
             return "finished", modal.FunctionCall.from_id(call_id).get(timeout=0)
-        except (me.TimeoutError, TimeoutError):
-            return "running", None          # still running (modal's TimeoutError is NOT builtins.TimeoutError)
-        except me.InputCancellation:
-            return "cancelled", None
-        except me.FunctionTimeoutError:
+        except me.FunctionTimeoutError:     # subclass of modal TimeoutError: must be caught first (D-030)
             return "failed", {"error": "Modal function timeout (worst case reached)"}
-        except me.OutputExpiredError:
-            return "expired", None          # settled at worst case
-        except Exception as e:  # noqa: BLE001 - unknown: NOT terminal; reservation stays held
+        except me.OutputExpiredError:       # subclass of modal TimeoutError too
+            return "expired", None
+        except (me.TimeoutError, TimeoutError):
+            return "running", None          # plain "no output yet" (modal's TimeoutError is NOT builtins')
+        except (me.RemoteError, me.ExecutionError, me.InternalFailure) as e:
+            # A non-success *result* came back (cancelled/terminated, crashed, OOM, startup failure): terminal.
+            return "failed", {"error": f"{type(e).__name__}: {e!r}"[:500]}
+        except BaseException as e:  # noqa: BLE001 - transport errors etc.: NOT terminal; reservation stays held
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
             return "unknown", {"error": repr(e)[:500]}
 
     def cancel(self, call_id: str) -> None:
-        modal.FunctionCall.from_id(call_id).cancel()
+        modal.FunctionCall.from_id(call_id).cancel(terminate_containers=True)
 
     def list_runs(self) -> list[str]:
         res_vol.reload()
@@ -275,11 +282,11 @@ class ModalBackend:
 
 
 @app.function(image=bridge_image, volumes={RESULTS_MOUNT: res_vol}, timeout=600, cpu=(0.25, 1.0),
-              memory=(512, 1024), scaledown_window=60)
+              memory=(512, 1024), scaledown_window=60, max_containers=1)  # metered as platform spend (D-030)
 @modal.concurrent(max_inputs=16)
 @modal.asgi_app(label="g4repro-bridge", requires_proxy_auth=True)
 def bridge():
     return build_api(ModalBackend(), BridgeConfig(
         cap_usd=PROJECT_CAP_USD, per_job_cap_usd=PER_JOB_CAP_USD, max_active=MAX_ACTIVE, app_name=APP_NAME,
-        extra={"platform_reserve_usd": PLATFORM_RESERVE_USD, "gpu_default_timeout_s": GPU_DEFAULT_TIMEOUT_S,
+        extra={"code_sha": CODE_SHA, "platform_reserve_usd": PLATFORM_RESERVE_USD, "gpu_default_timeout_s": GPU_DEFAULT_TIMEOUT_S,
                "billing_note": B.DISCLAIMER}))
