@@ -65,6 +65,8 @@ jinja2 3.1.6, pyarrow 26.0.1, requests 2.34.2, fastapi 0.162.4, httpx 0.28.1, py
 
 ## Verify this checkpoint
 
+One command: `scripts/setup.sh` (add `--data` for SPEED-Bench). Manual equivalent:
+
 ```bash
 python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 ```
