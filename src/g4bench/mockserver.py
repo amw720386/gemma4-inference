@@ -78,6 +78,16 @@ def make_app(model: str, step_ms: float, tokens_per_step: int, prefill_ms_per_1k
             STATE["active"] -= 1
         return resp
 
+    async def chat(req: web.Request) -> web.Response:
+        body = await req.json()
+        q = body["messages"][-1]["content"]
+        # Canned answers so the correctness probes can be exercised end-to-end on CPU.
+        canned = {"17 + 25": "42", "capital of France": "Paris", "backwards": "tac", "9 times 8": "72",
+                  "blue and yellow": "Green", "leap year": "366", "gold": "Au", "thank you": "Gracias"}
+        ans = next((v for k, v in canned.items() if k in q), "mock answer " * 8)
+        return web.json_response({"choices": [{"index": 0, "message": {"role": "assistant", "content": ans}}]})
+
+    app.router.add_post("/v1/chat/completions", chat)
     app.router.add_get("/health", health)
     app.router.add_get("/v1/models", models)
     app.router.add_get("/metrics", metrics)

@@ -9,9 +9,10 @@ Two checks:
    servers (e.g. spec-decode vs no-spec, or optimized vs baseline). Speculative
    decoding with exact verification should be output-preserving up to floating-point
    non-determinism of batched BF16 kernels, so we report the token-prefix agreement
-   distribution rather than requiring 100% bit-identity. Gate (pre-registered):
-   median common-prefix >= 64 tokens and >= 50% of requests identical over 128 tokens
-   at concurrency 1. Any optimization failing this is reported as NOT output-preserving.
+   distribution rather than requiring 100% bit-identity. Gate (pre-registered), measured
+   in whitespace-delimited words (tokenizer-free): median common prefix >= 48 words AND
+   >= 50% of requests identical or sharing >= 96 words, at concurrency 1, 256 max tokens.
+   Any optimization failing this is reported as NOT output-preserving.
 """
 
 from __future__ import annotations

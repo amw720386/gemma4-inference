@@ -9,7 +9,7 @@ endpoint: /v1/completions
 port: 8000
 health_path: /health
 args:
-  - [--model, "{target_repo}"]
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
   - [--revision, "{target_rev}"]
   - [--tensor-parallel-size, "1"]
   - [--dtype, bfloat16]
@@ -17,13 +17,12 @@ args:
   - [--no-enable-prefix-caching]
   - [--async-scheduling]
   - [--speculative-config, '{"method":"mtp","model":"{draft_repo}","revision":"{draft_rev}","num_speculative_tokens":4}']
-  - [--max-model-len, "{max_model_len}"]
-  # Text-only benchmark: skip multimodal profiling (recipe "Configuration Tips"). Recorded as a
-  # deviation candidate in DECISIONS.md D-007; A/B tested in E2.
-  - [--limit-mm-per-prompt, '{"image":0,"audio":0}']
+  # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
+  # Those live in the vllm-0.33.0-mtp4-textonly variant (DECISIONS D-007).
   - [--host, 0.0.0.0]
   - [--port, "{port}"]
 env: {}
 unknowns:
   - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
-  - "Article does not state whether speculative 'revision' was pinned."
+  - "Article does not state whether speculative 'revision' was pinned (pinning has no perf effect)."
+  - "If the engine-default max-model-len fails to fit, the fallback is the textonly variant; log it in DECISIONS."

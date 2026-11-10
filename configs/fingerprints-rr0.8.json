@@ -613,6 +613,19 @@
    "input_lens_sha256": "afb3e25e945a156c6ca9b7be906d85c47813967ced19997cafebaac746ad1a79",
    "output_lens_sha256": "7492c599aca205ac1e48800d9d97f6a3da8f0ec105f5136975b90eabcb297728",
    "output_lens": null
+  },
+  "8192x64-s2": {
+   "sha256": "e011a21097bc801a47cf9b1d430d61b5155027441663a8c1a70438d6f76024d9",
+   "n": 640,
+   "input_len_min": 6562,
+   "input_len_max": 8191,
+   "input_len_mean": 7376.2578125,
+   "output_len_min": 819,
+   "output_len_max": 1024,
+   "output_len_mean": 922.3046875,
+   "input_lens_sha256": "df592d61f28d41061d1edf3ded994f1899d08b167078b1146e814267a8704654",
+   "output_lens_sha256": "f0afc98f831ca8e24b085cc8663f87b6db2ccebe0117e154c2650ab177ee8efe",
+   "output_lens": null
   }
  }
 }

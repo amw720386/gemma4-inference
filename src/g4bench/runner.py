@@ -49,6 +49,7 @@ class RunOptions:
     model_name: str | None = None         # served model name (default: target repo id)
     extra_server_args: list[str] | None = None
     dry_run: bool = False
+    correctness: bool = True
     notes: str = ""
 
 
@@ -74,7 +75,7 @@ def run(opts: RunOptions) -> Path:
     run_id = new_run_id(eng.name, meta["hardware_class"], chash)
     run_dir = opts.results_root / run_id
     fresh = bool(mat.get("fresh_server_per_point", True))
-    est = estimate(points, fresh_server_per_point=fresh)
+    est = estimate(points, fresh_server_per_point=fresh, tok_s_ref="sglang" if eng.engine == "sglang" else "vllm")
     port = eng.port
     base_url = f"http://127.0.0.1:{port}"
     values = placeholder_values(pins, int(mat.get("max_model_len", 10240)), port)
@@ -124,6 +125,9 @@ def run(opts: RunOptions) -> Path:
             _run_point(run_dir, pdir, p, eng=eng, base_url=base_url, model=model_name, tokenizer=tokenizer,
                        chash=chash, run_id=run_id, meta=meta, start_s=start_s, server=server,
                        timeout_s=opts.client_timeout_s, notes=opts.notes)
+            if i == 0 and opts.correctness:
+                # After the first measured point, so the gate never perturbs a measurement.
+                _correctness(run_dir, base_url, model_name)
             print(f"[g4bench] {i+1}/{len(points)} done {p.point_id} ({time.monotonic()-t_start:.0f}s elapsed)", flush=True)
     finally:
         if server is not None:
@@ -179,6 +183,20 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
     results.append_csv(run_dir / "results.csv", rec)
     results.append_jsonl(run_dir / "results.jsonl", rec)
     return rec
+
+
+def _correctness(run_dir: Path, base_url: str, model: str) -> None:
+    from . import correctness
+
+    out: dict[str, Any] = {}
+    try:
+        out["probes"] = correctness.probes(base_url, model)
+        out["greedy_outputs"] = correctness.greedy_outputs(base_url, model)
+    except Exception as e:  # noqa: BLE001 - recorded, and the run is flagged by analysis
+        out["error"] = repr(e)[:2000]
+    (run_dir / "correctness.json").write_text(json.dumps(out, indent=2))
+    print(f"[g4bench] correctness: {out.get('probes', {}).get('n_ok')}/{len(correctness.PROBES)} probes ok"
+          + (f" ERROR {out['error'][:200]}" if "error" in out else ""), flush=True)
 
 
 def _record_skip(run_dir: Path, p: Point, why: str) -> None:
