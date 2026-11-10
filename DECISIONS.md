@@ -165,3 +165,9 @@ article's SGLang gap is a decode (TPOT) gap; p99 TTFT is at parity (0.97–1.06)
 Modal before results/report were written (paid data lost). The runner now bounds each step by the remaining wall
 budget (min 30 s); on the bridge that budget ends ≥ 180 s before the Modal timeout, so slow points are cut, recorded
 invalid, and the run still returns its results.
+
+**D-029 (2026-11-10) EOS-honouring real-prompt arm implemented.** `speedbench-coding-eos` (same 80 prompts, `ignore_eos:
+false`, max 1024 tokens). Keys get a `+eos` suffix and point ids `-eos`, so it can never pool with the ignore-EOS
+arm; validation accepts outputs in [1, OSL]. Throughput is not comparable across the two arms (different decode work);
+the readout is acceptance length and TPOT. Planned only — not in the $10 campaigns (est. $5.78 seed 0, both engines,
+pessimistic since outputs are assumed full length).

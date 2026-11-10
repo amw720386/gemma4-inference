@@ -50,6 +50,8 @@ def make_app(model: str, step_ms: float, tokens_per_step: int, prefill_ms_per_1k
         if fail_every and STATE["requests"] % fail_every == 0:
             return web.json_response({"error": {"message": "injected failure"}}, status=500)
         max_tokens = int(body.get("max_tokens", 16))
+        if not body.get("ignore_eos"):
+            max_tokens = max(max_tokens // 2, 1)  # simulated natural EOS when the client honours EOS
         prompt = body.get("prompt", "")
         resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await resp.prepare(req)

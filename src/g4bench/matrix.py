@@ -32,7 +32,9 @@ class Point:
         against, the article's random-token targets.
         """
         base = f"{self.isl}x{self.conc}"
-        return base if self.dataset == "random" else f"{base}@{self.dataset}"
+        if self.dataset == "random":
+            return base
+        return f"{base}@{self.dataset}" + ("" if self.ignore_eos else "+eos")
 
     @property
     def point_id(self) -> str:

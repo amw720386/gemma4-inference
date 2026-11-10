@@ -31,6 +31,6 @@ new, explicit budget approval.
 
 1. ~~vLLM-vs-SGLang matched-load comparison~~ ✅ done (cycle 1: `engine_compare.py`, D-022).
 2. ~~Static flag preflight~~ ✅ done (cycle 2, D-023).
-3. EOS-honouring real-prompt variant (`ignore_eos: false`, D-017): CPU test + estimate.
+3. ~~EOS-honouring real-prompt variant~~ ✅ done (cycle 8, D-029).
 4. Torch-profiler trace parsing (for E5g) against a recorded fixture.
 5. Optional: licence choice for this repository (owner decision; none added).

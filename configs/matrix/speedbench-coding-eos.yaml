@@ -1,0 +1,20 @@
+# E5c variant: same prompts/engines as speedbench-coding but EOS is honoured, so outputs end naturally.
+# Throughput is NOT comparable with ignore_eos arms (different decode work); acceptance length is the readout.
+# E5c real-prompt arm A (InferenceX-standard prompt set): the 80 SPEED-Bench qualitative "coding"
+# prompts, digest-identical to InferenceX's golden-AL set (PROMPTS_SHA256 6f184545...).
+# isl 0 = "natural length" (prompts are ~100-1000 tokens; NOT the article's 1K/8K) -> never compared
+# to article targets (keys carry an @dataset suffix). Purpose: acceptance-length sensitivity of the
+# baselines to real vs random-token prompts at matched concurrency, OSL and server config.
+name: speedbench-coding-eos
+dataset: speedbench-coding
+isl: [0]
+osl: [1024]
+conc: [1, 4, 16, 64]
+seeds: [0, 1, 2]
+trials_per_seed: 1
+ignore_eos: false         # EOS-honouring variant (D-017): natural answer lengths, max 1024 tokens
+use_chat_template: true
+num_prompts_per_conc: 10
+num_warmups_per_conc: 2
+max_model_len: 10240
+fresh_server_per_point: true
