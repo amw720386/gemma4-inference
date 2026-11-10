@@ -47,7 +47,10 @@ def estimate(points: list[Point], gpu: str = "RTX-PRO-6000", *, fresh_server_per
     if not fresh_server_per_point:
         total += server_start_s
     for p in points:
-        ref = targets.get(p.key, {}).get("output_throughput", {}).get(tok_s_ref)
+        # Real-prompt arms (key "...@dataset", isl 0 = natural length) borrow the nearest article workload's
+        # throughput as the guess; the 1.5x slowdown factor still applies.
+        near = 8192 if p.isl > 4096 else 1024
+        ref = targets.get(f"{near}x{p.conc}", {}).get("output_throughput", {}).get(tok_s_ref)
         tok_s = (ref / SLOWDOWN_FACTOR) if ref else 50.0
         s = point_seconds(p, tok_s) + (server_start_s if fresh_server_per_point else 0.0)
         detail.append({"point_id": p.point_id, "est_tok_s": tok_s, "est_s": s})

@@ -73,3 +73,11 @@ def test_greedy_equivalence_gate():
     assert compare_outputs(a, a)["pass"]
     b = ["different " * 200] * 4
     assert not compare_outputs(a, b)["pass"]
+
+
+def test_cost_estimate_real_prompt_arms_use_nearest_workload():
+    from g4bench.matrix import expand, load_matrix
+
+    rand = estimate(expand(load_matrix("backboard-repro"), seeds=[0], only_keys=["1024x4"]))
+    real = estimate(expand(load_matrix("speedbench-tp"), seeds=[0], only_keys=["1024x4@speedbench-tp1k-inline"]))
+    assert real.usd == rand.usd  # same conc, same guess, same server-start cost
