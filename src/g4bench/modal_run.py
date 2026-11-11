@@ -98,26 +98,30 @@ def launch(kind: str, spec: dict[str, Any], max_usd: float, *, ledger: Path = S.
     p = plan(kind, max_usd)
     pre = preflight(p, ledger=ledger)
     lid = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:6]}"
-    now = time.time()
-    spec = {**spec, "job_id": lid, "start_deadline_unix": now + S.STARTUP_MARGIN_S,
-            "deadline_unix": now + S.STARTUP_MARGIN_S + p["timeout_s"]}
-    if kind.startswith("gpu:"):
-        spec["max_wall_s"] = max(p["timeout_s"] - SOFT_WALL_HEADROOM_S, 0)
-    S.append({"launch_id": lid, "kind": kind, "status": "reserved", "worst_usd": p["worst_usd"],
-              "rate_usd_s": p["rate_usd_s"], "timeout_s": p["timeout_s"], "reserved_unix": now,
-              "deadline_unix": spec["deadline_unix"], "max_usd": max_usd,
-              "spec": {k: v for k, v in spec.items() if k not in ("start_deadline_unix", "deadline_unix")},
-              "committed_before_usd": pre["committed_usd"]}, ledger)
     app, fn = {"prefetch": (M.cpu_app, M.prefetch_weights), "selftest": (M.cpu_app, M.selftest),
                "gpu:vllm": (M.vllm_app, M.run_vllm), "gpu:sglang": (M.sglang_app, M.run_sglang)}[kind]
     result: dict[str, Any] | None = None
     err = None
+    now: float | None = None
     try:
+        # app.run() builds/pulls images first (no function container runs yet); the reservation and its start
+        # deadline begin only after that, immediately before the one paid call.
         with modal.enable_output(), app.run() as running:
-            S.append({"launch_id": lid, "app_id": running.app_id}, ledger)
+            now = time.time()
+            spec = {**spec, "job_id": lid, "start_deadline_unix": now + S.STARTUP_MARGIN_S,
+                    "deadline_unix": now + S.STARTUP_MARGIN_S + p["timeout_s"]}
+            if kind.startswith("gpu:"):
+                spec["max_wall_s"] = max(p["timeout_s"] - SOFT_WALL_HEADROOM_S, 0)
+            S.append({"launch_id": lid, "kind": kind, "status": "reserved", "worst_usd": p["worst_usd"],
+                      "rate_usd_s": p["rate_usd_s"], "timeout_s": p["timeout_s"], "reserved_unix": now,
+                      "deadline_unix": spec["deadline_unix"], "max_usd": max_usd, "app_id": running.app_id,
+                      "spec": {k: v for k, v in spec.items() if k not in ("start_deadline_unix", "deadline_unix")},
+                      "committed_before_usd": pre["committed_usd"]}, ledger)
             result = fn.with_options(timeout=p["timeout_s"]).remote(spec)
     except BaseException as e:  # noqa: BLE001 - record, settle, re-raise interrupts
         err = e
+    if now is None:  # failed while creating the app / building images: no paid function call was made
+        raise err if err is not None else RuntimeError("app.run() exited without a call")
     end = time.time()
     # Settle from wall time since reservation (covers container start); ephemeral app is stopped by now.
     settled = round(p["rate_usd_s"] * (end - now + S.SCALEDOWN_MARGIN_S), 4)
