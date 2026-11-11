@@ -4,6 +4,7 @@
     g4bench modal selftest --execute                        CPU: the test-suite on Linux inside Modal (~1 cent)
     g4bench modal prefetch [--speedbench] --execute         CPU: weights (+ SPEED-Bench) into the cache Volume
     g4bench modal job --engine E --matrix M [--only K] [--seeds 0] [--max-usd 2] --execute
+    g4bench modal job --engine E --matrix M --profile-key 8192x4 [--profile-seconds 4]   E5g torch profile
 
 Without ``--execute`` nothing is launched: the command prints the reservation it would make. Every launch:
 reconcile with Modal billing -> refuse unless worst case fits the per-job and remaining project budget ->
@@ -181,6 +182,12 @@ def main(args) -> int:
         spec = {"engine": args.engine, "matrix": args.matrix, "notes": args.notes,
                 "seeds": [int(x) for x in args.seeds.split(",")] if args.seeds else None,
                 "only": args.only.split(",") if args.only else None}
+        if args.profile_key:  # E5g: torch-profiler window on one point (rows flagged ``profiled``)
+            spec["profile"] = {"key": args.profile_key, "duration_s": args.profile_seconds,
+                               "warmup_s": args.profile_warmup_s}
+            spec["only"] = spec["only"] or [args.profile_key]
+            if not spec["seeds"]:
+                spec["seeds"] = [0]
     p = plan(kind, args.max_usd)
     if not args.execute:
         print(json.dumps({"plan_only": True, **p, "spec": spec,
@@ -210,5 +217,9 @@ def add_parser(sub) -> None:
     j.add_argument("--only")
     j.add_argument("--notes", default="")
     j.add_argument("--max-usd", type=float, default=2.0)
+    j.add_argument("--profile-key", help="E5g: torch-profile this workload key (e.g. 8192x4); rows flagged profiled")
+    j.add_argument("--profile-seconds", type=float, default=4.0, help="profiler window length (keep short)")
+    j.add_argument("--profile-warmup-s", type=float, default=30.0,
+                   help="seconds after the client starts before /start_profile")
     for x in (pf, st, j):
         x.add_argument("--execute", action="store_true", help="actually launch (default: plan only)")

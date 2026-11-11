@@ -54,10 +54,13 @@ def run_job(spec: dict[str, Any], results_root: Path, clock: Callable[[], float]
     from .runner import RunOptions, run
 
     remaining = float(spec["deadline_unix"]) - clock() - DEADLINE_HEADROOM_S
+    profile = spec.get("profile")  # E5g: profile one point; its rows are flagged ``profiled``
+    only = spec.get("only") or ([profile["key"]] if profile else None)
     opts = RunOptions(engine=spec["engine"], matrix=spec["matrix"], seeds=spec.get("seeds"),
-                      trials=spec.get("trials"), only_keys=spec.get("only"), results_root=Path(results_root),
+                      trials=spec.get("trials"), only_keys=only, results_root=Path(results_root),
                       max_wall_s=max(min(float(spec["max_wall_s"]), remaining), 0.0),
-                      notes=spec.get("notes", ""), dry_run=bool(spec.get("dry_run")), **runner_overrides)
+                      notes=spec.get("notes", ""), dry_run=bool(spec.get("dry_run")), profile=profile,
+                      **runner_overrides)
     run_dir = run(opts)
     rows = []
     f = run_dir / "results.jsonl"

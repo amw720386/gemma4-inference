@@ -40,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--model-name")
     r.add_argument("--notes", default="")
     r.add_argument("--dry-run", action="store_true")
+    r.add_argument("--profile-key", help="E5g: torch-profile this workload key; rows are flagged profiled")
+    r.add_argument("--profile-seconds", type=float, default=4.0)
+    r.add_argument("--profile-warmup-s", type=float, default=30.0)
     r.add_argument("--extra-server-arg", action="append", default=[],
                    help="append one raw server argv token (repeatable); changes config hash via notes only, "
                         "so ALSO set --notes")
@@ -121,6 +124,9 @@ def main(argv: list[str] | None = None) -> int:
         kw = {}
         if args.results_root:
             kw["results_root"] = args.results_root
+        if args.profile_key:
+            kw["profile"] = {"key": args.profile_key, "duration_s": args.profile_seconds,
+                             "warmup_s": args.profile_warmup_s}
         d = run(RunOptions(engine=args.engine, matrix=args.matrix, seeds=_csv_ints(args.seeds),
                            trials=args.trials, only_keys=args.only.split(",") if args.only else None,
                            max_wall_s=args.max_wall_s, tokenizer=args.tokenizer, model_name=args.model_name,
