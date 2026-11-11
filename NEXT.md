@@ -4,10 +4,10 @@
 
 Done 2026-11-11: selftest, prefetch, vLLM smoke, and all 16 seed-0 article points (6 vLLM + 6 SGLang jobs on
 `backboard-repro-shared`; 8192×64 with the $3 per-job cap, D-041). Remaining within the $10 approval: ≈ $3.4 by the
-conservative ledger (≈ $4.9 by Modal's bill).
+conservative ledger before E5b; ≈ $2.2 after it.
 
-1. E5b depth sweep at the largest vLLM-vs-Backboard gap (8192×4, vLLM at 76 % of Backboard), ≈ $0.5 per config:
-   `job --engine vllm-0.33.0-mtp5 --matrix backboard-repro-shared --only 8192x4 --execute`, then mtp3 / mtp6.
+1. ~~E5b depth sweep at 8192×4~~ ✅ (D-042). Remaining ≈ $2.2 (ledger): enough for ≈ 2 more single-point repeats,
+   e.g. depth 4 and depth 6 at 8192×4 again to tell the +9 % from noise — or stop and delete the cache Volume.
 2. Seeds 1, 2 for n = 3 claims (EXPERIMENTS criterion 2) need ≈ $10–15: a new budget approval.
 
 Every command: `g4bench modal job … ` (plan only) → `… --execute`; one launch at a time; `g4bench modal spend --reconcile`
