@@ -240,12 +240,13 @@ def test_patched_image_build_steps(monkeypatch):
     M = _modal_app()
     img = M._engine_image(M.VLLM_IMAGE, "vllm", M.VLLM_PATCHES)
     assert img is not None
-    tail = calls[-4:]
+    tail = calls[-5:]
     assert tail[0] == ("dir", str(PATCH_DIR), M.PATCHES_REMOTE, True)  # copied: visible to the build step
     names = " ".join(M.VLLM_PATCHES)
     assert tail[1] == ("run", (f"python {M.PATCHES_REMOTE}/apply.py {names}",))
-    assert tail[2] == ("env", ",".join(M.VLLM_PATCHES))
-    assert tail[3][:3] == ("dir", str(M.REPO_LOCAL), M.REPO_REMOTE) and tail[3][3] is False  # repo mount last
+    assert tail[2] == ("run", (f"python -m pip install --no-deps --upgrade {' '.join(M.VLLM_PATCH_PIP)}",))
+    assert tail[3] == ("env", ",".join(M.VLLM_PATCHES))
+    assert tail[4][:3] == ("dir", str(M.REPO_LOCAL), M.REPO_REMOTE) and tail[4][3] is False  # repo mount last
     calls.clear()
     M._engine_image(M.VLLM_IMAGE, "vllm")
     assert [c[0] for c in calls] == ["env", "dir"] and calls[0][1] is None  # unpatched image: no patch steps
@@ -266,10 +267,12 @@ def test_modal_run_routes_patched_configs():
 def test_worker_refuses_mismatched_image(monkeypatch):
     M = _modal_app()
     monkeypatch.setenv("G4_IMAGE_PATCHES", "")
-    with pytest.raises(RuntimeError, match="sm120_attn_tiles"):
+    with pytest.raises(RuntimeError, match="sm120_attn_tiles"):  # patch the image lacks
         M._check_image_patches({"engine": TILES})
-    M._check_image_patches({"engine": "vllm-0.33.0-mtp6-splitk-chunk3072"})
-    monkeypatch.setenv("G4_IMAGE_PATCHES", P.NAME)
-    M._check_image_patches({"engine": TILES})
-    with pytest.raises(RuntimeError):
+    M._check_image_patches({"engine": "vllm-0.33.0-mtp6-splitk-chunk3072"})  # unpatched image, unpatched config
+    monkeypatch.setenv("G4_IMAGE_PATCHES", ",".join(M.VLLM_PATCHES))
+    M._check_image_patches({"engine": ACTIVE})  # subset incl. the always-on patch: accepted
+    with pytest.raises(RuntimeError):  # TILES is not in the current image
+        M._check_image_patches({"engine": TILES})
+    with pytest.raises(RuntimeError):  # unpatched config on a patched image would silently get always-on patches
         M._check_image_patches({"engine": "vllm-0.33.0-mtp6-splitk-chunk3072"})

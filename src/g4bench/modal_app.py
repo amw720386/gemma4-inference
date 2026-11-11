@@ -47,7 +47,13 @@ SCALEDOWN_WINDOW_S = 10  # <= spend.SCALEDOWN_MARGIN_S
 
 PATCHES_REMOTE = "/opt/g4patches"
 # The one patch set the patched vLLM function is built with (an engine config's `image_patches` must equal it).
-VLLM_PATCHES: tuple[str, ...] = ("mtp_draft_prefill_last",)  # sm120_attn_tiles retired: no gain (D-046)
+# The patched image carries every live patch; configs opt in by listing them (image_patches must be a subset that
+# includes every ALWAYS_ON patch). Env-gated patches stay inactive unless the config sets their env vars (D-052).
+# sm120_attn_tiles retired: no gain (D-046).
+VLLM_PATCHES: tuple[str, ...] = ("mtp_draft_prefill_last", "splitk_per_group", "mtp_draft_head_q")
+ALWAYS_ON_PATCHES: frozenset[str] = frozenset({"mtp_draft_prefill_last"})
+# Library upgrades installed into the patched image (lossless; measured in results/kernels/*cublas_upgrade*).
+VLLM_PATCH_PIP: tuple[str, ...] = ("nvidia-cublas==13.10.0.20",)
 
 
 def _engine_image(ref: str, engine_module: str, patches: tuple[str, ...] = ()) -> modal.Image:
@@ -59,7 +65,10 @@ def _engine_image(ref: str, engine_module: str, patches: tuple[str, ...] = ()) -
         img = (img.add_local_dir(str(REPO_LOCAL / "src" / "g4bench" / "patches"), PATCHES_REMOTE, copy=True,
                                  ignore=["**/__pycache__", "*.pyc"])
                .run_commands(f"python {PATCHES_REMOTE}/apply.py {' '.join(patches)}"))
-    env = {**ENV, "G4_IMAGE_PATCHES": ",".join(patches)} if patches else ENV
+        if VLLM_PATCH_PIP:
+            img = img.run_commands(f"python -m pip install --no-deps --upgrade {' '.join(VLLM_PATCH_PIP)}")
+    env = ({**ENV, "G4_IMAGE_PATCHES": ",".join(patches), "G4_IMAGE_PIP": ",".join(VLLM_PATCH_PIP)}
+           if patches else ENV)
     return img.env(env).add_local_dir(str(REPO_LOCAL), REPO_REMOTE, ignore=IGNORE)
 
 
@@ -95,10 +104,11 @@ def _check_image_patches(spec: dict) -> None:
     """Refuse a job whose engine config's image_patches differ from what this image was built with."""
     from g4bench.config import EngineConfig
 
-    want = ",".join(EngineConfig.load(spec["engine"]).raw.get("image_patches") or [])
-    have = os.environ.get("G4_IMAGE_PATCHES", "")
-    if want != have:
-        raise RuntimeError(f"engine config wants image_patches [{want}] but this image has [{have}]")
+    want = set(EngineConfig.load(spec["engine"]).raw.get("image_patches") or [])
+    have = {p for p in os.environ.get("G4_IMAGE_PATCHES", "").split(",") if p}
+    if not want <= have or (have and not ALWAYS_ON_PATCHES & have <= want):
+        raise RuntimeError(f"engine config wants image_patches {sorted(want)} but this image has {sorted(have)} "
+                           f"(always-on: {sorted(ALWAYS_ON_PATCHES & have)})")
 
 
 def _run_job(spec: dict) -> dict:
