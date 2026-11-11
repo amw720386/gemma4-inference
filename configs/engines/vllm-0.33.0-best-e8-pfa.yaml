@@ -34,8 +34,8 @@ env:
   G4_DRAFT_HEAD_Q: fp8          # quantized draft-head scan format (fp8 | int4)
   G4_DRAFT_HEAD_K: "32"         # candidates rescored exactly in BF16
   G4_PREFILL_ATTN: "1"          # q_len > 8 requests -> packed-head prefill kernel (prefill_attn_g4)
-  G4_PREFILL_ATTN_GLOBAL: m64_dv256_n32_q       # global layers (head_dim 512, 16 q : 1 KV head)
-  G4_PREFILL_ATTN_SLIDING: m64_dv256_n32_q_s2   # sliding layers (head_dim 256, 16 q : 8 KV heads, window 1024)
+  G4_PREFILL_ATTN_GLOBAL: m64_dv512_n32_d64     # global layers: best single variant in the bench (1.40x vs vLLM)
+  G4_PREFILL_ATTN_SLIDING: m64_dv256_n64_d64    # sliding layers: best single variant in the bench (2.15x vs vLLM)
 unknowns:
   - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
   - "Article does not state whether speculative 'revision' was pinned (pinning has no perf effect)."
