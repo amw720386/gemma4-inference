@@ -42,7 +42,8 @@ def run(label: str, env: dict) -> dict:
 
 def main() -> int:
     base = dict(os.environ)
-    results = [run("stock", base)]
+    reps = int(os.environ.get("G4_REPS", "2"))  # interleaved stock/new pairs: separates library from clock drift
+    results = []
     target = "/tmp/newcublas"
     pip = subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", "--quiet", "--target", target,
                           f"nvidia-cublas=={NEW_VERSION}"], capture_output=True, text=True)
@@ -54,7 +55,9 @@ def main() -> int:
         libdir = os.path.dirname(lt[0])
         env = {**base, "LD_PRELOAD": f"{lt[0]}:{blas[0]}",
                "LD_LIBRARY_PATH": f"{libdir}:{base.get('LD_LIBRARY_PATH', '')}"}
-        results.append(run(f"cublas-{NEW_VERSION}", env))
+        for i in range(reps):
+            results.append(run(f"stock-r{i}", base))
+            results.append(run(f"cublas-{NEW_VERSION}-r{i}", env))
     with open(os.path.join(OUT, "cublas_upgrade.json"), "w") as f:
         json.dump({"new_version": NEW_VERSION, "runs": results}, f, indent=1)
     return 0
