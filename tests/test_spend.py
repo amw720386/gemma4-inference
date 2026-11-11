@@ -88,3 +88,14 @@ def test_billing_rows_filtered_to_project_apps_and_include_today(monkeypatch):
     rows = S.modal_billing()
     assert sorted((r["object_id"], r["cost"]) for r in rows) == [("ap-1", "1"), ("ap-1", "2")]
     assert S.billed_by_app(rows) == {"ap-1": 3.0}
+
+
+def test_final_bill_replaces_estimate_only_after_six_hours():
+    now = 1_000_000.0
+    rec = {"status": "settled", "worst_usd": 2.0, "settled_usd": 0.5, "billed_usd": 0.35, "end_unix": now - 3600}
+    assert S.launch_cost(rec, now) == 0.5                              # recent: keep the larger estimate
+    rec["end_unix"] = now - S.BILL_FINAL_AFTER_S
+    assert S.launch_cost(rec, now) == pytest.approx(0.35)              # final: Modal's bill
+    assert S.launch_cost({**rec, "billed_usd": None}, now) == 0.5      # never billed: estimate stays
+    assert S.launch_cost({**rec, "billed_usd": 0.9}, now) == pytest.approx(0.9)  # bill above estimate always counts
+    assert S.launch_cost({"status": "reserved", "worst_usd": 2.0, "billed_usd": 0.1}, now) == 2.0  # open: worst
