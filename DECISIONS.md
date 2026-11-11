@@ -342,3 +342,49 @@ that more Modal credits beyond the $10 allowance may be used if necessary, witho
 unbounded iteration loop. An unbounded loop needs a hard stop, so `spend.Caps` is set to $20 total / $3 per job;
 the environment can only tighten it. Past $20 the loop does CPU-side work only and asks for a new figure.
 
+**D-046 (2026-11-11) Engine-image patches; the sm_120 tile patch is retired, the draft-prefill patch is kept.**
+Build-time source patches live in `src/g4bench/patches/`; `modal_app.py` applies those named in `VLLM_PATCHES` to a
+separate image `g4repro-vllm-patched` (the digest-pinned base stays untouched), a config selects it with
+`image_patches: [...]`, and the applied list is recorded as `G4_IMAGE_PATCHES` in run metadata. vLLM v0.33.0, seed 0,
+n = 1, compared with the unpatched `vllm-0.33.0-mtp6-splitk-chunk3072` runs (`…-2d15`, `…-d1cf`):
+- `sm120_attn_tiles` (Triton prefill tiles for head_dim 256/512 on sm_120, sized to fit ≈ 99 KB shared memory;
+  `…-110f`): 8K/c1 182.5 vs 182.3 tok/s, mean TTFT 662 vs 662 ms; 8K/c16 860.0 vs 863.1 tok/s. No measurable gain:
+  prefill is GEMM-dominated, not attention-tile bound. Retired.
+- `mtp_draft_prefill_last` (the Gemma 4 MTP draft runs prefill only on each request's last prefill token; lossless
+  because the Gemma 4 draft is KV-shared with the target and row-wise, and the target verifies every token;
+  config `vllm-0.33.0-mtp6-splitk-chunk3072-draftlast`, `…-930d`): 8K/c16 **885.3 vs 863.1 tok/s (+2.6 %)**, 8K/c1
+  mean TTFT 638 vs 662 ms (−3.6 %), 183.3 vs 182.3 tok/s; acceptance length 5.09 vs 5.10 (unchanged). Kept. Descriptive (n=1).
+
+**D-047 (2026-11-11) Depth by batch size (E6a) and the single-config candidate E6b.** `vllm-0.33.0-dyn-splitk-chunk3072`
+(`…-85e7`) = the D-044 combined config with `num_speculative_tokens_per_batch_size` [[1,8,6],[9,24,5],[25,4096,4]]:
+1K/c64 3674 tok/s (fixed depth 6: 3603; baseline depth 4: 3668), 8K/c4 481.0 (488.3), 8K/c16 848.3 (863.1). Depth 4
+helps at c64; depth 5 hurts at c16 (acceptance length 4.63 vs 5.10). E6b therefore uses [[1,32,6],[33,4096,4]].
+A throughput model (step-level replay of the chunked-prefill scheduler, calibrated on the measured runs; RMS error
+0.35 %, validation max 2.4 %) attributes 31 / 55 / 69 % of wall time to prefill at 8K c4 / c16 / c64 and
+predicts that ≈ 10–15 % faster prefill is the single biggest remaining lever. E6b = `vllm-0.33.0-best-e6b`: depth
+schedule + split-K capture sizes + 3072-token chunks + `mtp_draft_prefill_last`. Descriptive (n=1, seed 0):
+
+| workload | E6b tok/s | vs Backboard | previous best / baseline | run |
+|---|---:|---:|---|---|
+| 1024×1 | pending | pending | | |
+| 1024×4 | pending | pending | | |
+| 1024×16 | pending | pending | | |
+| 1024×64 | 3710 | 0.971 | 3603 (D-044 combined), 3674 (E6a) | `…-d129` |
+| 8192×1 | pending | pending | | |
+| 8192×4 | pending | pending | | |
+| 8192×16 | pending | pending | | |
+| 8192×64 | 1149 | 0.916 | 1098 (D-044 combined, `…-aee1`) | `…-d129` |
+
+**D-048 (2026-11-11) SGLang 0.5.23 slowness diagnosed from source; no GPU run yet.** SGLang's steps are ≈ 1.6× slower
+than vLLM's because target-verify attention on sm_120 uses the Triton extend kernel without KV splitting (split-KV
+verify is AMD-only in v0.5.23), so the 8 global layers (head_dim 512, 1 KV head) scan the 8K prefix serially — the
+same problem vLLM's split-K kernel fixes (D-044). No server flag changes this. Prepared, not run:
+`sglang-0.5.23-nextn-fair64` (`--max-running-requests 64`, `--cuda-graph-max-bs-decode 64`; makes c64 like-for-like
+after SGLang's automatic cap of 48) and `sglang-0.5.23-nextn-fast` (+ `--triton-attention-num-kv-splits 32`, which
+reaches the draft decode kernel only).
+
+**D-049 (2026-11-11) Profiling mode for E5g.** `g4bench modal job ... --profile-key <ISLxconc>` starts vLLM v0.33.0
+with `--profiler-config` (torch profiler, CPU + CUDA, gzip) and `VLLM_CUSTOM_SCOPES_FOR_PROFILING=1`, captures a short
+steady-state window via `/start_profile` / `/stop_profile`, and writes `points/<id>/profile_summary.{json,md}`
+(kernel classes, per-step summary). Profiled rows carry profiler overhead and are excluded from analysis and
+comparisons. First run (E6b at 8192×4) pending.
