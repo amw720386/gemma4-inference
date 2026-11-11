@@ -28,7 +28,8 @@ SHAPES = [
 ]
 DECODE_M = [4, 7, 14, 28, 56, 112, 448]   # spec-decode verify: requests x (depth+1)
 PREFILL_M = [1024, 3072]
-AUTOTUNE_M = [7, 28, 112, 3072]
+AUTOTUNE_M: list[int] = []  # run 1 (20261111T170723Z): max-autotune never beat cuBLAS (0.33-1.01x); skipped
+COLD_BYTES = 768 * 1024**2  # > 5x the 128 MB L2
 
 
 def bench(fn, iters: int, warmup: int = 5) -> float:
@@ -74,16 +75,23 @@ def main() -> int:
 
     for name, n, k, count in SHAPES:
         w = torch.randn(n, k, device=dev, dtype=torch.bfloat16) * 0.02
+        # Cold-weight variant: cycle through enough copies to exceed the 128 MB L2, as real decode does (each layer's
+        # weights are read once per step from DRAM). The hot variant (one copy) is what the first run measured.
+        copies = max(2, -(-COLD_BYTES // (2 * n * k)))
+        ws = [w.clone() for _ in range(copies)]
         compiled = None
         for m in DECODE_M + PREFILL_M:
             x = torch.randn(m, k, device=dev, dtype=torch.bfloat16)
             iters = 200 if m <= 448 else 50
             t_cub = bench(lambda: F.linear(x, w), iters)
+            ring = iter(range(10**9))
+            t_cold = bench(lambda: F.linear(x, ws[next(ring) % copies]), iters)
             flops = 2 * m * n * k
             bytes_ = 2 * (n * k + m * k + m * n)
-            row = {"shape": name, "M": m, "N": n, "K": k, "count": count, "cublas_ms": round(t_cub, 5),
-                   "cublas_tflops": round(flops / t_cub / 1e9, 1),
-                   "cublas_gbs": round(bytes_ / t_cub / 1e6, 1)}
+            row = {"shape": name, "M": m, "N": n, "K": k, "count": count, "cublas_ms": round(t_cold, 5),
+                   "cublas_hot_ms": round(t_cub, 5), "cold_gbs": round(bytes_ / t_cold / 1e6, 1),
+                   "cublas_tflops": round(flops / t_cold / 1e9, 1),
+                   "hot_gbs": round(bytes_ / t_cub / 1e6, 1)}
             if m in AUTOTUNE_M:
                 try:
                     if compiled is None:
@@ -96,12 +104,12 @@ def main() -> int:
                     row["autotune_max_abs_err"] = float((got.float() - ref.float()).abs().max())
                     t_at = bench(lambda: compiled(x), iters)
                     row["autotune_ms"] = round(t_at, 5)
-                    row["autotune_speedup"] = round(t_cub / t_at, 3)
+                    row["autotune_speedup_hot"] = round(t_cub / t_at, 3)
                 except Exception as e:  # noqa: BLE001
                     row["autotune_error"] = repr(e)[:300]
             rows.append(row)
             print(json.dumps(row), flush=True)
-        del w
+        del w, ws
         torch.cuda.empty_cache()
 
     # Per-forward-pass linear time at decode batch sizes (all 48 layers), vs a weight-read roofline.
