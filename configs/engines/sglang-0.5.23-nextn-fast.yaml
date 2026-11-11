@@ -1,0 +1,47 @@
+# VARIANT (E5e-fast): fair64 + more Triton flash-decoding KV splits for the Frozen-KV MTP draft loop.
+# Diagnosis (v0.5.23 source + E3 server logs): Gemma4 on sm_120 defaults to the triton attention backend
+# (model_overrides/gemma4.py; trtllm_mha is sm_100-only). Each step = 5 draft forwards (topk 1 -> the draft
+# runner's triton backend, decode kernel over the frozen target KV) + one 6-token target verify through
+# the triton EXTEND kernel, grid (bs, q_heads, 1) with no KV split (split-KV verify is gfx95-only), so the
+# 8 global layers (1 KV head, head_dim 512) scan the whole context serially. Median step 26 ms at ~30 ctx,
+# 35 ms at 1K/c1, 103 ms at 8K/c16 -> the gap vs vLLM is mostly context-proportional attention.
+# Lever here: the draft's decode kernel is capped at --triton-attention-num-kv-splits (default 8); the dynamic
+# heuristic (kernels/ops/attention/metadata.py) wants ~cores*log2(ctx/64)/grid >> 8 for every bs <= 64 on
+# 188 SMs, so the cap binds. 32 splits gives 4x the CTAs per draft attention at low batch.
+# Lossless: same math, only the FP32 split-reduction order changes (like vLLM split-K, D-044).
+# Baseline B: SGLang cookbook Gemma4 12B MTP command (docs.sglang.io/cookbook/autoregressive/Google/Gemma4),
+# matches article: NEXTN, 5 steps, 6 draft tokens, mem-fraction-static 0.85, radix cache disabled.
+name: sglang-0.5.23-nextn-fast
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E5e-fast
+engine: sglang
+version: "0.5.23"
+client_backend: vllm          # InferenceX maps FRAMEWORK=sglang -> --backend vllm (fixed_seq.py SINGLE_NODE_BACKENDS)
+endpoint: /v1/completions
+port: 30000
+health_path: /health
+args:
+  - [--model-path, "{target_repo}"]
+  - [--revision, "{target_rev}"]
+  - [--tp-size, "1"]
+  - [--dtype, bfloat16]
+  - [--speculative-algorithm, NEXTN]
+  - [--speculative-draft-model-path, "{draft_repo}"]
+  - [--speculative-draft-model-revision, "{draft_rev}"]
+  - [--speculative-num-steps, "5"]
+  - [--speculative-num-draft-tokens, "6"]
+  - [--speculative-eagle-topk, "1"]
+  - [--mem-fraction-static, "0.85"]
+  - [--disable-radix-cache]
+  - [--max-running-requests, "64"]
+  - [--cuda-graph-max-bs-decode, "64"]
+  - [--triton-attention-num-kv-splits, "32"]
+  # No --context-length: engine default (article: "default settings").
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env: {}
+unknowns:
+  - "Article does not state attention backend, cuda-graph-max-bs, max-running-requests, or chunked-prefill-size."
+  - "kv-splits only reaches the draft decode kernel; target verify (largest attention cost) has no split-KV path on NVIDIA in v0.5.23. Expected gain is draft-side only; unmeasured."
+  - "attn_logits buffers scale with max_kv_splits (fp32, bs x heads x splits x 512): ~4x the split-8 scratch; check avail mem after capture."
