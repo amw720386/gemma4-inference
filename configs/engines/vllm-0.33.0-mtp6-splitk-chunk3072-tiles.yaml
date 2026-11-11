@@ -1,0 +1,47 @@
+# VARIANT (E5h): E5g (vllm-0.33.0-mtp6-splitk-chunk3072) + build-time image patch `sm120_attn_tiles`
+# (src/g4bench/patches/sm120_attn_tiles.py; runs on the separate Modal app g4repro-vllm-patched).
+# Research (pinned v0.33.0 source, vllm/v1/attention/ops/triton_unified_attention.py lines 958-981, 1004-1014):
+# Triton unified attention's tuned head_dim-256 prefill launch (BLOCK_M 32, 128-token KV tile, 8 warps) is gated on
+# is_device_capability_family(100), so on sm_120 Gemma 4's 40 sliding layers prefill with small tiles and the 8 global
+# layers (head_dim 512, 16 q heads per KV head) with BLOCK_M 16 = 1 query token per program. The patch, on family 120
+# and only when max_seqlen_q > 8 (prefill, 2D kernel): head_dim 256 -> BLOCK_M 32, 32-token KV tile, 8 warps, 2 stages;
+# head_dim 512 -> BLOCK_M 32 (2 query tokens per program), 16-token KV tile, 8 warps, 1 stage. Shared-memory upper
+# bounds 86 / 67 KiB vs 99 KiB (arithmetic in the patch docstring). Decode / split-K (3D) launch is unchanged.
+# Admissibility a: same model, weights, sampling and attention math with fp32 accumulation; only the tiling, hence
+# the FP reduction order, differs (like D-044's split-K).
+# RISK: unverified on GPU. The smem figures are a conservative model, not Triton's real allocation on sm_120; if it
+# is still too large the first prefill (server start-up / first request) raises Triton OutOfResources, failing loudly.
+# Baseline A: vLLM "published recipe" per Backboard article + vllm-project/recipes
+# models/Google/gemma-4-12B-it.yaml (recipes commit fa1173a1). Article: MTP 4 tokens,
+# async scheduling, gpu-mem-util 0.90, prefix caching off.
+name: vllm-0.33.0-mtp6-splitk-chunk3072-tiles
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E5h
+image_patches: [sm120_attn_tiles]   # build-time engine patches (src/g4bench/patches); selects the patched image
+engine: vllm
+version: "0.33.0"
+client_backend: vllm          # InferenceX benchmark_serving --backend
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--async-scheduling]
+  - [--speculative-config, '{"method":"mtp","model":"{draft_repo}","revision":"{draft_rev}","num_speculative_tokens":6}']
+  - [--max-num-batched-tokens, "3072"]
+  - [--cudagraph-capture-sizes, "1", "2", "28", "32", "40", "48", "56", "64", "72", "80", "88", "96", "104", "112", "120", "128", "136", "144", "152", "160", "168", "176", "184", "192", "200", "208", "216", "224", "232", "240", "248", "256", "272", "280", "288", "304", "320", "336", "352", "368", "384", "392", "400", "416", "432", "448", "464", "480", "496", "504", "512"]
+  # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
+  # Those live in the vllm-0.33.0-mtp4-textonly variant (DECISIONS D-007).
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env: {}
+unknowns:
+  - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
+  - "Article does not state whether speculative 'revision' was pinned (pinning has no perf effect)."
+  - "If the engine-default max-model-len fails to fit, the fallback is the textonly variant; log it in DECISIONS."
