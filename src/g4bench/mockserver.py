@@ -25,7 +25,8 @@ STATE = {"active": 0, "accepted": 0, "drafts": 0, "draft_tokens": 0, "requests":
 
 
 def make_app(model: str, step_ms: float, tokens_per_step: int, prefill_ms_per_1k: float,
-             batch_penalty: float, num_spec: int, fail_every: int = 0) -> web.Application:
+             batch_penalty: float, num_spec: int, fail_every: int = 0,
+             profile_dir: str | None = None) -> web.Application:
     app = web.Application()
 
     async def health(_: web.Request) -> web.Response:
@@ -89,6 +90,32 @@ def make_app(model: str, step_ms: float, tokens_per_step: int, prefill_ms_per_1k
         ans = next((v for k, v in canned.items() if k in q), "mock answer " * 8)
         return web.json_response({"choices": [{"index": 0, "message": {"role": "assistant", "content": ans}}]})
 
+    async def start_profile(_: web.Request) -> web.Response:
+        STATE["profile_start"] = time.time()
+        return web.Response(status=200)
+
+    async def stop_profile(_: web.Request) -> web.Response:
+        # Stand-in for vLLM's /stop_profile: with --profile-dir, write a tiny synthetic Kineto-style trace so the
+        # harness's trace -> summary path runs on CPU. The content is fake by construction.
+        if profile_dir and STATE.get("profile_start"):
+            import gzip
+            from pathlib import Path
+
+            d = Path(profile_dir)
+            d.mkdir(parents=True, exist_ok=True)
+            ev = [{"ph": "X", "cat": "user_annotation", "name": "execute_context_0(0)_generation_1(4)",
+                   "pid": 1, "tid": 1, "ts": 0, "dur": 100},
+                  {"ph": "X", "cat": "cuda_runtime", "name": "cudaGraphLaunch", "pid": 1, "tid": 1, "ts": 10,
+                   "dur": 5, "args": {"correlation": 1}},
+                  {"ph": "X", "cat": "kernel", "name": "mock_gemm_kernel", "pid": 0, "tid": 7, "ts": 20, "dur": 40,
+                   "args": {"correlation": 1, "device": 0}}]
+            with gzip.open(d / f"mock_rank0.{int(time.time() * 1000)}.pt.trace.json.gz", "wt") as f:
+                json.dump({"traceEvents": ev}, f)
+        STATE.pop("profile_start", None)
+        return web.Response(status=200)
+
+    app.router.add_post("/start_profile", start_profile)
+    app.router.add_post("/stop_profile", stop_profile)
     app.router.add_post("/v1/chat/completions", chat)
     app.router.add_get("/health", health)
     app.router.add_get("/v1/models", models)
@@ -108,10 +135,11 @@ def main() -> None:
     ap.add_argument("--batch-penalty", type=float, default=0.02)
     ap.add_argument("--num-spec", type=int, default=4)
     ap.add_argument("--fail-every", type=int, default=0)
+    ap.add_argument("--profile-dir", default=None, help="/stop_profile writes a synthetic trace here")
     a = ap.parse_args()
     print(f"mockserver listening on {a.host}:{a.port} (NOT a real engine)", flush=True)
     web.run_app(make_app(a.model, a.step_ms, a.tokens_per_step, a.prefill_ms_per_1k, a.batch_penalty,
-                         a.num_spec, a.fail_every), host=a.host, port=a.port, print=None)
+                         a.num_spec, a.fail_every, a.profile_dir), host=a.host, port=a.port, print=None)
 
 
 if __name__ == "__main__":

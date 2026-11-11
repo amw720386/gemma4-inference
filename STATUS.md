@@ -1,9 +1,9 @@
-# Status — 2026-11-11 (checkpoint 6)
+# Status — 2026-11-11 (checkpoint 7)
 
-**One-line state:** all 16 of the article's seed-0 points measured on 1× RTX PRO 6000 Blackwell Server Edition (Modal),
-all valid, correctness 8/8 on every server. **vLLM 0.33.0 reproduces the article at 8/8 points (+0.9 … +3.1 %); our
-SGLang 0.5.23 is 7–17 % faster than the article's at 8/8.** n = 1 each: descriptive, not claims. Spend ≈ $6.5 billed by
-Modal (≈ $8.5 on the conservative ledger) of the $10 cap; per-job cap raised to $3 by the owner for 8192×64 (D-041).
+**One-line state:** baselines reproduced (vLLM 0.33.0 within +0.9…+3.1 % of the article at 8/8). One lossless vLLM
+configuration (`vllm-0.33.0-best-e6b`, D-050) reaches **≥ 0.95 of Backboard at 5/8 workloads (geometric mean 0.977)**:
+1K c1/c4/c16/c64 = 1.10 / 0.99 / 1.01 / 0.97, 8K c1/c4/c16/c64 = 1.02 / 0.94 / 0.89 / 0.92 (n = 1, descriptive). The
+remaining 8K gap is GEMM kernel efficiency (profile: GPU 99.5 % busy, 74 % GEMM). ≈ $13 billed of the $20 cap.
 
 Workflow (CLAUDE.md): Git author Ahamed Mohamed Wajibu + `Co-Authored-By: Claude Opus 5.5`; one semantic branch per
 change (`feat/…`, `fix/…`, `docs/…`) off `main`; focused PR with executed test output and NOT-RUN limits; merge
@@ -55,6 +55,10 @@ ratio 1.31–1.84× vs the article's implied 1.42–2.08× (C04). Backboard stay
 E5b depth sweep at 8192×4 (D-042): depth 3 / 5 / 6 give 424.4 / 423.9 / 437.4 tok/s vs 402.6 for the baseline depth 4 —
 repeats (n = 2) of depth 4 (402.6 / 402.0) and depth 6 (437.4 / 434.2) agree within ≈ 1 %, so depth 6 is ≈ +8 % (82 % of
 Backboard) — real, but below the n = 3 claim threshold and measured at one workload only.
+
+Optimization toward Backboard (D-043, D-044; n = 1): split-K attention via CUDA-graph capture sizes +8.4 % on top of
+depth 6; combined candidate `vllm-0.33.0-mtp6-splitk-chunk3072` reaches **98 % of Backboard at 1K/c4 (765.1 tok/s)
+and 92 % at 8K/c4 (488.3)**, all lossless for the BF16 target. Cap now $20 (D-045).
 
 ## Blockers
 

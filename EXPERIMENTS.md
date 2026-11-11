@@ -69,7 +69,7 @@ Same as E2. Record the effective speculative algorithm from logs (community repo
 Seeds 1,2 for both engines (completing n=3 per point); optionally a second trial (new container) at
 1K/c1, 8K/c4, 1K/c64 to separate seed variance from machine variance. Produces the first claims.
 
-### E5 – Profiling & ablations (⬜, est. $15–30, each sub-item estimated before launch)
+### E5 – Profiling & ablations (🟨 2026-11-11: b, e done at 8192×4 and combined in E6; g tooling ready; each sub-item estimated before launch)
 Ordered by expected information per dollar; run only those the E2–E4 data justify:
 - a. **No-spec control** (`vllm-0.33.0-nospec`, seed 0) – spec-decode gain and the acceptance-free floor.
 - b. ✅ (8192×4 only, D-042: depth 6 +8.3 % over depth 4, n=2 each, runs agree within ≈ 1 %; depth 3/5 +5 %, n=1) **Speculative depth sweep** `num_speculative_tokens ∈ {2,3,5,6}` at 1K/c1, 8K/c4, 1K/c64 – the
@@ -84,12 +84,20 @@ Ordered by expected information per dollar; run only those the E2–E4 data just
   - Readouts: acceptance length, throughput, p99 TPOT per conc vs the random arm; never compared to the
     article (keys carry `@dataset`). Pre-registered expectation: none — direction unknown a priori.
 - d. **Text-only variant** (`vllm-0.33.0-mtp4-textonly`) – skip MM profiling / bounded context.
-- e. **Scheduler/graph knobs** – `max-num-seqs`, cudagraph capture sizes, `max-num-batched-tokens`
-  (8K TTFT), SGLang `cuda-graph-max-bs`, `chunked-prefill-size`.
-- f. **Attention backend** (FlashInfer / Triton / FA) on sm_120.
-- g. **Torch profiler trace** at 1K/c1 and 8K/c4 to split verify / draft / sampling / CPU overhead.
+- e. ✅ (vLLM, 8192×4, n=1; D-043, D-044) **Scheduler/graph knobs** – `max-num-seqs`, cudagraph capture sizes, `max-num-batched-tokens`
+  (8K TTFT), SGLang `cuda-graph-max-bs`, `chunked-prefill-size`. 3072-token chunks: +1.4 %, p99 ITL 584 → 274 ms
+  (2048 refused by v0.33.0 for Gemma 4); split-K capture sizes: +8.4 %; both combined: 488.3 tok/s (92 % of Backboard).
+  SGLang `fair64` / `fast` prepared, not run (D-048).
+- f. **Attention backend** (FlashInfer / Triton / FA) on sm_120. Related: sm_120 Triton prefill-tile patch gave no
+  gain (D-046, n=1).
+- g. 🟨 (tooling ready, D-049; first run E6b at 8192×4 pending) **Torch profiler trace** at 1K/c1 and 8K/c4 to split verify / draft / sampling / CPU overhead.
 
-### E6 – Optimization candidates (⬜, only after E4 + E5; configs ready: `vllm-0.33.0-mtp-bsched`, `vllm-0.33.0-mtp4-draftfp8` (class b), `sglang-0.5.23-nextn-adaptive`)
+### E6 – Optimization candidates (🟨 2026-11-11, n=1 descriptive; E4 not run; configs ready: `vllm-0.33.0-mtp-bsched`, `vllm-0.33.0-mtp4-draftfp8` (class b), `sglang-0.5.23-nextn-adaptive`)
+- a. ✅ depth by batch size `vllm-0.33.0-dyn-splitk-chunk3072` (D-047): depth 4 helps at 1K/c64 (3674 vs 3603 tok/s),
+  depth 5 hurts at 8K/c16 (848 vs 863).
+- Draft-prefill patch `mtp_draft_prefill_last` (D-046): 8K/c16 +2.6 %, 8K/c1 mean TTFT −3.6 %; acceptance unchanged.
+- b. 🟨 single-config candidate `vllm-0.33.0-best-e6b` (D-047): 1K/c64 3710 tok/s (0.971 of Backboard), 8K/c64 1149
+  (0.916); remaining 6 workloads pending.
 Candidates justified by E5 profiles, e.g. adaptive speculation depth by batch size, reduced draft
 overhead (centroid head already sparse; draft-step CUDA graphs), KV/attention kernel choice for 8K,
 and – separately labelled – lower-precision draft shortlisting (SGLang `--speculative-draft-model-quantization`),
@@ -113,3 +121,12 @@ is both the exact target and the cheapest GPU that fits the whole matrix.
 | 2026-11-11 | E2/E3 | `…-ad4e` (vLLM), `…-3b1e` (SGLang) | both baselines | 2 (8192×64) | 2 | vLLM +1.5 %, SGLang +8.2 % vs article; $3 per-job cap (D-041) |
 | 2026-11-11 | E2/E3 | 7 runs `20261111T01…`–`T023134Z…` (see STATUS) | vllm-0.33.0-mtp4, sglang-0.5.23-nextn | 14 (seed 0, OSL 1024, shared server per job) | 14 | vLLM 7/7 within +0.9…+3.1 % of the article; SGLang +6.8…+16.5 %; ≈ $3.3 billed |
 | 2026-11-11 | E1 | 20261111T012903Z-vllm-0.33.0-mtp4-rtx-pro-6000-sex1-d6761acd-a22c | vllm-0.33.0-mtp4 | 2 (smoke, OSL 256) | 2 | RTX PRO 6000 Blackwell Server Edition 600 W; probes 8/8; AL 3.07 / 3.20 (c1 / c4); TRITON_ATTN; ≈ $0.34 |
+| 2026-11-11 | E5e | `…-mtp6-chunk2048-…-ad8c` | vllm-0.33.0-mtp6-chunk2048 | 1 (8192×4) | 0 | server refused `--max-num-batched-tokens 2048` for Gemma 4 (max_tokens_per_mm_item 2496); point skipped |
+| 2026-11-11 | E5e | `…-mtp6-chunk3072-…-1c0b` | vllm-0.33.0-mtp6-chunk3072 | 1 (8192×4) | 1 | 441.7 tok/s (+1.4 % vs depth 6), p99 ITL 584 → 274 ms (D-043) |
+| 2026-11-11 | E5e | `…-mtp6-splitk-…-92f4` | vllm-0.33.0-mtp6-splitk | 1 (8192×4) | 1 | 472.4 tok/s (+8.4 % vs depth 6) (D-044) |
+| 2026-11-11 | E5e | `…-mtp6-splitk-chunk3072-…-ccdb` | vllm-0.33.0-mtp6-splitk-chunk3072 | 2 (1024×4, 8192×4) | 2 | 765.1 / 488.3 tok/s (0.98 / 0.92 of Backboard) (D-044) |
+| 2026-11-11 | E5e | `…-2d15`, `…-d1cf`, `…-aee1` | vllm-0.33.0-mtp6-splitk-chunk3072 | 6 (1024×1/16/64, 8192×1/16/64) | 6 | 223.3 / 2096 / 3603 and 182.3 / 863.1 / 1098 tok/s |
+| 2026-11-11 | E6a | `…-dyn-splitk-chunk3072-…-85e7` | vllm-0.33.0-dyn-splitk-chunk3072 | 3 (1024×64, 8192×4, 8192×16) | 3 | 3674 / 481.0 / 848.3 tok/s; depth 4 helps c64, depth 5 hurts c16 (D-047) |
+| 2026-11-11 | E5f | `…-tiles-…-110f` | vllm-0.33.0-mtp6-splitk-chunk3072-tiles (patched image) | 2 (8192×1, 8192×16) | 2 | 182.5 / 860.0 tok/s; no gain, patch retired (D-046) |
+| 2026-11-11 | E6 | `…-draftlast-…-930d` | vllm-0.33.0-mtp6-splitk-chunk3072-draftlast (patched image) | 2 (8192×1, 8192×16) | 2 | 183.3 / 885.3 tok/s (+2.6 % at c16), 8K/c1 mean TTFT 638 ms (D-046) |
+| 2026-11-11 | E6b | `…-best-e6b-…-d129` | vllm-0.33.0-best-e6b (patched image) | 2 (1024×64, 8192×64) | 2 | 3710 / 1149 tok/s (0.971 / 0.916 of Backboard) (D-047) |

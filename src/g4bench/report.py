@@ -114,8 +114,12 @@ def build(run_dir: Path) -> tuple[str, str]:
     engine_kind = eng.get("engine") or (rows[0].get("engine") if rows else None)
     exact = bool(meta.get("exact_hardware"))
     is_mock = engine_kind == "mock"
+    profiled = bool(man.get("profile")) or any(r.get("profiled") for r in rows)
     valid = [r for r in rows if r.get("valid")]
     lines = [f"# Run report: `{man.get('run_id', run_dir.name)}`", ""]
+    if profiled:
+        lines += ["> **PROFILED RUN (torch profiler enabled).** Benchmark numbers include profiler overhead; "
+                  "see `points/*/profile_summary.md`. Not compared with the article.", ""]
     if is_mock:
         lines += ["> **MOCK ENGINE — NOT A MEASUREMENT.** CPU fake server used to test the harness. "
                   "Numbers below describe the mock, not any GPU or inference engine.", ""]
@@ -216,7 +220,9 @@ def build(run_dir: Path) -> tuple[str, str]:
     lines.append(f"Config role: **{role}**, admissibility class **{adm}** (DECISIONS D-011)."
                  + ("" if role == "baseline" else " Variants are not compared with the article's open baselines.") + "")
     targets_svg: dict[str, list[tuple[int, float]]] = {}
-    if adm == "c" and not is_mock:
+    if profiled:
+        lines.append("Not compared: profiled run (torch profiler overhead).")
+    elif adm == "c" and not is_mock:
         lines.append("Not compared: admissibility class c (not comparable).")
     elif is_mock:
         lines.append("Not compared: mock engine.")
@@ -256,7 +262,7 @@ def build(run_dir: Path) -> tuple[str, str]:
                           f"({len(off_osl)} workload(s), e.g. the smoke matrix)."]
 
     lines += ["", "## Gap attribution (first-order; acceptance vs step speed)", ""]
-    if is_mock or not exact or ref is None:
+    if is_mock or profiled or not exact or ref is None:
         lines.append("Not computed: needs exact article hardware and a vLLM/SGLang run.")
     else:
         from . import gap
