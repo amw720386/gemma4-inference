@@ -1,0 +1,22 @@
+{
+  "delta": {
+    "vllm:spec_decode_num_drafts_total": 9633.0,
+    "vllm:spec_decode_num_drafts_created": 0.0,
+    "vllm:spec_decode_num_draft_tokens_total": 57798.0,
+    "vllm:spec_decode_num_draft_tokens_created": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_total": 34626.0,
+    "vllm:spec_decode_num_accepted_tokens_created": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_per_pos_total": 34626.0,
+    "vllm:spec_decode_num_accepted_tokens_per_pos_created": 0.0
+  },
+  "acceptance": {
+    "acceptance_length": 4.5945188414824045,
+    "draft_acceptance_rate": 0.5990864735804007,
+    "source": "vllm"
+  },
+  "log": {
+    "acceptance_length_log_mean": 4.567777777777778,
+    "n_log_samples": 9,
+    "source": "vllm-log"
+  }
+}
