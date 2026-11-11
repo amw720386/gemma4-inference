@@ -11,13 +11,13 @@ Gemma 4 12B serving numbers reported by Backboard on 2026-11-09
 
 **Current state (2026-11-10):** harness, real-prompt (SPEED-Bench) arm, per-run reports, vLLM-vs-SGLang
 matched-load comparison, gap attribution, static engine-flag preflight, prepared E5/E6 optimization arms, and a
-server-side **$10 project / $2 per-job spend ledger** in the Modal bridge (independently reviewed, D-030) are complete
-and CPU-validated (120 tests, incl. a Python-3.12 engine-image rehearsal of the worker). **No GPU measurements yet** —
-the bridge is not deployed. See [STATUS.md](STATUS.md), [NEXT.md](NEXT.md), [BUDGET.md](BUDGET.md).
+a **$10 project / $2 per-job spend gate** reconciled against Modal billing are complete and CPU-validated. Paid runs
+are launched directly from the owner's machine with `g4bench modal …` (the HTTPS bridge was removed, D-039). See
+[STATUS.md](STATUS.md), [NEXT.md](NEXT.md), [BUDGET.md](BUDGET.md).
 
-Once deployed, the paid path is: `python modal_bridge/client.py verify` (free; checks the server shows $10 / ≤ $2 /
-1 active) → `python modal_bridge/campaign.py e1-smoke` (plan) → `… --execute` (stops at the first failed gate). No number in this repo is a measured GPU
-result unless it appears in `results/runs/*/results.csv` with a run ID.
+Paid path (credentials in the untracked `.env`): `g4bench modal spend` (free) → `g4bench modal prefetch --execute`
+(CPU, weights into a Volume) → `g4bench modal job --engine vllm-0.33.0-mtp4 --matrix smoke` (plan only) → `… --execute`.
+No number in this repo is a measured GPU result unless it appears in `results/runs/*/results.csv` with a run ID.
 
 ## What the article reports (targets, not our results)
 
@@ -60,7 +60,8 @@ configs/targets/*.json        article numbers (transcribed, test-checked)
 configs/fingerprints-*.json   CPU-generated fingerprints of the exact request streams
 src/g4bench/                  harness (runner, client, stats, compare, roofline, cost, ...)
 third_party/inferencex/       vendored InferenceX bench_serving @ 0b991451 (Apache-2.0)
-modal_bridge/                 one-time-deployable Modal app + HTTPS client + BOOTSTRAP.md
+src/g4bench/modal_app.py      ephemeral Modal app (digest-pinned engine images, cache/results Volumes)
+src/g4bench/spend.py          local $10/$2 spend gate reconciled with Modal billing
 results/runs/<run_id>/        raw + normalized results per run (CSV/JSONL/manifest/metadata)
 results/summary/              aggregated tables (g4bench analyze)
 docs/                         sources, analysis
@@ -83,7 +84,7 @@ Other free checks:
 .venv/bin/g4bench consistency && .venv/bin/g4bench roofline && .venv/bin/g4bench plan
 ```
 
-On a GPU host with the engine installed (or via the Modal bridge):
+On a GPU host with the engine installed (or `g4bench modal job … --execute` on Modal):
 
 ```bash
 g4bench run --engine vllm-0.33.0-mtp4 --matrix backboard-repro --seeds 0

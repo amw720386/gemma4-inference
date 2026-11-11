@@ -51,10 +51,9 @@ guess); budget it at ~$9 per seed.
 - Roofline (docs/analysis/roofline.md): no-spec single-stream ceiling ≈ 63 tok/s on RTX PRO 6000 ⇒ the
   reported 185–204 tok/s/user implies mean acceptance length ≳ 3.1 tokens per verification step.
 
-### E1 – Bridge + GPU smoke (⛔ blocked on one-time Modal deploy; est. ≈ $1.10)
-1. `client.py selftest` (CPU, ≈ $0.02) – test-suite inside Modal.
-2. `client.py prefetch` (CPU, ≈ $0.05) – weights to Volume so GPU time is not spent downloading.
-3. `submit --engine vllm-0.33.0-mtp4 --matrix smoke --max-usd 2` (≈ $0.52), then SGLang (≈ $0.53).
+### E1 – GPU smoke (🟨 direct Modal, D-039; est. ≈ $1.10)
+1. `g4bench modal prefetch --execute` (CPU, ≈ $0.05) – weights to Volume so GPU time is not spent downloading.
+2. `g4bench modal job --engine vllm-0.33.0-mtp4 --matrix smoke --execute` (≈ $0.52), then SGLang (≈ $0.53).
 - Pass: server healthy, 0 failures, probes ≥ 7/8, acceptance length captured, GPU name/power recorded.
 - Also answers: is the client CPU-bound at c=64? (client.log timings vs server metrics).
 
