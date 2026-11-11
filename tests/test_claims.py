@@ -41,3 +41,18 @@ def test_status_counts_only_exact_hardware_baseline_rows(tmp_path):
     md = claims.render(comparison_csv=p)
     c01 = next(line for line in md.splitlines() if line.startswith("| C01"))
     assert "measured 1/8 (1 consistent) - descriptive, n<3" in c01
+
+
+def test_engine_ratio_claim_uses_paired_engine_comparison(tmp_path):
+    e = tmp_path / "engine.csv"
+    rows = [{"metric": "output_throughput", "dataset": "random", "isl": "1024", "osl": "1024", "conc": "1",
+             "hardware_class": "RTX-PRO-6000-SEx1", "advantage": "1.39", "article_advantage": "1.52", "n_paired": "1"},
+            {"metric": "output_throughput", "dataset": "random", "isl": "1024", "osl": "256", "conc": "4",
+             "hardware_class": "RTX-PRO-6000-SEx1", "advantage": "0.9", "article_advantage": "1.4", "n_paired": "1"}]
+    with open(e, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    md = claims.render(comparison_csv=tmp_path / "none.csv", engine_csv=e)
+    c04 = next(line for line in md.splitlines() if line.startswith("| C04"))
+    assert "measured 1/8: vLLM/SGLang 1.39-1.39x (article 1.52-1.52x) - descriptive, n<3" in c04  # OSL 256 ignored
