@@ -319,3 +319,26 @@ depth 4 at 8192×4** (82 % of Backboard instead of 76 %). n = 2 per config — s
 and only one workload; the depth-3/5 +5 % results remain n = 1. The budget gate refused the depth-6 repeat at the
 default $2 reservation (committed $8.18 + $2 > $10); it ran at `--max-usd 1.75` (647 s timeout, used ≈ 270 s).
 
+**D-043 (2026-11-11) Chunked prefill: smoother tokens, little throughput.** Run-data analysis (ITL distributions) showed
+≈ 22 % of vLLM's decode wall time at 8K/c4 is spent stalled behind 8K prompts prefilled in one ≈ 600 ms step
+(`max_num_batched_tokens=8192`); 52 % at 8K/c16, 71 % at 8K/c64. `--max-num-batched-tokens 2048` is refused by
+v0.33.0 for Gemma 4 ("Chunked MM input disabled but max_tokens_per_mm_item (2496) …"), so 3072 was used. Depth 6 at
+8K/c4: 441.7 vs 435.8 tok/s (+1.4 %), p99 ITL 584 → 274 ms, stall share 23 → 21 %: the prefill work is the same,
+only spread out. Kept in the combined candidate for its latency effect.
+
+**D-044 (2026-11-11) Split-K attention via CUDA-graph capture sizes: the first step-speed win.** From the pinned
+vLLM v0.33.0 source (two independent agent reads): Triton unified attention uses its split-K ("3D") kernel only
+when `num_seqs * cdiv(q_len, BLOCK_Q) <= seq_threshold_3D` and `q_len <= 8`; the threshold is `128 // num_kv_heads`
+(= 16 from Gemma 4's model-level 8 KV heads) snapped to the nearest CUDA-graph capture size (ties → smaller). Gemma
+4's 8 global layers have 1 KV head and head_dim 512, so BLOCK_Q = 1 and 4 requests × (k+1) > 16 tokens fall back to
+the 2D kernel (≈ 24 CTAs on ≈ 188 SMs over 8K×512 KV) — which explains the depth 3 → 4 step-time cliff. Capture
+sizes `1 2 28 32 …` (all of 3..27 dropped) raise the threshold to 28 = 4 × 7. Lossless (same math, FP reduction order
+only). Depth 6 at 8K/c4: **472.4 vs 435.8 tok/s (+8.4 %)**, median ITL 30.1 → 26.6 ms. Depth 7 cannot benefit at c4
+(threshold 32 would require dropping size 1). Combined candidate `vllm-0.33.0-mtp6-splitk-chunk3072`: **1K/c4
+765.1 tok/s (98 % of Backboard's 779.4; +18 % over the article's vLLM)**, **8K/c4 488.3 (92 % of 529.6; +23 %)**. n = 1.
+
+**D-045 (2026-11-11) Project cap raised to $20 by the agent under the owner's open authorization.** The owner wrote
+that more Modal credits beyond the $10 allowance may be used if necessary, without waste, and started an
+unbounded iteration loop. An unbounded loop needs a hard stop, so `spend.Caps` is set to $20 total / $3 per job;
+the environment can only tighten it. Past $20 the loop does CPU-side work only and asks for a new figure.
+
