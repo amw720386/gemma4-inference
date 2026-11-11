@@ -129,14 +129,21 @@ def launches(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return out
 
 
-def launch_cost(rec: dict[str, Any]) -> float:
-    """Open: worst case. Settled: the larger of our estimate and Modal's bill. Settled-from-billing: the bill."""
+BILL_FINAL_AFTER_S = 6 * 3600  # Modal's per-app bill is treated as final this long after a launch ended (D-043)
+
+
+def launch_cost(rec: dict[str, Any], now: float | None = None) -> float:
+    """Open: worst case. Settled: the larger of our estimate and Modal's bill, until the bill is final (the launch
+    ended >= BILL_FINAL_AFTER_S ago and Modal has billed its app) - then the bill. Settled-from-billing: the bill."""
+    now = time.time() if now is None else now
     billed = float(rec.get("billed_usd") or 0.0)
     worst = float(rec.get("worst_usd") or 0.0)
     status = rec.get("status")
     if status == "settled-from-billing":
         return billed
     if status == "settled":
+        if rec.get("billed_usd") is not None and rec.get("end_unix") and now - float(rec["end_unix"]) >= BILL_FINAL_AFTER_S:
+            return billed
         return max(float(rec.get("settled_usd") if rec.get("settled_usd") is not None else worst), billed)
     return max(worst, billed)  # reserved / unknown: fail safe
 
