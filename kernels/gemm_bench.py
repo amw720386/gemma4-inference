@@ -28,6 +28,8 @@ SHAPES = [
 ]
 DECODE_M = [4, 7, 14, 28, 56, 112, 448]   # spec-decode verify: requests x (depth+1)
 PREFILL_M = [1024, 3072]
+if os.environ.get("G4_GEMM_QUICK"):  # cuBLAS-version comparisons: one decode and two prefill sizes
+    DECODE_M, PREFILL_M = [28], [1024, 3072]
 AUTOTUNE_M: list[int] = []  # run 1 (20261111T170723Z): max-autotune never beat cuBLAS (0.33-1.01x); skipped
 COLD_BYTES = 768 * 1024**2  # > 5x the 128 MB L2
 
