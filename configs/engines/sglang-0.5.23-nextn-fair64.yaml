@@ -1,0 +1,43 @@
+# VARIANT (E5e): article recipe + --max-running-requests 64 so the c64 points are like-for-like.
+# Without it SGLang v0.5.23 resets max_running_requests to 48 for speculative decoding
+# (arg_groups/speculative_hook.py; server.log "Max running requests is reset to 48"), so at c64 16 requests
+# sat in the queue (#queue-req ~15.6, TTFT 5-20 s) while vLLM ran all 64. Raising the cap changes scheduling
+# only (same model, draft, NEXTN->FROZEN_KV_MTP 5 steps / 6 draft tokens, sampling): output-preserving.
+# Capture sizes are filtered to <= max_running_requests (baseline captured verify/draft graphs for bs<=48);
+# --cuda-graph-max-bs-decode 64 makes the verify + Frozen-KV draft graphs cover bs 52,56,60,64 explicitly.
+# With radix cache off and an explicit request cap, SWARequestCapPoolConfigurator sizes the SWA pool for 64
+# requests (+2 prefill chunks); the full-attention pool shrinks slightly (still >1M tokens; c64x8K needs ~590K).
+# Baseline B: SGLang cookbook Gemma4 12B MTP command (docs.sglang.io/cookbook/autoregressive/Google/Gemma4),
+# matches article: NEXTN, 5 steps, 6 draft tokens, mem-fraction-static 0.85, radix cache disabled.
+name: sglang-0.5.23-nextn-fair64
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E5e
+engine: sglang
+version: "0.5.23"
+client_backend: vllm          # InferenceX maps FRAMEWORK=sglang -> --backend vllm (fixed_seq.py SINGLE_NODE_BACKENDS)
+endpoint: /v1/completions
+port: 30000
+health_path: /health
+args:
+  - [--model-path, "{target_repo}"]
+  - [--revision, "{target_rev}"]
+  - [--tp-size, "1"]
+  - [--dtype, bfloat16]
+  - [--speculative-algorithm, NEXTN]
+  - [--speculative-draft-model-path, "{draft_repo}"]
+  - [--speculative-draft-model-revision, "{draft_rev}"]
+  - [--speculative-num-steps, "5"]
+  - [--speculative-num-draft-tokens, "6"]
+  - [--speculative-eagle-topk, "1"]
+  - [--mem-fraction-static, "0.85"]
+  - [--disable-radix-cache]
+  - [--max-running-requests, "64"]
+  - [--cuda-graph-max-bs-decode, "64"]
+  # No --context-length: engine default (article: "default settings").
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env: {}
+unknowns:
+  - "Article does not state attention backend, cuda-graph-max-bs, max-running-requests, or chunked-prefill-size."
+  - "Check server.log: no 'Post-capture KV sizing: max_running_requests 64 -> N' warning, verify graph bs list ends at 64, #queue-req 0 at c64."
