@@ -21,6 +21,8 @@ from . import compare, stats
 NM = "not measured"
 
 
+ARTICLE_OSL = 1024
+
 def _f(v: Any, fmt: str = "{:.4g}") -> str:
     if v is None or (isinstance(v, float) and not math.isfinite(v)):
         return NM
@@ -141,6 +143,8 @@ def build(run_dir: Path) -> tuple[str, str]:
 
     g = _group(rows)
     keys = sorted(g, key=lambda k: (str(k[0]), k[1] or 0, k[2] or 0))
+    # The article's workload is OSL 1024; other output lengths (e.g. the smoke matrix's 256) are never compared.
+    off_osl = {k for k in keys if any(r.get("osl") not in (None, ARTICLE_OSL) for r in g[k])}
     agg: dict[tuple, dict[str, Any]] = {}
     for k in keys:
         rs = g[k]
@@ -231,7 +235,7 @@ def build(run_dir: Path) -> tuple[str, str]:
                   "|---:|---:|---:|---:|---:|---:|---|---:|---:|"]
         any_cmp = False
         for k in keys:
-            if k[0] != "random":
+            if k[0] != "random" or k in off_osl:
                 continue
             t = tg.get(f"{k[1]}x{k[2]}", {}).get("output_throughput", {})
             a = agg[k]
@@ -243,10 +247,13 @@ def build(run_dir: Path) -> tuple[str, str]:
             lines.append(f"| {k[1]} | {k[2]} | {s.mean:.4g} | {s.n} | {t[ref]} | {s.mean / t[ref]:.3f} | {cls} | "
                          f"{t['backboard']} | {s.mean / t['backboard']:.3f} |")
             targets_svg.setdefault(f"{ref} ISL {k[1]}", []).append((k[2], t[ref]))
-        if not any_cmp:
+        if not any_cmp and not off_osl:
             lines.append(f"| – | – | {NM} | 0 | – | – | – | – | – |")
         if any(k[0] != "random" for k in keys):
             lines += ["", "Real-prompt arms are intentionally not compared with the article (different workload)."]
+        if off_osl:
+            lines += ["", f"Not compared: output length differs from the article's OSL {ARTICLE_OSL} "
+                          f"({len(off_osl)} workload(s), e.g. the smoke matrix)."]
 
     lines += ["", "## Gap attribution (first-order; acceptance vs step speed)", ""]
     if is_mock or not exact or ref is None:
@@ -261,7 +268,7 @@ def build(run_dir: Path) -> tuple[str, str]:
                   "step speed-up needed (Backboard) |", "|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
         rows_added = 0
         for k in keys:
-            if k[0] != "random" or dt is None:
+            if k[0] != "random" or dt is None or k in off_osl:
                 continue
             a = agg[k]
             spu = tg.get(f"{k[1]}x{k[2]}", {}).get("speed_per_user", {})

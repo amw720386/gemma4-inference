@@ -42,4 +42,4 @@ if [ "$tests" = 1 ]; then
   .venv/bin/python -m pytest -q
 fi
 step "done"
-echo "Next: python modal_bridge/client.py verify   (free; needs the deployed bridge)"
+echo "Next: g4bench modal spend   (free; needs MODAL_TOKEN_ID/MODAL_TOKEN_SECRET in .env)"

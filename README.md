@@ -50,7 +50,7 @@ configs/targets/*.json        article numbers (transcribed, test-checked)
 configs/fingerprints-*.json   CPU-generated fingerprints of the exact request streams
 src/g4bench/                  harness (runner, client, stats, compare, roofline, ...)
 third_party/inferencex/       vendored InferenceX bench_serving @ 0b991451 (Apache-2.0)
-modal_bridge/                 one-time-deployable Modal app + HTTPS client + BOOTSTRAP.md
+src/g4bench/modal_app.py      ephemeral Modal app (digest-pinned engine images, cache/results Volumes)
 results/runs/<run_id>/        raw + normalized results per run (CSV/JSONL/manifest/metadata)
 results/summary/              aggregated tables (g4bench analyze)
 docs/                         sources, analysis
@@ -73,7 +73,7 @@ Other free checks:
 .venv/bin/g4bench consistency && .venv/bin/g4bench roofline && .venv/bin/g4bench plan
 ```
 
-On a GPU host with the engine installed (or via the Modal bridge):
+On a GPU host with the engine installed (or `g4bench modal job … --execute` on Modal):
 
 ```bash
 g4bench run --engine vllm-0.33.0-mtp4 --matrix backboard-repro --seeds 0

@@ -84,3 +84,13 @@ def test_variant_and_class_c_runs_are_not_compared_with_open_baselines(tmp_path)
     assert "role: **variant**" in md and "| 1024 | 1 | 300 |" not in md
     c = _mk(tmp_path / "c", rows=[_row(1024, 1, 0, 300.0)], role="variant", adm="c")
     assert "admissibility class c" in report.build(c)[0]
+
+
+def test_non_article_output_length_is_never_compared(tmp_path):
+    # Regression: the E1 smoke run (OSL 256) was compared with the article's OSL-1024 throughput.
+    r = _row(1024, 1, 0, 130.8)
+    r["osl"] = 256
+    md = report.build(_mk(tmp_path / "osl", rows=[r]))[0]
+    cmp_section = md.split("Comparison with article")[1].split("## Gap attribution")[0]
+    assert "| 1024 | 1 | 130.8 |" not in cmp_section and "output length differs" in cmp_section
+    assert "| 1024 | 1 |" not in md.split("## Gap attribution")[1].split("## Correctness")[0]

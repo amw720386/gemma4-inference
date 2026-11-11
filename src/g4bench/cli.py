@@ -62,7 +62,16 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--out", type=Path)
     a.add_argument("--include-mock", action="store_true")
 
+    from .modal_run import add_parser as _add_modal
+
+    _add_modal(sub)
+
     args = ap.parse_args(argv)
+
+    if args.cmd == "modal":
+        from .modal_run import main as modal_main
+
+        return modal_main(args)
 
     if args.cmd == "sources":
         from .availability import check_all
