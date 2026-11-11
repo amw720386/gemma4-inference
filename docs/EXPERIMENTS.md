@@ -99,10 +99,22 @@ Ordered by expected information per dollar; run only those the E2–E4 data just
 - b. 🟨 single-config candidate `vllm-0.33.0-best-e6b` (D-047): 1K/c64 3710 tok/s (0.971 of Backboard), 8K/c64 1149
   (0.916); remaining 6 workloads pending.
 Candidates justified by E5 profiles, e.g. adaptive speculation depth by batch size, reduced draft
-overhead (centroid head already sparse; draft-step CUDA graphs), KV/attention kernel choice for 8K,
+overhead (the 12B draft head is dense, not centroid-sparse: D-054; draft-step CUDA graphs), KV/attention kernel choice for 8K,
 and – separately labelled – lower-precision draft shortlisting (SGLang `--speculative-draft-model-quantization`),
 the closest open analogue to Backboard's 4-bit shortlist. FP8/NVFP4 *target* weights are a different
 model numerically and are reported only in a "not BF16 – not comparable" table.
+
+### E8 – Kernel lab (🟨 2026-11-11; `g4bench modal script`, results in `results/kernels/`, cap $50, D-051)
+- GEMM efficiency ✅ (D-052): cold-weight decode linears 15.8 ms/forward at M=28 vs 14.9 ms weight-read floor; prefill
+  341–427 TFLOPS at M=3072; max-autotune never wins; CuTe DSL sm_120 GEMM 169.4 vs 168.0 ms/forward (no gain).
+- cuBLAS 13.10 vs 13.1 ✅ (D-052, interleaved n=2): −2.0 / −3.1 / −1.9 % at M=28/1024/3072; shipped as an image build step.
+- Verify attention ✅ (D-053): shared split-K threshold misroutes the two layer types (8K/c16 10.2 vs 6.9 ms/forward);
+  patch `splitk_per_group`; packed-row kernel only ≈ 0.5 ms at 8K/c4, not shipped.
+- Draft head ✅ (D-054): dense 262144×1024 BF16 head; FP8 / INT4 scan + BF16 rescore 1.86× / 2.9× at M=28; patch
+  `mtp_draft_head_q` (class b).
+- E7a third-party drafter DSpark ✅ (D-055): slower than the official MTP (1K/c1 211.0, 8K/c4 443.4 tok/s). DLoop-MTP
+  prepared, not run.
+- a. 🟨 combined config `vllm-0.33.0-best-e8-all` (D-056): all 8 workloads n=1, geomean 1.039 of Backboard; repeats (n≥3) not run.
 
 ### E7 – Hardware necessity check (⬜, optional, ≤ $10)
 Only if E6 finds something hardware-specific. The roofline says H100/H200/B200 would be faster but are
@@ -130,3 +142,16 @@ is both the exact target and the cheapest GPU that fits the whole matrix.
 | 2026-11-11 | E5f | `…-tiles-…-110f` | vllm-0.33.0-mtp6-splitk-chunk3072-tiles (patched image) | 2 (8192×1, 8192×16) | 2 | 182.5 / 860.0 tok/s; no gain, patch retired (D-046) |
 | 2026-11-11 | E6 | `…-draftlast-…-930d` | vllm-0.33.0-mtp6-splitk-chunk3072-draftlast (patched image) | 2 (8192×1, 8192×16) | 2 | 183.3 / 885.3 tok/s (+2.6 % at c16), 8K/c1 mean TTFT 638 ms (D-046) |
 | 2026-11-11 | E6b | `…-best-e6b-…-d129` | vllm-0.33.0-best-e6b (patched image) | 2 (1024×64, 8192×64) | 2 | 3710 / 1149 tok/s (0.971 / 0.916 of Backboard) (D-047) |
+| 2026-11-11 | E8 | `20261111T170723Z-gemm_bench-c46eac` | kernels/gemm_bench.py | – | – | decode linears below the weight floor (11.2 ms at M=28): L2-hot artefact, withdrawn; ≈ $0.12 |
+| 2026-11-11 | E8 | `20261111T171035Z-gemm_bench-025434` | kernels/gemm_bench.py (cold weights) | – | – | 15.8 ms/forward at M=28 vs 14.9 ms floor; prefill 341–427 TFLOPS (D-052); ≈ $0.08 |
+| 2026-11-11 | E8 | `20261111T171428Z-cublas_upgrade_bench-7d63ed` | kernels/cublas_upgrade_bench.py | – | – | first 13.10 vs 13.1 comparison, not interleaved; superseded; ≈ $0.09 |
+| 2026-11-11 | E8 | `20261111T171610Z-cublas_upgrade_bench-af4bfc` | kernels/cublas_upgrade_bench.py | – | – | interleaved n=2: −2.0 / −3.1 / −1.9 % at M=28/1024/3072 (D-052); ≈ $0.09 |
+| 2026-11-11 | E8 | `20261111T172120Z-bench-916b9a` | kernels/cute_gemm/bench.py (CuTe DSL 4.8.0) | – | – | 169.4 vs 168.0 ms/forward at M=3072, no gain (D-052); ≈ $0.09 |
+| 2026-11-11 | E8 | `20261111T172419Z-draft_head_scan-556087` | kernels/draft_head_scan.py | – | – | BF16 395 µs → FP8 212 / INT4 137 µs at M=28, k=32; recall FP8 0.996, INT4 0.981 (D-054); ≈ $0.11 |
+| 2026-11-11 | E8 | `20261111T172659Z-attn_bench-c6c4db` | kernels/attn_bench.py | – | – | 8K/c16 10.2 vs 6.9 ms/forward with per-group split-K; packed-row ≈ 0.5 ms at 8K/c4 (D-053); ≈ $0.10 |
+| 2026-11-11 | E7a | `…-dspark-block7-…-cc48` | vllm-0.33.0-dspark-block7 | 2 (1024×1, 8192×4) | 2 | 211.0 / 443.4 tok/s vs E6b 223.9 / 497.8; AL 5.06 / 4.55; probes 8/8 (D-055); ≈ $0.42 billed |
+| 2026-11-11 | E8a | `…-best-e8-all-…-4b53` | vllm-0.33.0-best-e8-all (patched image) | 2 (8192×4, 8192×16) | 0 | server exited during speculator CUDA-graph capture: all-NaN draft scores → sentinel token; fixed in `ab3fc93` (D-054) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-0b3c` | vllm-0.33.0-best-e8-all (patched image) | 2 (8192×4, 8192×16) | 2 | 528.0 / 945.8 tok/s (0.997 / 0.983 of Backboard); AL 5.25 / 5.09 (D-056) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-d1a0` | vllm-0.33.0-best-e8-all (patched image) | 4 (1024×1/4/16, 8192×1) | 4 | 238.1 / 813.1 / 2235 / 197.5 tok/s (1.17 / 1.04 / 1.07 / 1.10) (D-056) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-400b` | vllm-0.33.0-best-e8-all (patched image) | 1 (1024×64) | 1 | 3916 tok/s (1.02) (D-056) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-e87a` | vllm-0.33.0-best-e8-all (patched image) | 1 (8192×64) | 1 | 1170 tok/s (0.933); prefill-bound; geomean over 8 workloads 1.039, n=1 (D-056) |
