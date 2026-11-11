@@ -63,9 +63,10 @@ hf_vol = modal.Volume.from_name("g4repro-hf-cache", create_if_missing=True)
 res_vol = modal.Volume.from_name("g4repro-results", create_if_missing=True)
 
 # One app per image, so a launch only builds/pulls the image it uses (a CPU selftest never pulls a 10+ GB engine image).
-cpu_app = modal.App(f"{APP_NAME}-cpu")
-vllm_app = modal.App(f"{APP_NAME}-vllm")
-sglang_app = modal.App(f"{APP_NAME}-sglang")
+# include_source=False: the code comes only from /repo (add_local_dir), so paths.REPO resolves to /repo.
+cpu_app = modal.App(f"{APP_NAME}-cpu", include_source=False)
+vllm_app = modal.App(f"{APP_NAME}-vllm", include_source=False)
+sglang_app = modal.App(f"{APP_NAME}-sglang", include_source=False)
 
 
 def _commit_loop(stop) -> None:
@@ -140,7 +141,8 @@ def _prefetch(spec: dict) -> dict:
             "coding": speedbench.prepare_coding(data, cache)["prompt_digest"],  # raises unless InferenceX digest
         }
     hf_vol.commit()
-    total = sum(f.stat().st_size for f in pathlib.Path(CACHE_ROOT).rglob("*") if f.is_file())
+    # lstat: HF snapshot entries are symlinks into blobs/xet; following them would double-count the weights.
+    total = sum(os.lstat(os.path.join(d, f)).st_size for d, _, fs in os.walk(CACHE_ROOT) for f in fs)
     out["volume_gib"] = round(total / 2**30, 2)
     return out
 
