@@ -43,6 +43,8 @@ def test_reserve_settle_reconcile_cycle(tmp_path):
     S.reconcile(S.read(L), rows, L)
     assert S.ledger_total(S.read(L)) == pytest.approx(0.7)   # bill above our estimate wins
     assert S.reconcile(S.read(L), rows, L) == []             # idempotent
+    S.append({"launch_id": "a", "kind": "reconcile", "billed_usd": 0.7}, L)  # legacy reconcile line
+    assert "kind" not in S.launches(S.read(L))["a"] or S.launches(S.read(L))["a"]["kind"] != "reconcile"
 
 
 def test_crashed_launch_settles_from_billing_only_after_deadline(tmp_path):

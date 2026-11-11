@@ -39,9 +39,9 @@ claims:
     kind: measurable
     engine: [vllm, sglang]
     metric: engine_ratio
-    keys: ["1024x1", "8192x4"]
+    keys: ["1024x1", "1024x4", "1024x16", "1024x64", "8192x1", "8192x4", "8192x16", "8192x64"]
     budget: partial
-    plan: "paired seed-matched comparison (g4bench analyze -> engine_comparison.csv); 2 workloads in budget, n=1"
+    plan: "paired seed-matched comparison (g4bench analyze -> engine_comparison.csv); 7/8 workloads in the $10 budget (8192x64 needs a > $2 job), n=1"
   - id: C05
     text: "Backboard's engine achieves the reported throughput/latency and wins 208/208 metric comparisons"
     kind: untestable
@@ -67,7 +67,7 @@ claims:
     kind: measurable
     metric: hardware
     budget: in-budget
-    plan: "Every run records nvidia-smi name, power limits, clocks, driver; exact_hardware flag. Edition (Server/Workstation/Max-Q) of Modal's GPU is unknown until E1."
+    plan: "Every run records nvidia-smi name, power limits, clocks, driver; exact_hardware flag. E1 (2026-11-11): Modal's GPU is the RTX PRO 6000 Blackwell Server Edition, 600 W power limit, driver 610.57.04; the article does not state its edition, so equality cannot be checked."
   - id: C10
     text: "Results are from one run per point (three seeds averaged at 8K/c4)"
     kind: verified-source

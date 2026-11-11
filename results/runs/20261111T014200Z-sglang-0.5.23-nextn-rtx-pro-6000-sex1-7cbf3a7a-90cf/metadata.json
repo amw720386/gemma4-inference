@@ -1,0 +1,61 @@
+{
+  "captured_utc": "2026-11-11T01:42:00.908330+00:00",
+  "host": {
+    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "python": "3.12.16",
+    "cpu_count": 8,
+    "cpu_model": "unknown",
+    "mem_total_kib": 67108864
+  },
+  "gpus": [
+    {
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "uuid": "GPU-1aaf7745-5ab6-0bfc-8f9d-0d3f87368414",
+      "pci.bus_id": "[Unknown Error]",
+      "driver_version": "610.57.04",
+      "memory.total": "97887",
+      "power.limit": "600.00",
+      "power.default_limit": "600.00",
+      "power.max_limit": "600.00",
+      "clocks.max.sm": "2430",
+      "clocks.max.memory": "12481",
+      "clocks.sm": "180",
+      "clocks.mem": "405",
+      "pcie.link.gen.current": "1",
+      "pcie.link.width.current": "16",
+      "temperature.gpu": "29",
+      "persistence_mode": "Enabled",
+      "compute_mode": "Default",
+      "ecc.mode.current": "Enabled",
+      "vbios_version": "98.02.74.00.01"
+    }
+  ],
+  "hardware_class": "RTX-PRO-6000-SEx1",
+  "exact_hardware": true,
+  "nvcc": "Build cuda_13.0.r13.0/compiler.36424714_0",
+  "packages": {
+    "vllm": null,
+    "sglang": "0.5.23",
+    "torch": "2.14.1+cu130",
+    "transformers": "5.19.0",
+    "flashinfer-python": "0.7.2",
+    "flash-attn": null,
+    "triton": "3.8.0",
+    "sgl-kernel": null,
+    "numpy": "2.3.5",
+    "aiohttp": "3.14.5"
+  },
+  "git": {
+    "sha": "a952595ad7366f8ae0ada46306122567e6a68d28",
+    "dirty": true,
+    "source": "G4_CODE_SHA"
+  },
+  "env": {
+    "NVIDIA_DRIVER_CAPABILITIES": "all",
+    "MODAL_REGION": "us-central",
+    "MODAL_CLOUD_PROVIDER": "CLOUD_PROVIDER_UNSPECIFIED",
+    "MODAL_TASK_ID": "ta-01M7449N9J73885170GBNB4QFR"
+  },
+  "_errors": {}
+}

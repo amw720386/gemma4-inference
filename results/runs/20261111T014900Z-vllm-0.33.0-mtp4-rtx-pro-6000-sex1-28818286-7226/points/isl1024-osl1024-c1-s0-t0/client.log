@@ -1,0 +1,54 @@
+Namespace(backend='vllm', base_url='http://127.0.0.1:8000', host='127.0.0.1', port=8000, endpoint='/v1/completions', dataset_name='random', dataset_path=None, max_concurrency=1, model='google/gemma-4-12B-it', tokenizer='/__modal/volumes/vo-dTN9ol8V3zm9R15XrLGhuE/hf/hub/models--google--gemma-4-12B-it/snapshots/43c9d014b231474fa7212dbb48a762566c2b255d', best_of=1, use_beam_search=False, num_prompts=10, logprobs=None, request_rate=inf, burstiness=1.0, seed=0, trust_remote_code=False, disable_tqdm=False, profile=False, save_result=True, save_detailed=True, metadata=None, result_dir='/results/runs/20261111T014900Z-vllm-0.33.0-mtp4-rtx-pro-6000-sex1-28818286-7226/points/isl1024-osl1024-c1-s0-t0', result_filename='inferencex_result.json', ignore_eos=True, percentile_metrics='ttft,tpot,itl,e2el', metric_percentiles='50,90,99,99.9', goodput=None, sonnet_input_len=550, sonnet_output_len=150, sonnet_prefix_len=200, sharegpt_output_len=None, random_input_len=1024, random_output_len=1024, random_range_ratio=0.8, random_prefix_len=0, use_chat_template=True, random_num_workers=0, dsv4=False, hf_subset=None, hf_split=None, hf_output_len=None, tokenizer_mode='auto', served_model_name=None, lora_modules=None, num_warmups=2)
+Generating 10 prompts using 5 worker processes...
+Prompt generation completed in 2.2s
+-------------------  Input/Output Length Statistics  -------------------
+ input_lens : min=830   max=1017  mean=917.20   avg_token_mismatch=13.30 
+ output_lens: min=858   max=1012  mean=921.40  
+------------------------------------------------------------------------ 
+
+Starting initial single prompt test run...
+Warming up with 2 requests...
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:04<00:04,  4.77s/it]100%|██████████| 2/2 [00:09<00:00,  4.74s/it]100%|██████████| 2/2 [00:09<00:00,  4.75s/it]
+Warmup completed.
+Traffic request rate: inf
+Burstiness factor: 1.0 (Poisson process)
+Maximum request concurrency: 1
+  0%|          | 0/10 [00:00<?, ?it/s] 10%|█         | 1/10 [00:04<00:42,  4.73s/it] 20%|██        | 2/10 [00:09<00:35,  4.49s/it] 30%|███       | 3/10 [00:13<00:32,  4.60s/it] 40%|████      | 4/10 [00:18<00:28,  4.77s/it] 50%|█████     | 5/10 [00:23<00:23,  4.78s/it] 60%|██████    | 6/10 [00:29<00:20,  5.03s/it] 70%|███████   | 7/10 [00:33<00:14,  4.92s/it] 80%|████████  | 8/10 [00:38<00:09,  4.88s/it] 90%|█████████ | 9/10 [00:43<00:04,  4.93s/it]100%|██████████| 10/10 [00:48<00:00,  4.87s/it]100%|██████████| 10/10 [00:48<00:00,  4.84s/it]
+Starting main benchmark run...
+============ Serving Benchmark Result ============
+Successful requests:                     10        
+Benchmark duration (s):                  48.39     
+Total input tokens:                      9172      
+Total generated tokens:                  9214      
+Request throughput (req/s):              0.21      
+Output token throughput (tok/s):         190.42    
+Total Token throughput (tok/s):          379.97    
+---------------Time to First Token----------------
+Mean TTFT (ms):                          89.84     
+Median TTFT (ms):                        90.56     
+P50 TTFT (ms):                           90.56     
+P90 TTFT (ms):                           100.34    
+P99 TTFT (ms):                           100.75    
+P99.9 TTFT (ms):                         100.79    
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          5.16      
+Median TPOT (ms):                        5.13      
+P50 TPOT (ms):                           5.13      
+P90 TPOT (ms):                           5.38      
+P99 TPOT (ms):                           5.41      
+P99.9 TPOT (ms):                         5.41      
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           21.65     
+Median ITL (ms):                         21.62     
+P50 ITL (ms):                            21.62     
+P90 ITL (ms):                            22.06     
+P99 ITL (ms):                            22.69     
+P99.9 ITL (ms):                          23.16     
+----------------End-to-end Latency----------------
+Mean E2EL (ms):                          4837.85   
+Median E2EL (ms):                        4765.34   
+P50 E2EL (ms):                           4765.34   
+P90 E2EL (ms):                           5092.97   
+P99 E2EL (ms):                           5454.12   
+P99.9 E2EL (ms):                         5490.23   
+==================================================
