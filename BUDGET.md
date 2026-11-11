@@ -55,9 +55,19 @@ totals including Modal's billed figure).
 | 2026-11-10 | – | E5c data prep (this container) | none | 0 | **0.00** | SPEED-Bench prepared locally |
 | 2026-11-10 | – | e1-smoke `--execute` gate test | none | 0 | **0.00** | refused at /health (404, not deployed) before any POST |
 | 2026-11-11 | 20261111T005351Z-2c8cb0 | selftest (direct Modal) | none | 0.076 | 0.003 | failed at app creation: vLLM image had no `python` (fixed by D-038) |
-| 2026-11-11 | 20261111T005544Z-a782f7 | selftest (direct Modal) | none (2 CPU) | 0.076 | 0.012 | 98 passed, 1 skipped on Linux |
+| 2026-11-11 | 20261111T005544Z-a782f7 | selftest (direct Modal) | none (2 CPU) | 0.076 | 0.012 | 98 passed, 1 skipped on Linux; billed 0.009 |
+| 2026-11-11 | 20261111T010141Z-3afe9e | prefetch weights | none (2 CPU) | 0.15 | 0.009 | billed 0.007 |
+| 2026-11-11 | 20261111T010627Z-07f9a7 | E1 vLLM smoke | RTX PRO 6000 | 2.00 | 0.341 | billed 0.247 (incl. 22-min image pull on the builder) |
+| 2026-11-11 | 20261111T013505Z-357fe2 | SGLang 1024×{1,4} | RTX PRO 6000 | 2.00 | 0.425 | billed 0.317 |
+| 2026-11-11 | 20261111T014838Z-bbaf7b | vLLM 1024×{1,4,16} | RTX PRO 6000 | 2.00 | 0.483 | billed 0.365 |
+| 2026-11-11 | 20261111T015552Z-1c6684 | vLLM 1024×64, 8192×{1,4} | RTX PRO 6000 | 2.00 | 0.663 | billed 0.522 |
+| 2026-11-11 | 20261111T020529Z-1f9e86 | vLLM 8192×16 | RTX PRO 6000 | 2.00 | 0.458 | billed 0.342 |
+| 2026-11-11 | 20261111T021151Z-a4a32a | SGLang 1024×16, 8192×{1,4} | RTX PRO 6000 | 2.00 | 0.756 | billed 0.603 |
+| 2026-11-11 | 20261111T022252Z-5b43d2 | SGLang 1024×64 | RTX PRO 6000 | 2.00 | 0.607 | billed 0.473 |
+| 2026-11-11 | 20261111T023126Z-a1ef38 | SGLang 8192×16 | RTX PRO 6000 | 2.00 | 0.538 | billed 0.375 |
 
-**Total spent to date: ≈ $0.02 (estimate)**; `g4bench modal spend --reconcile` replaces estimates with Modal's billed figures.
+**Total spent to date: $3.26 billed by Modal for `g4repro*` apps** (ledger estimate $4.30; the gate counts the larger,
+plus ≈ $0.01 Volume storage). Our settle estimate runs ≈ 30 % above Modal's bill (it prices CPU/memory at limits).
 
 ## Prices (`modal billing rates`, retrieved 2026-11-10)
 

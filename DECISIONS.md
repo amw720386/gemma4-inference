@@ -277,3 +277,16 @@ before every launch, counting the larger figure, plus Volume storage accrual. Re
 Run evidence now comes back as the worker's return value (all files ≤ 20 MB) instead of a fetch endpoint. Platform
 reserve/metering (D-030 #3) is obsolete: there is no always-on web container. Trade-off: the per-launch billing lag
 means a just-finished launch is counted at our estimate until Modal bills it; the gate takes the larger of the two.
+
+**D-040 (2026-11-11) Budget plan: one server start per job, no separate SGLang smoke.** The E1 vLLM smoke
+(`20261111T012903Z-…-d6761acd-a22c`, settled ≈ $0.34) showed the cost structure on RTX PRO 6000: ≈ 6.5¢/GPU-minute
+at container limits, ≈ 3.5 min for server start + correctness probes, and an engine image pull (22 min for vLLM) that
+happens on Modal's builder before any GPU container (≈ $0.06 billed to the app). With fresh servers per point the
+16-point seed-0 matrix does not fit the remaining ≈ $9.5. New matrix `backboard-repro-shared` = `backboard-repro`
+with `seeds: [0]` and `fresh_server_per_point: false`; each job selects 2–3 points with `--only` so it fits the 876 s
+timeout of a $2 reservation. Points sharing a server are not independent restarts; all results are n = 1,
+descriptive only (EXPERIMENTS criterion 2, unchanged). SGLang skips the smoke matrix and starts directly on
+`1024x1,1024x4`: a broken engine fails in its first minutes either way, saving ≈ $0.5. Also fixed from the smoke
+run: the per-run report compared the smoke's OSL-256 throughput with the article's OSL-1024 numbers (now excluded),
+and Modal runs recorded no code SHA (now `G4_CODE_SHA`).
+

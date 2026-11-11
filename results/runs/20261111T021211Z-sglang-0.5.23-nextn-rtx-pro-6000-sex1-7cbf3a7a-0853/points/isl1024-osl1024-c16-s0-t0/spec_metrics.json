@@ -1,0 +1,14 @@
+{
+  "delta": {},
+  "acceptance": {
+    "acceptance_length": null,
+    "draft_acceptance_rate": null,
+    "source": null
+  },
+  "log": {
+    "acceptance_length_log_mean": 4.7255737704918035,
+    "accept_rate_log_mean": 0.7457377049180328,
+    "n_log_samples": 61,
+    "source": "sglang-log"
+  }
+}
