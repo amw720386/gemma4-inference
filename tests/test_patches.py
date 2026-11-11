@@ -213,7 +213,7 @@ def test_modal_app_defines_patched_function_and_keeps_unpatched():
     with warnings.catch_warnings():  # registered_functions is deprecated (removed in modal 1.7; pinned 1.6.3)
         warnings.simplefilter("ignore")
         fns = {a.name: set(a.registered_functions) for a in (M.vllm_patched_app, M.vllm_app, M.sglang_app)}
-    assert fns == {"g4repro-vllm-patched": {"run_vllm_patched"}, "g4repro-vllm": {"run_vllm"},
+    assert fns == {"g4repro-vllm-patched": {"run_vllm_patched"}, "g4repro-vllm": {"run_vllm", "run_script_vllm"},
                    "g4repro-sglang": {"run_sglang"}}
 
 

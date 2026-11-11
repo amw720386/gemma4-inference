@@ -140,6 +140,36 @@ def run_vllm(spec: dict) -> dict:
     return _guarded(_run_job, spec)
 
 
+def _run_script(spec: dict) -> dict:
+    """Kernel lab: run one repo script on the GPU inside the pinned vLLM image; it writes files to $G4_OUT_DIR."""
+    import subprocess
+
+    from g4bench.jobs import collect_run_files
+
+    hf_vol.reload()
+    root = pathlib.Path(RESULTS_MOUNT) / "scripts"
+    run_id = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{pathlib.Path(spec['script']).stem}-{spec['job_id'][-6:]}"
+    out = root / run_id
+    out.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "G4_OUT_DIR": str(out), "PYTHONUNBUFFERED": "1"}
+    try:
+        p = subprocess.run(["python", f"{REPO_REMOTE}/{spec['script']}", *spec.get("args", [])], capture_output=True,
+                           text=True, cwd=REPO_REMOTE, env=env, timeout=max(float(spec.get("max_wall_s", 600)), 30))
+        rc, so, se = p.returncode, p.stdout, p.stderr
+    except subprocess.TimeoutExpired as e:
+        rc, so, se = 124, (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or ""), "timeout"
+    (out / "stdout.txt").write_text(so, encoding="utf-8")
+    (out / "stderr.txt").write_text(se, encoding="utf-8")
+    res_vol.commit()
+    return {"run_id": run_id, "rc": rc, "stdout_tail": so[-6000:], "stderr_tail": se[-3000:],
+            "files": collect_run_files(root, run_id)}
+
+
+@vllm_app.function(image=vllm_image, **_gpu_kw)
+def run_script_vllm(spec: dict) -> dict:
+    return _guarded(_run_script, spec)
+
+
 @vllm_patched_app.function(image=vllm_patched_image, **_gpu_kw)
 def run_vllm_patched(spec: dict) -> dict:
     """vLLM on the image with VLLM_PATCHES applied; only for engine configs whose image_patches equal them."""
