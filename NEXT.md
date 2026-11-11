@@ -7,7 +7,8 @@ Done 2026-11-11: selftest, prefetch, vLLM smoke, and all 16 seed-0 article point
 conservative ledger before E5b; ≈ $2.2 after it.
 
 1. ~~E5b depth sweep at 8192×4 + repeats~~ ✅ (D-042): depth 6 ≈ +8 %. Remaining ≈ $1.5 by the conservative ledger
-   (≈ $3.5 by Modal's bill): stop paid work here and delete the `g4repro-hf-cache` Volume unless a new budget is approved.
+   (≈ $3.5 by Modal's bill): paid work stopped; the `g4repro-hf-cache` Volume was deleted on 2026-11-11 (re-run `g4bench modal prefetch
+   --execute`, ≈ $0.01, before the next GPU job).
 2. Seeds 1, 2 for n = 3 claims (EXPERIMENTS criterion 2) need ≈ $10–15: a new budget approval.
 
 Every command: `g4bench modal job … ` (plan only) → `… --execute`; one launch at a time; `g4bench modal spend --reconcile`
