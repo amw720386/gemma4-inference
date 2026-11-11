@@ -1,8 +1,9 @@
 # gemma4-inference-repro
 
 An independent, open-source attempt to **reproduce** the Gemma 4 12B serving benchmark that Backboard published on
-2026-11-09 ([article](https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference)), and then to **close the gap** to
-Backboard's proprietary engine using only open engines and lossless changes.
+2026-11-09 ([article](https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference)), and then to **match and beat**
+Backboard's proprietary engine with an open engine (vLLM 0.33.0 plus small, documented patches) without changing the
+target model's outputs.
 
 Setup throughout: 1× NVIDIA RTX PRO 6000 Blackwell Server Edition (96 GB, 600 W) on Modal, `google/gemma-4-12B-it`
 BF16 with the `google/gemma-4-12B-it-assistant` MTP draft, random-token prompts (InferenceX client, range ratio 0.8,
@@ -18,9 +19,10 @@ chat template), 1024 output tokens, input length 1K / 8K × concurrency 1 / 4 / 
 | | Result |
 |---|---|
 | **Article baselines reproduced** | vLLM 0.33.0 within **+0.9 … +3.1 %** of the article at **8/8** workloads; SGLang 0.5.23 runs **7–17 % faster** than the article's |
-| **Best single lossless config** (`vllm-0.33.0-best-e6b`) | **≥ 95 % of Backboard at 5/8** workloads, **≥ 90 % at 7/8**, geometric mean **97.7 %** (article vLLM recipe: 88.1 %) |
-| **Biggest single win** | split-K attention on Gemma 4's head-dim-512 layers via CUDA-graph capture sizes: **+8 %** at 8K/c4 |
-| **What is left** | 8K workloads (89–94 %): profile shows the GPU 99.5 % busy and 74 % of time in BF16 GEMMs — kernel work, not configuration |
+| **Best single config** (`vllm-0.33.0-best-e8-all`) | **ahead of Backboard at 5/8** workloads, within 2 % at 2 more; geometric mean **103.9 %** of Backboard (article vLLM recipe: 88.1 %) |
+| **Configuration only** (`vllm-0.33.0-best-e6b`, no engine patches) | ≥ 95 % of Backboard at 5/8, geometric mean 97.7 % |
+| **Biggest wins** | split-K attention for Gemma 4's head-dim-512 layers (+8 % at 8K/c4); FP8 draft-head scan with exact BF16 rescoring (≈ 1.1 ms/step, Backboard's disclosed idea); per-layer-group split-K thresholds (−3.4 ms/forward at 8K/c16) |
+| **What is left** | 8K × 64 (93 %), bound by prefill; BF16 GEMMs on this GPU already run at its practical limit |
 
 ### 1. Reproducing the article's open-engine baselines
 
@@ -41,22 +43,22 @@ vLLM's latencies (p99 TPOT, p99 E2EL, p90 TTFT) land at 0.82–1.11× the articl
 at 48 running requests, so its c64 points queue (TTFT 5–20 s); a like-for-like config (`sglang-0.5.23-nextn-fair64`)
 is prepared but not run.
 
-### 2. Closing the gap to Backboard
+### 2. Beating Backboard
 
-One configuration for all workloads (as Backboard did), every change output-preserving for the BF16 target:
+One configuration for all workloads (as Backboard did). Target outputs are unchanged: the BF16 target verifies every
+drafted token. The draft head runs as an FP8 scan with exact BF16 rescoring, which lowers *draft* precision (class b,
+D-011) — the same category as Backboard's own disclosed "4-bit shortlist".
 
-| Workload | Backboard | Article vLLM recipe | **This repo** (`best-e6b`) | % of Backboard |
-|---|---:|---:|---:|---:|
-| 1K × 1 | 203.6 | 190.4 | **223.9** | **110 %** |
-| 1K × 4 | 779.4 | 655.0 | **768.1** | **99 %** |
-| 1K × 16 | 2082 | 1905 | **2106** | **101 %** |
-| 1K × 64 | 3822 | 3668 | **3710** | **97 %** |
-| 8K × 1 | 179.1 | 164.6 | **183.2** | **102 %** |
-| 8K × 4 | 529.6 | 402.6 | **497.8** | 94 % |
-| 8K × 16 | 961.8 | 801.9 | **853.9** | 89 % ² |
-| 8K × 64 | 1254 | 1095 | **1149** | 92 % |
-
-² The same settings without the depth-by-batch schedule reached 885.3 (92 %) at 8K × 16.
+| Workload | Backboard | Article vLLM recipe | Config only (`best-e6b`) | **Config + patches** (`best-e8-all`) | % of Backboard |
+|---|---:|---:|---:|---:|---:|
+| 1K × 1 | 203.6 | 190.4 | 223.9 | **238.1** | **117 %** |
+| 1K × 4 | 779.4 | 655.0 | 768.1 | **813.1** | **104 %** |
+| 1K × 16 | 2082 | 1905 | 2106 | **2235** | **107 %** |
+| 1K × 64 | 3822 | 3668 | 3710 | **3916** | **102 %** |
+| 8K × 1 | 179.1 | 164.6 | 183.2 | **197.5** | **110 %** |
+| 8K × 4 | 529.6 | 402.6 | 497.8 | **528.0** | **99.7 %** |
+| 8K × 16 | 961.8 | 801.9 | 853.9 | **945.8** | **98.3 %** |
+| 8K × 64 | 1254 | 1095 | 1149 | **1170** | 93.3 % |
 
 **What moved the needle** (details and run IDs in [docs/DECISIONS.md](docs/DECISIONS.md)):
 
@@ -67,31 +69,45 @@ One configuration for all workloads (as Backboard did), every change output-pres
 | Patched vLLM: Gemma 4 MTP **draft prefill on the last token only** (the draft is KV-shared and row-wise) | +2.6 % at 8K/c16, −3.6 % 8K TTFT | D-046 |
 | Depth by batch size: 6 up to 32 running requests, 4 above | +3 % at 1K/c64; with the draft patch, 8K/c64 1098 → 1149 | D-047 |
 | 3072-token prefill chunks | p99 inter-token gap 584 → 274 ms; +1.4 % throughput | D-043 |
+| Patched vLLM: **FP8 draft-head scan + exact BF16 rescore** (the 12B drafter scores all 262 144 tokens in BF16 every draft step) | head 395 → 210 µs per draft step; acceptance unchanged (5.25 at 8K/c4) | D-054 |
+| Patched vLLM: **split-K threshold per attention group** (global and sliding layers want opposite kernels) | attention −3.4 ms/forward at 8K/c16 | D-053 |
+| cuBLAS 13.10 instead of the image's 13.1 | −2 to −3 % per forward on every GEMM size | D-052 |
 
 **What did not:** patched Triton prefill tiles for sm_120 (no change), depth 5 (never best), depth 7+ (breaks split-K
 at c4). Ruled out from source without a GPU run: FlashInfer (no fast path for head dim 512 on sm_120), draft LM-head
 quantization (vLLM rejects it for Gemma 4 MTP), partial-prefill flags (absent in v0.33.0).
 
-**Where the rest of the gap is.** A torch-profiler trace of `best-e6b` at 8K/c4 shows the GPU busy 99.5 % of the time:
-74 % BF16 GEMMs (CUTLASS sm_80 `mma.sync` kernels — sm_120 has no wgmma/tcgen05), 20 % attention, < 1 % sampling and
-speculative bookkeeping. A step-level scheduler model calibrated on our runs (RMS error 0.35 %) says ≈ 10–15 % faster
-prefill would bring every 8K workload above 95 %; Backboard's TTFTs are consistently 14–17 % below the article's vLLM,
-consistent with faster kernels. Backboard's only disclosed technique — a 4-bit draft shortlist rescored in BF16 —
-raises acceptance, which our depth results show is not the main lever at 8K.
+### 3. Kernel lab: where the time goes on sm_120
+
+`g4bench modal script --path kernels/<bench>.py --execute` runs micro-benchmarks on the same GPU inside the pinned
+image (results in [`results/kernels/`](results/kernels/)):
+
+- **GEMMs are at the hardware limit.** With cold weights, decode linears take 15.8 ms per forward at 28 tokens vs a
+  14.9 ms weight-read floor (1.46 TB/s); prefill shapes run at 341–427 TFLOPS vs a measured ~415–440 peak.
+  `torch.compile` max-autotune and the CUTLASS CuTe-DSL sm_120 GEMM never beat cuBLAS; cuBLAS 13.10 is 2–3 % faster.
+- **Attention:** a packed-row verify kernel saves only ~0.5 ms at 8K/c4 (repeat KV reads hit the 128 MB L2), but
+  vLLM's single split-K threshold picks the wrong kernel for one of Gemma 4's two layer types at c16/c64.
+- **Draft head:** the quantized scan reads 4× (INT4) or 2× (FP8) fewer bytes; FP8 is shipped for its higher recall.
+- **Stronger drafters:** DeepSeek's DSpark block-7 drafter is slower on random-token prompts (no acceptance gain).
+
+**Where the rest of the gap is.** 8K × 64 spends ~70 % of its time in prefill, whose GEMMs are already at peak;
+closing it needs less prefill work, not faster kernels.
 
 ## How it works
 
 ```
 g4bench modal prefetch --execute          # CPU: pinned weights into a Modal Volume
-g4bench modal job --engine vllm-0.33.0-best-e6b --matrix backboard-repro-shared --only 8192x4            # plan only
-g4bench modal job --engine vllm-0.33.0-best-e6b --matrix backboard-repro-shared --only 8192x4 --execute  # run it
+g4bench modal job --engine vllm-0.33.0-best-e8-all --matrix backboard-repro-shared --only 8192x4            # plan only
+g4bench modal job --engine vllm-0.33.0-best-e8-all --matrix backboard-repro-shared --only 8192x4 --execute  # run it
+g4bench modal script --path kernels/gemm_bench.py --execute   # kernel micro-benchmark on the GPU
 g4bench modal job ... --profile-key 8192x4 --execute   # torch-profiler summary of one point
 g4bench analyze && g4bench claims         # aggregate results/runs → results/summary, docs/CLAIMS.md
 ```
 
 - **Paid runs go straight to Modal** from your machine (credentials in an untracked `.env`), one ephemeral app per
-  launch, nothing left deployed. Engine images are digest-pinned (vLLM v0.33.0, SGLang v0.5.23) and receive no extra
-  packages; optional build-time engine patches are anchored, idempotent and recorded with each run.
+  launch, nothing left deployed. Engine images are digest-pinned (vLLM v0.33.0, SGLang v0.5.23). A separate patched
+  vLLM image carries build-time patches (`src/g4bench/patches/`: anchored, idempotent, opt-in per config) plus
+  cuBLAS 13.10; every run records which patches and settings were active.
 - **Every run** writes `results/runs/<run_id>/` with raw InferenceX output, server logs, effective engine config,
   speculative-decoding counters, GPU samples, correctness probes and a `REPORT.md`. Mock, proxy-hardware, profiled
   and non-article-length runs are never compared with the article.
@@ -113,9 +129,11 @@ configs/matrix/         workload matrices (article matrix, shared-server variant
 configs/targets/        the article's published numbers, transcribed and test-checked
 src/g4bench/            harness: runner, InferenceX client, stats, analysis, Modal app + launcher,
                         engine patches (patches/), profiler summaries
+kernels/                GPU micro-benchmarks (GEMM, cuBLAS versions, CuTe DSL, attention, draft-head scan)
 results/runs/           every measured run, raw and normalized
+results/kernels/        micro-benchmark outputs
 results/summary/        aggregated tables (SUMMARY.md, best_vs_backboard.csv, …)
-docs/                   DECISIONS.md (decision log D-001…D-050), EXPERIMENTS.md (pre-registered plan and run log),
+docs/                   DECISIONS.md (decision log D-001…D-056), EXPERIMENTS.md (pre-registered plan and run log),
                         CLAIMS.md, SOURCES.md, analysis/
 third_party/inferencex/ vendored InferenceX bench_serving @ 0b991451 (Apache-2.0)
 ```
@@ -124,6 +142,8 @@ third_party/inferencex/ vendored InferenceX bench_serving @ 0b991451 (Apache-2.0
 
 - Backboard's engine is proprietary; we reproduce its *numbers* as targets, not its engine.
 - Points in one job share a server start (`backboard-repro-shared`), unlike the article's fresh server per point.
-- Random-token prompts only; real-prompt arms (SPEED-Bench) are prepared but not measured.
+- Random-token prompts only; real-prompt arms (SPEED-Bench) are prepared but not measured. Acceptance, and therefore
+  the speculative-decoding gains, depends on prompt content.
+- `best-e8-all` lowers draft-head precision (FP8 scan, class b); target outputs are unchanged.
 
 Licence: not yet chosen. `third_party/inferencex` keeps its upstream Apache-2.0 licence and notice.
