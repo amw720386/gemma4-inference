@@ -121,7 +121,9 @@ def launches(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     for e in entries:
         lid = e.get("launch_id")
         if lid:
-            out.setdefault(lid, {}).update({k: v for k, v in e.items() if v is not None})
+            # "event" lines (and pre-2026-11-11 reconcile lines tagged kind=reconcile) never overwrite the launch kind
+            upd = {k: v for k, v in e.items() if v is not None and not (k == "kind" and v == "reconcile")}
+            out.setdefault(lid, {}).update(upd)
     return out
 
 
@@ -215,7 +217,7 @@ def reconcile(entries: list[dict[str, Any]], rows: list[dict[str, Any]], path: P
         app = r.get("app_id")
         if not app or app not in by_app or abs(float(r.get("billed_usd") or -1) - by_app[app]) < 1e-6:
             continue
-        upd: dict[str, Any] = {"launch_id": lid, "kind": "reconcile", "billed_usd": round(by_app[app], 6)}
+        upd: dict[str, Any] = {"launch_id": lid, "event": "reconcile", "billed_usd": round(by_app[app], 6)}
         if r.get("status") == "reserved" and time.time() > float(r.get("deadline_unix", 0)) + SCALEDOWN_MARGIN_S:
             upd["status"] = "settled-from-billing"
         written.append(append(upd, path))
