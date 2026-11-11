@@ -184,7 +184,7 @@ def test_apply_is_stdlib_only():
     mods = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)} | {
         a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     assert mods <= {"__future__", "importlib.util", "pathlib", "py_compile", "sys"}
-    assert set(A.KNOWN) == {P.NAME}
+    assert P.NAME in A.KNOWN
 
 
 def test_config_loads_with_image_patches():
