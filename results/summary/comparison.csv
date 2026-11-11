@@ -79,6 +79,11 @@ sglang-0.5.23-nextn,RTX-PRO-6000-SEx1,8192x64,p99_tpot_ms,sglang,146.2,102.61016
 sglang-0.5.23-nextn,RTX-PRO-6000-SEx1,8192x64,p99_e2el_ms,sglang,140351,124512.54391100004,,,1,0.8871510991086636,lower,False,baseline,a
 sglang-0.5.23-nextn,RTX-PRO-6000-SEx1,8192x64,p90_ttft_ms,sglang,5484,27163.92565509997,,,1,4.953305188749083,higher,False,baseline,a
 sglang-0.5.23-nextn,RTX-PRO-6000-SEx1,8192x64,speed_per_user_tok_s,sglang,11.4,15.835586054642505,,,1,1.3890864960212723,higher,False,baseline,a
+vllm-0.33.0-mtp3,RTX-PRO-6000-SEx1,8192x4,output_throughput,backboard,529.6,424.41388803255586,,,1,0.8013857402427413,lower,False,variant,a
+vllm-0.33.0-mtp3,RTX-PRO-6000-SEx1,8192x4,p99_tpot_ms,backboard,10.3,10.625847258704287,,,1,1.031635656184882,consistent,False,variant,a
+vllm-0.33.0-mtp3,RTX-PRO-6000-SEx1,8192x4,p99_e2el_ms,backboard,10414,10999.665170319991,,,1,1.056238253343575,higher,False,variant,a
+vllm-0.33.0-mtp3,RTX-PRO-6000-SEx1,8192x4,p90_ttft_ms,backboard,724.1,781.8797699999956,,,1,1.0797952907056976,higher,False,variant,a
+vllm-0.33.0-mtp3,RTX-PRO-6000-SEx1,8192x4,speed_per_user_tok_s,backboard,158.7,118.30663489427866,,,1,0.7454734397875152,lower,False,variant,a
 vllm-0.33.0-mtp4,RTX-PRO-6000-SEx1,1024x1,output_throughput,backboard,203.6,190.42068349351686,,,1,0.9352685829740514,lower,False,baseline,a
 vllm-0.33.0-mtp4,RTX-PRO-6000-SEx1,1024x1,p99_tpot_ms,backboard,5.0,5.40600639599738,,,1,1.081201279199476,higher,False,baseline,a
 vllm-0.33.0-mtp4,RTX-PRO-6000-SEx1,1024x1,p99_e2el_ms,backboard,5074,5454.117695910004,,,1,1.0749148001399298,higher,False,baseline,a
@@ -159,3 +164,13 @@ vllm-0.33.0-mtp4,RTX-PRO-6000-SEx1,8192x64,p99_tpot_ms,vllm,87.8,85.748166279791
 vllm-0.33.0-mtp4,RTX-PRO-6000-SEx1,8192x64,p99_e2el_ms,vllm,92515,90081.94865726001,,,1,0.9737010069422257,consistent,False,baseline,a
 vllm-0.33.0-mtp4,RTX-PRO-6000-SEx1,8192x64,p90_ttft_ms,vllm,3612,3560.3546519999954,,,1,0.9857017308970087,consistent,False,baseline,a
 vllm-0.33.0-mtp4,RTX-PRO-6000-SEx1,8192x64,speed_per_user_tok_s,vllm,18.3,18.434547123109038,,,1,1.007352301809237,consistent,False,baseline,a
+vllm-0.33.0-mtp5,RTX-PRO-6000-SEx1,8192x4,output_throughput,backboard,529.6,423.8613928674982,,,1,0.8003425091908953,lower,False,variant,a
+vllm-0.33.0-mtp5,RTX-PRO-6000-SEx1,8192x4,p99_tpot_ms,backboard,10.3,12.70266422410236,,,1,1.2332683712720738,higher,False,variant,a
+vllm-0.33.0-mtp5,RTX-PRO-6000-SEx1,8192x4,p99_e2el_ms,backboard,10414,13477.308073869986,,,1,1.2941528782283451,higher,False,variant,a
+vllm-0.33.0-mtp5,RTX-PRO-6000-SEx1,8192x4,p90_ttft_ms,backboard,724.1,1132.4654553000018,,,1,1.5639627887032204,higher,False,variant,a
+vllm-0.33.0-mtp5,RTX-PRO-6000-SEx1,8192x4,speed_per_user_tok_s,backboard,158.7,119.07650182632118,,,1,0.7503245231652249,lower,False,variant,a
+vllm-0.33.0-mtp6,RTX-PRO-6000-SEx1,8192x4,output_throughput,backboard,529.6,437.44183110788157,,,1,0.8259853306417703,lower,False,variant,a
+vllm-0.33.0-mtp6,RTX-PRO-6000-SEx1,8192x4,p99_tpot_ms,backboard,10.3,13.226642314697221,,,1,1.284140030553128,higher,False,variant,a
+vllm-0.33.0-mtp6,RTX-PRO-6000-SEx1,8192x4,p99_e2el_ms,backboard,10414,13730.333631309997,,,1,1.3184495516909926,higher,False,variant,a
+vllm-0.33.0-mtp6,RTX-PRO-6000-SEx1,8192x4,p90_ttft_ms,backboard,724.1,841.9857457000098,,,1,1.1628031289877223,higher,False,variant,a
+vllm-0.33.0-mtp6,RTX-PRO-6000-SEx1,8192x4,speed_per_user_tok_s,backboard,158.7,123.21942627655544,,,1,0.776429907224672,lower,False,variant,a
