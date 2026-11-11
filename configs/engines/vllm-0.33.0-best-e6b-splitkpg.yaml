@@ -1,0 +1,45 @@
+# VARIANT (E6b + per-group split-K): vllm-0.33.0-best-e6b on an image that also carries the splitk_per_group patch
+# (src/g4bench/patches/splitk_per_group.py). vLLM v0.33.0 uses ONE split-K ("3D") threshold for every attention group
+# (128 // model-level 8 KV heads = 16, snapped to a capture size); the patch lets the full/global group (1 KV head,
+# head_dim 512, BLOCK_Q 1) and the sliding group (8 KV heads, BLOCK_Q 8) each take their own, unsnapped. Values from the
+# RTX PRO 6000 kernel bench at q_len 7 (results/kernels/20261111T172659Z-attn_bench-c6c4db): global 3D wins through
+# c16 (16 x 7 = 112 q-blocks) at 1K and 8K and loses at 1K/c64 -> 112; sliding 3D wins at c1/c4, loses from c16 -> 8.
+# Lossless (same math; FP reduction order only).
+# Capture sizes: E6b's --cudagraph-capture-sizes "1 2 28 32 ..." (D-044) existed only to move the shared, snapped
+# threshold to 28. The patch takes explicit thresholds and does not snap, so the trim is reverted to vLLM's default
+# list, which (with the dynamic-SD tiers 7 x 1..32 and 5 x 33..) captures uniform-decode graphs at exactly 8 and 16
+# requests (56 / 112 tokens): the 3D -> 2D cut-overs fall on captured sizes, and 2-3 requests are no longer padded to 4.
+name: vllm-0.33.0-best-e6b-splitkpg
+image_patches: [mtp_draft_prefill_last, splitk_per_group]   # patched image (D-046 + per-group split-K)
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E6b-splitkpg
+engine: vllm
+version: "0.33.0"
+client_backend: vllm          # InferenceX benchmark_serving --backend
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--async-scheduling]
+  - [--speculative-config, '{"method":"mtp","model":"{draft_repo}","revision":"{draft_rev}","num_speculative_tokens":6,"num_speculative_tokens_per_batch_size":[[1,32,6],[33,4096,4]]}']
+  - [--max-num-batched-tokens, "3072"]
+  # No --cudagraph-capture-sizes: vLLM default list (see header).
+  # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
+  # Those live in the vllm-0.33.0-mtp4-textonly variant (DECISIONS D-007).
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env:
+  G4_SPLITK_T_FULL: "112"      # full/global group: 3D iff num_seqs * q_len <= 112 (BLOCK_Q 1)
+  G4_SPLITK_T_SLIDING: "8"     # sliding group: 3D iff num_seqs * cdiv(q_len, 8) <= 8
+unknowns:
+  - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
+  - "Article does not state whether speculative 'revision' was pinned (pinning has no perf effect)."
+  - "If the engine-default max-model-len fails to fit, the fallback is the textonly variant; log it in DECISIONS."
+  - "Draft (MTP) launches are q_len 1 and use the same per-group thresholds; 3D vs 2D at q_len 1 above 16 requests is unmeasured."

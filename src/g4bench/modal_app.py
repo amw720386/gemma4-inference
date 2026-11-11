@@ -47,7 +47,13 @@ SCALEDOWN_WINDOW_S = 10  # <= spend.SCALEDOWN_MARGIN_S
 
 PATCHES_REMOTE = "/opt/g4patches"
 # The one patch set the patched vLLM function is built with (an engine config's `image_patches` must equal it).
-VLLM_PATCHES: tuple[str, ...] = ("mtp_draft_prefill_last",)  # sm120_attn_tiles retired: no gain (D-046)
+# The patched image carries every live patch; configs opt in by listing them (image_patches must be a subset that
+# includes every ALWAYS_ON patch). Env-gated patches stay inactive unless the config sets their env vars (D-052).
+# sm120_attn_tiles retired: no gain (D-046).
+VLLM_PATCHES: tuple[str, ...] = ("mtp_draft_prefill_last", "splitk_per_group", "mtp_draft_head_q")
+ALWAYS_ON_PATCHES: frozenset[str] = frozenset({"mtp_draft_prefill_last"})
+# Library upgrades installed into the patched image (lossless; measured in results/kernels/*cublas_upgrade*).
+VLLM_PATCH_PIP: tuple[str, ...] = ("nvidia-cublas==13.10.0.20",)
 
 
 def _engine_image(ref: str, engine_module: str, patches: tuple[str, ...] = ()) -> modal.Image:
@@ -59,7 +65,10 @@ def _engine_image(ref: str, engine_module: str, patches: tuple[str, ...] = ()) -
         img = (img.add_local_dir(str(REPO_LOCAL / "src" / "g4bench" / "patches"), PATCHES_REMOTE, copy=True,
                                  ignore=["**/__pycache__", "*.pyc"])
                .run_commands(f"python {PATCHES_REMOTE}/apply.py {' '.join(patches)}"))
-    env = {**ENV, "G4_IMAGE_PATCHES": ",".join(patches)} if patches else ENV
+        if VLLM_PATCH_PIP:
+            img = img.run_commands(f"python -m pip install --no-deps --upgrade {' '.join(VLLM_PATCH_PIP)}")
+    env = ({**ENV, "G4_IMAGE_PATCHES": ",".join(patches), "G4_IMAGE_PIP": ",".join(VLLM_PATCH_PIP)}
+           if patches else ENV)
     return img.env(env).add_local_dir(str(REPO_LOCAL), REPO_REMOTE, ignore=IGNORE)
 
 
@@ -95,10 +104,11 @@ def _check_image_patches(spec: dict) -> None:
     """Refuse a job whose engine config's image_patches differ from what this image was built with."""
     from g4bench.config import EngineConfig
 
-    want = ",".join(EngineConfig.load(spec["engine"]).raw.get("image_patches") or [])
-    have = os.environ.get("G4_IMAGE_PATCHES", "")
-    if want != have:
-        raise RuntimeError(f"engine config wants image_patches [{want}] but this image has [{have}]")
+    want = set(EngineConfig.load(spec["engine"]).raw.get("image_patches") or [])
+    have = {p for p in os.environ.get("G4_IMAGE_PATCHES", "").split(",") if p}
+    if not want <= have or (have and not ALWAYS_ON_PATCHES & have <= want):
+        raise RuntimeError(f"engine config wants image_patches {sorted(want)} but this image has {sorted(have)} "
+                           f"(always-on: {sorted(ALWAYS_ON_PATCHES & have)})")
 
 
 def _run_job(spec: dict) -> dict:
@@ -138,6 +148,36 @@ _gpu_kw = dict(gpu=S.GPU_JOB.gpu, timeout=GPU_DEFAULT_TIMEOUT_S, startup_timeout
 @vllm_app.function(image=vllm_image, **_gpu_kw)
 def run_vllm(spec: dict) -> dict:
     return _guarded(_run_job, spec)
+
+
+def _run_script(spec: dict) -> dict:
+    """Kernel lab: run one repo script on the GPU inside the pinned vLLM image; it writes files to $G4_OUT_DIR."""
+    import subprocess
+
+    from g4bench.jobs import collect_run_files
+
+    hf_vol.reload()
+    root = pathlib.Path(RESULTS_MOUNT) / "scripts"
+    run_id = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{pathlib.Path(spec['script']).stem}-{spec['job_id'][-6:]}"
+    out = root / run_id
+    out.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "G4_OUT_DIR": str(out), "PYTHONUNBUFFERED": "1"}
+    try:
+        p = subprocess.run(["python", f"{REPO_REMOTE}/{spec['script']}", *spec.get("args", [])], capture_output=True,
+                           text=True, cwd=REPO_REMOTE, env=env, timeout=max(float(spec.get("max_wall_s", 600)), 30))
+        rc, so, se = p.returncode, p.stdout, p.stderr
+    except subprocess.TimeoutExpired as e:
+        rc, so, se = 124, (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or ""), "timeout"
+    (out / "stdout.txt").write_text(so, encoding="utf-8")
+    (out / "stderr.txt").write_text(se, encoding="utf-8")
+    res_vol.commit()
+    return {"run_id": run_id, "rc": rc, "stdout_tail": so[-6000:], "stderr_tail": se[-3000:],
+            "files": collect_run_files(root, run_id)}
+
+
+@vllm_app.function(image=vllm_image, **_gpu_kw)
+def run_script_vllm(spec: dict) -> dict:
+    return _guarded(_run_script, spec)
 
 
 @vllm_patched_app.function(image=vllm_patched_image, **_gpu_kw)

@@ -1,0 +1,58 @@
+# CANDIDATE (E7b, prepared 2026-11-11, NOT RUN): E6b with only the drafter weights swapped: Google's assistant ->
+# naver-ai/DLoop-MTP-gemma-4-12B-it @ 17aeba910a4e90acabb779a4f8e98cec524d5258 (HF API sha; created 2026-10-27; not gated;
+# no model card / no licence tag on HF; one model.safetensors, 1,382,590,392 B = 0.69 B BF16 params). Same architecture as
+# google/gemma-4-12B-it-assistant (model_type gemma4_unified_assistant, 4 Q-only KV-shared layers, hidden 1024,
+# pre/post projection) plus an explicit lm_head.weight that equals its own embed_tokens (tied; rows checked), so the
+# per-step draft cost is identical to E6b. Weights differ from Google's (rows of embed_tokens and layer 0 checked).
+# Source: DLoop, arXiv 2610.07659 (NAVER AI Lab): "loop-aware training" exposes the drafter to its own hidden states for
+# unverified draft tokens, i.e. the chained-MTP regime where our acceptance decays (0.88 .. 0.52 at positions 1..6); fine-
+# tuned from public drafter weights, 1 epoch, 1.3 M PerfectBlend prompts. The paper's 5-41 % speedups use its looped
+# decoding algorithm, which vLLM does not implement; here the drafter runs as a plain chained MTP.
+#
+# vLLM v0.33.0 support (github.com/vllm-project/vllm tag v0.33.0): config/speculative.py:1106-1115 rewrites any
+# gemma4_unified_assistant config to Gemma4MTPModel (n_predict 1), so the checkpoint's architecture name
+# "Gemma4AssistantDraftModel" is irrelevant; gemma4_mtp.py:487-488 ties lm_head to embed_tokens. Same speculator,
+# CUDA graphs and async scheduling as E6b, and the mtp_draft_prefill_last image patch (D-046) applies unchanged because the
+# draft path is the Gemma 4 MTP speculator. Risk: its text_config uses the newer per_layer_config form
+# ({"3": {head_dim 512, kv heads 1}}, transformers 5.16.1) and omits global_head_dim / num_global_key_value_heads;
+# untested whether the image's transformers reads it. Smoke-check the startup log that draft layer 3 is built with
+# head_dim 512 / 1 KV head and shares the target's global-layer KV.
+# E6b settings kept: depth 6 up to 32 running requests then 4 (D-047), 3072-token chunks (D-043), capture sizes keeping
+# split-K on for 4 x 7 tokens (D-044).
+#
+# Lossless: at temperature 0 every emitted token is the target's argmax; the drafter only changes acceptance. Admissibility
+# a under D-011 (BF16 target, draft at its shipped BF16 precision), BUT this departs from the article's premise of Google's
+# official assistant drafter: report as "third-party drafter". pins.yaml still lists Google's assistant (unused here).
+# Baseline A: vLLM "published recipe" per Backboard article + vllm-project/recipes
+# models/Google/gemma-4-12B-it.yaml (recipes commit fa1173a1). Article: MTP 4 tokens,
+# async scheduling, gpu-mem-util 0.90, prefix caching off.
+name: vllm-0.33.0-dloopmtp-e6b
+image_patches: [mtp_draft_prefill_last]   # patched image: Gemma 4 MTP draft prefill on the last token only (D-046)
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E7b
+engine: vllm
+version: "0.33.0"
+client_backend: vllm          # InferenceX benchmark_serving --backend
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--async-scheduling]
+  - [--speculative-config, '{"method":"mtp","model":"naver-ai/DLoop-MTP-gemma-4-12B-it","revision":"17aeba910a4e90acabb779a4f8e98cec524d5258","num_speculative_tokens":6,"num_speculative_tokens_per_batch_size":[[1,32,6],[33,4096,4]]}']
+  - [--max-num-batched-tokens, "3072"]
+  - [--cudagraph-capture-sizes, "1", "2", "28", "32", "40", "48", "56", "64", "72", "80", "88", "96", "104", "112", "120", "128", "136", "144", "152", "160", "168", "176", "184", "192", "200", "208", "216", "224", "232", "240", "248", "256", "272", "280", "288", "304", "320", "336", "352", "368", "384", "392", "400", "416", "432", "448", "464", "480", "496", "504", "512"]
+  # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env: {}
+unknowns:
+  - "Whether loop-aware fine-tuning raises plain chained-MTP acceptance on our random-token prompts (could also lower it)."
+  - "Whether the image's transformers parses per_layer_config (startup check; 1K/c1 smoke first)."
+  - "HF repo has no licence statement or model card; DLoop code was announced at github.com/naver-ai/DLoop."

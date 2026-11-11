@@ -1,0 +1,5 @@
+{"pip_rc": 0, "pip_err": "\n[notice] A new release of pip is available: 26.2.2 -> 26.3\n[notice] To update, run: python -m pip install --upgrade pip\n", "libs": ["/tmp/newcublas/nvidia/cu13/lib/libcublas.so.13", "/tmp/newcublas/nvidia/cu13/lib/libcublasLt.so.13"]}
+{"label": "stock-r0", "probe": "cublasLt 130101 ['/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13']", "rc": 0, "stderr_tail": ""}
+{"label": "cublas-13.10.0.20-r0", "probe": "cublasLt 131000 ['/tmp/newcublas/nvidia/cu13/lib/libcublasLt.so.13']", "rc": 0, "stderr_tail": ""}
+{"label": "stock-r1", "probe": "cublasLt 130101 ['/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13']", "rc": 0, "stderr_tail": ""}
+{"label": "cublas-13.10.0.20-r1", "probe": "cublasLt 131000 ['/tmp/newcublas/nvidia/cu13/lib/libcublasLt.so.13']", "rc": 0, "stderr_tail": ""}

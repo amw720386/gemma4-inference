@@ -14,7 +14,7 @@ import py_compile
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-KNOWN = ("sm120_attn_tiles", "mtp_draft_prefill_last")
+KNOWN = ("sm120_attn_tiles", "mtp_draft_prefill_last", "mtp_draft_head_q", "splitk_per_group")
 
 
 def load_patch(name: str):
