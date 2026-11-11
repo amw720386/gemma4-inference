@@ -68,6 +68,8 @@ def load_all(root: Path = RESULTS / "runs", include_mock: bool = False) -> list[
                 continue  # reported by the per-run report; never aggregated
             if r.get("engine") == "mock" and not include_mock:
                 continue
+            if r.get("profiled"):  # E5g torch-profiler runs: profiler overhead, never aggregated or compared
+                continue
             for k, v in ctx.items():
                 r.setdefault(k, v)
             r.setdefault("run_id", f.parent.name)
