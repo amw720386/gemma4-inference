@@ -1,0 +1,13 @@
+{
+  "engine": "vllm",
+  "gemma4_backend_decision": "TRITON_ATTN (FA4 unavailable)",
+  "attention_backend": "AttentionBackendEnum.TRITON_ATTN",
+  "attention_backends_seen": [
+    "AttentionBackendEnum.TRITON_ATTN"
+  ],
+  "kv_cache_tokens": 2360122,
+  "max_model_len": 262144,
+  "max_concurrency_at_max_len": 9.0,
+  "cuda_graph_capture_s": 6,
+  "cuda_graph_mem_gib": 1.03
+}
