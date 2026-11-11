@@ -16,6 +16,7 @@ from g4bench.patches import sm120_attn_tiles as P
 
 PATCH_DIR = REPO / "src" / "g4bench" / "patches"
 TILES = "vllm-0.33.0-mtp6-splitk-chunk3072-tiles"
+ACTIVE = "vllm-0.33.0-mtp6-splitk-chunk3072-draftlast"  # config matching the currently built patched image
 
 # Runnable reduction of vLLM v0.33.0 vllm/v1/attention/ops/triton_unified_attention.py lines 956-1022: the
 # block/tile selection lines (and both patch anchors) are verbatim; tensors/platform are stubbed. Set
@@ -207,7 +208,7 @@ def test_modal_app_defines_patched_function_and_keeps_unpatched():
     M = _modal_app()
     assert M.vllm_patched_app.name == "g4repro-vllm-patched"
     assert M.vllm_app.name == "g4repro-vllm" and M.sglang_app.name == "g4repro-sglang"
-    assert M.VLLM_PATCHES == (P.NAME,)
+    assert M.VLLM_PATCHES and all(p in A.KNOWN for p in M.VLLM_PATCHES)
     assert M.vllm_patched_image is not M.vllm_image
     with warnings.catch_warnings():  # registered_functions is deprecated (removed in modal 1.7; pinned 1.6.3)
         warnings.simplefilter("ignore")
@@ -241,8 +242,9 @@ def test_patched_image_build_steps(monkeypatch):
     assert img is not None
     tail = calls[-4:]
     assert tail[0] == ("dir", str(PATCH_DIR), M.PATCHES_REMOTE, True)  # copied: visible to the build step
-    assert tail[1] == ("run", (f"python {M.PATCHES_REMOTE}/apply.py {P.NAME}",))
-    assert tail[2] == ("env", P.NAME)
+    names = " ".join(M.VLLM_PATCHES)
+    assert tail[1] == ("run", (f"python {M.PATCHES_REMOTE}/apply.py {names}",))
+    assert tail[2] == ("env", ",".join(M.VLLM_PATCHES))
     assert tail[3][:3] == ("dir", str(M.REPO_LOCAL), M.REPO_REMOTE) and tail[3][3] is False  # repo mount last
     calls.clear()
     M._engine_image(M.VLLM_IMAGE, "vllm")
@@ -253,8 +255,10 @@ def test_modal_run_routes_patched_configs():
     from g4bench.modal_run import allowed_engines, gpu_kind
 
     pytest.importorskip("modal")
-    assert allowed_engines()[TILES] == "vllm"
-    assert gpu_kind(TILES, "vllm") == "gpu:vllm-patched"
+    assert allowed_engines()[ACTIVE] == "vllm"
+    assert gpu_kind(ACTIVE, "vllm") == "gpu:vllm-patched"
+    with pytest.raises(SystemExit):  # a config whose patches differ from the built image is refused
+        gpu_kind(TILES, "vllm")
     assert gpu_kind("vllm-0.33.0-mtp6-splitk-chunk3072", "vllm") == "gpu:vllm"
     assert gpu_kind("sglang-0.5.23-nextn", "sglang") == "gpu:sglang"
 
