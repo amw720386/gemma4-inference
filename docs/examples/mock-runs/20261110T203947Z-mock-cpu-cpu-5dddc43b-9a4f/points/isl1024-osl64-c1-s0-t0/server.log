@@ -1,2 +1,0 @@
-# argv: /home/user/gemma4-inference-repro/.venv/bin/python3 -m g4bench.mockserver --model google/gemma-4-12B-it --port 18000 --step-ms 1.0 --tokens-per-step 3
-mockserver listening on 127.0.0.1:18000 (NOT a real engine)

@@ -8,7 +8,7 @@ Classification per (workload, metric), using run-level mean m, 95% CI [lo, hi] a
 
 ``tol`` (default 5%) absorbs systematic differences we cannot control (RTX PRO 6000
 edition / power limit, driver, host CPU). It is a pre-registered constant: see
-EXPERIMENTS.md "Acceptance criteria". Do not tune it after seeing data.
+docs/EXPERIMENTS.md "Acceptance criteria". Do not tune it after seeing data.
 
 For "beats target" claims we require the *lower* CI bound of throughput to exceed T
 (or the *upper* CI bound of a latency to be below T), with n >= 3 runs.
