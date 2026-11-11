@@ -288,6 +288,11 @@ if triton is not None:
         r = tl.where(cmask, acc.to(tl.bfloat16).to(tl.float32), float("-inf"))
         mx = tl.max(r, axis=0)
         tok = tl.min(tl.where((r == mx) & cmask, idx, 1073741824), axis=0)
+        # All-NaN scores (e.g. uninitialised dummy hidden states during CUDA-graph capture) match nothing and would
+        # leave the 2**30 sentinel, an out-of-range token id that trips the embedding's index assert. Fall back to the
+        # first candidate: it is only a draft token, and the target verifies every draft token anyway.
+        first = tl.sum(tl.where(c == 0, idx, 0), axis=0)
+        tok = tl.where(tok >= 1073741824, first, tok)
         tl.store(TOK + m, tok)
 
 
