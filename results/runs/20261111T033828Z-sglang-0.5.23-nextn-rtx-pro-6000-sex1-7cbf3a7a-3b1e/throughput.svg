@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" font-family="sans-serif" font-size="11">
+<rect width="640" height="360" fill="white"/>
+<text x="70" y="20" font-size="13">sglang-0.5.23-nextn output throughput</text>
+<line x1="70" y1="310" x2="480" y2="310" stroke="#333"/>
+<line x1="70" y1="40" x2="70" y2="310" stroke="#333"/>
+<text x="70.0" y="325" text-anchor="middle">64</text>
+<text x="64" y="314.0" text-anchor="end">0</text>
+<line x1="70" y1="310.0" x2="480" y2="310.0" stroke="#eee"/>
+<text x="64" y="246.5" text-anchor="end">200</text>
+<line x1="70" y1="242.5" x2="480" y2="242.5" stroke="#eee"/>
+<text x="64" y="179.0" text-anchor="end">401</text>
+<line x1="70" y1="175.0" x2="480" y2="175.0" stroke="#eee"/>
+<text x="64" y="111.5" text-anchor="end">601</text>
+<line x1="70" y1="107.5" x2="480" y2="107.5" stroke="#eee"/>
+<text x="64" y="44.0" text-anchor="end">801</text>
+<line x1="70" y1="40.0" x2="480" y2="40.0" stroke="#eee"/>
+<text x="275" y="348" text-anchor="middle">concurrency (log2)</text>
+<text x="16" y="175" transform="rotate(-90 16 175)" text-anchor="middle">output tok/s</text>
+<polyline fill="none" stroke="#2a6fdb" stroke-width="2" points="70.0,64.5"/>
+<circle cx="70.0" cy="64.5" r="3" fill="#2a6fdb"/>
+<text x="490" y="50" fill="#2a6fdb">random ISL 8192</text>
+<polyline fill="none" stroke="#868e96" stroke-dasharray="5,4" points="70.0,83.1"/>
+<text x="490" y="66" fill="#868e96">sglang ISL 8192 (article)</text>
+</svg>
