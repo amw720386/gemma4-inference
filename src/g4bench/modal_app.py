@@ -34,7 +34,7 @@ SGLANG_IMAGE = "lmsysorg/sglang@sha256:f7876bef696ccf9cf75a2bf7ccb82970f5fac577f
 
 # Never upload secrets, venvs, local results or bulky data into an image.
 IGNORE = [".git", ".venv", ".env", "*.secret", "**/__pycache__", "*.pyc", ".pytest_cache", ".cache", "results",
-          "data/speedbench/*.jsonl", "docs/examples"]
+          "data/speedbench/*.jsonl"]
 ENV = {"PYTHONPATH": f"{REPO_REMOTE}/src", "HF_HOME": HF_HOME, "HF_HUB_ENABLE_HF_TRANSFER": "0",
        "TOKENIZERS_PARALLELISM": "false", "G4_DATA_DIR": f"{HF_HOME}/g4data/speedbench",
        # Compile caches persist across jobs (startup time only; no effect on measured serving).

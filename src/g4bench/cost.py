@@ -3,7 +3,7 @@
 Point wall time = server start (if fresh) + warmup + measured requests, where the
 request phase is estimated from a throughput guess (by default the article's vLLM
 number for that point; conservative factor applied). Estimates are deliberately
-pessimistic; BUDGET.md records estimate vs actual for every launch.
+pessimistic; results/budget_ledger.jsonl records estimate vs Modal's bill for every launch.
 """
 
 from __future__ import annotations
