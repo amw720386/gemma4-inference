@@ -32,8 +32,11 @@ def test_reserve_settle_reconcile_cycle(tmp_path):
     S.append({"note": "history without launch id is ignored"}, L)
     assert S.check_launch(2.0, CAPS, S.read(L)) == pytest.approx(8.0)
     S.append({"launch_id": "a", "status": "reserved", "worst_usd": 2.0, "deadline_unix": time.time() - 100}, L)
-    with pytest.raises(S.BudgetError, match="open reservation"):
+    assert S.check_launch(0.1, CAPS, S.read(L)) == pytest.approx(7.9)  # one open launch: a second may start
+    S.append({"launch_id": "b", "status": "reserved", "worst_usd": 1.0, "deadline_unix": time.time() - 100}, L)
+    with pytest.raises(S.BudgetError, match="open reservation"):  # a second concurrent launch is the limit
         S.check_launch(0.1, CAPS, S.read(L))
+    S.append({"launch_id": "b", "status": "settled", "settled_usd": 0.0, "worst_usd": 0.0}, L)
     assert S.ledger_total(S.read(L)) == 2.0           # open = worst case
     S.append({"launch_id": "a", "app_id": "ap-1"}, L)
     S.append({"launch_id": "a", "status": "settled", "settled_usd": 0.5}, L)

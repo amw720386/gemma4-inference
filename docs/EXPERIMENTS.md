@@ -104,7 +104,7 @@ and – separately labelled – lower-precision draft shortlisting (SGLang `--sp
 the closest open analogue to Backboard's 4-bit shortlist. FP8/NVFP4 *target* weights are a different
 model numerically and are reported only in a "not BF16 – not comparable" table.
 
-### E8 – Kernel lab (🟨 2026-11-11; `g4bench modal script`, results in `results/kernels/`, cap $50, D-051)
+### E8 – Kernel lab (🟨 2026-11-11; `g4bench modal script`, results in `results/kernels/`, cap $50, D-051; ≈ $24.1 billed)
 - GEMM efficiency ✅ (D-052): cold-weight decode linears 15.8 ms/forward at M=28 vs 14.9 ms weight-read floor; prefill
   341–427 TFLOPS at M=3072; max-autotune never wins; CuTe DSL sm_120 GEMM 169.4 vs 168.0 ms/forward (no gain).
 - cuBLAS 13.10 vs 13.1 ✅ (D-052, interleaved n=2): −2.0 / −3.1 / −1.9 % at M=28/1024/3072; shipped as an image build step.
@@ -114,7 +114,14 @@ model numerically and are reported only in a "not BF16 – not comparable" table
   `mtp_draft_head_q` (class b).
 - E7a third-party drafter DSpark ✅ (D-055): slower than the official MTP (1K/c1 211.0, 8K/c4 443.4 tok/s). DLoop-MTP
   prepared, not run.
-- a. 🟨 combined config `vllm-0.33.0-best-e8-all` (D-056): all 8 workloads n=1, geomean 1.039 of Backboard; repeats (n≥3) not run.
+- a. ✅ combined config `vllm-0.33.0-best-e8-all` (D-056, D-060): all 8 workloads n=3 (seeds 0/1/2), geomean of means
+  1.021; 1K 1.025–1.153 with every 95 % CI above 100 %; 8K 0.890–1.080, CIs span 100 % (GPU-to-GPU spread, throttling).
+- Prefill attention kernel ✅ (D-059, `…-prefill_attn_bench-01f4bf`): packed-head FA2-style, 189.8 → 114.0 ms per 8K
+  prompt (global 1.40×, sliding 2.15×), within BF16 rounding; patch `prefill_attn_g4` on the experimental image (D-058).
+- b. ✅ `vllm-0.33.0-best-e8-pfa` (E8a + `prefill_attn_g4`, D-059), n=1: 8K/c4/c16/c64 525.2 / 986.0 / 1226 tok/s
+  (0.992 / 1.025 / 0.978).
+- c. 🟨 `vllm-0.33.0-best-e8-pfa-c8k` (E8b + 8192-token chunks, D-059): 8K/c64 n=3 mean 1201.0 (0.958); 8K/c4 / c16
+  n=2 means 521.6 / 987.9 (0.985 / 1.027). Not run: 1K workloads, third seed at 8K/c4 and 8K/c16.
 
 ### E7 – Hardware necessity check (⬜, optional, ≤ $10)
 Only if E6 finds something hardware-specific. The roofline says H100/H200/B200 would be faster but are
@@ -155,3 +162,19 @@ is both the exact target and the cheapest GPU that fits the whole matrix.
 | 2026-11-11 | E8a | `…-best-e8-all-…-d1a0` | vllm-0.33.0-best-e8-all (patched image) | 4 (1024×1/4/16, 8192×1) | 4 | 238.1 / 813.1 / 2235 / 197.5 tok/s (1.17 / 1.04 / 1.07 / 1.10) (D-056) |
 | 2026-11-11 | E8a | `…-best-e8-all-…-400b` | vllm-0.33.0-best-e8-all (patched image) | 1 (1024×64) | 1 | 3916 tok/s (1.02) (D-056) |
 | 2026-11-11 | E8a | `…-best-e8-all-…-e87a` | vllm-0.33.0-best-e8-all (patched image) | 1 (8192×64) | 1 | 1170 tok/s (0.933); prefill-bound; geomean over 8 workloads 1.039, n=1 (D-056) |
+| 2026-11-11 | E8 | `20261111T202443Z-prefill_attn_bench-01f4bf` | kernels/prefill_attn.py | – | – | 189.8 → 114.0 ms per 8K prompt; global 1.40×, sliding 2.15×; max abs vs vLLM 0.016 (D-059) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-a764` | vllm-0.33.0-best-e8-all (patched image) | 2 (8192×4, 8192×16), seed 1 | 2 | 488.4 / 948.5 tok/s (D-060) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-1628` | vllm-0.33.0-best-e8-all (patched image) | 1 (8192×64), seed 1 | 1 | 1083.9 tok/s; GPU 83 °C, SM 2220 MHz mean (throttled) (D-060) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-ca1f` | vllm-0.33.0-best-e8-all (patched image) | 4 (1024×1/4/16, 8192×1), seed 1 | 4 | 233.6 / 814.1 / 2178 / 184.6 tok/s (D-060) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-9efd` | vllm-0.33.0-best-e8-all (patched image) | 1 (1024×64), seed 1 | 1 | 3906 tok/s (D-060) |
+| 2026-11-11 | E8b | `…-best-e8-pfa-…-e5f7` | vllm-0.33.0-best-e8-pfa (exp. image) | 1 (8192×64) | 1 | 1226 tok/s (0.978); AL 4.09 (D-059) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-6106` | vllm-0.33.0-best-e8-all (patched image) | 2 (8192×4, 8192×16), seed 2 | 2 | 507.3 / 928.7 tok/s (D-060) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-416c` | vllm-0.33.0-best-e8-all (patched image) | 1 (8192×64), seed 2 | 1 | 1092.6 tok/s; GPU 83 °C, SM 2217 MHz mean (throttled) (D-060) |
+| 2026-11-11 | E8b | `…-best-e8-pfa-…-0460` | vllm-0.33.0-best-e8-pfa (exp. image) | 2 (8192×4, 8192×16) | 2 | 525.2 / 986.0 tok/s (0.992 / 1.025); AL 5.03 / 5.09 (D-059) |
+| 2026-11-11 | E8c | `…-best-e8-pfa-c8k-…-6959` | vllm-0.33.0-best-e8-pfa-c8k (exp. image) | 1 (8192×64) | 1 | 1243.4 tok/s (0.992) (D-059) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-2ef5` | vllm-0.33.0-best-e8-all (patched image) | 4 (1024×1/4/16, 8192×1), seed 2 | 4 | 232.7 / 818.5 / 2207 / 198.3 tok/s (D-060) |
+| 2026-11-11 | E8a | `…-best-e8-all-…-4654` | vllm-0.33.0-best-e8-all (patched image) | 1 (1024×64), seed 2 | 1 | 3929 tok/s; E8a n=3 complete, geomean of means 1.021 (D-060) |
+| 2026-11-11 | E8c | `…-best-e8-pfa-c8k-…-c061` | vllm-0.33.0-best-e8-pfa-c8k (exp. image) | 1 (8192×64), seed 1 | 1 | 1219.0 tok/s (D-059) |
+| 2026-11-11 | E8c | `…-best-e8-pfa-c8k-…-deb6` | vllm-0.33.0-best-e8-pfa-c8k (exp. image) | 2 (8192×4, 8192×16), seed 1 | 2 | 508.0 / 1000.0 tok/s (D-059) |
+| 2026-11-11 | E8c | `…-best-e8-pfa-c8k-…-47e9` | vllm-0.33.0-best-e8-pfa-c8k (exp. image) | 1 (8192×64), seed 2 | 1 | 1140.6 tok/s; GPU 83 °C, SM 2199 MHz mean (throttled); n=3 mean 1201.0 (0.958) (D-059, D-060) |
+| 2026-11-11 | E8c | `…-best-e8-pfa-c8k-…-684f` | vllm-0.33.0-best-e8-pfa-c8k (exp. image) | 2 (8192×4, 8192×16), seed 2 | 2 | 535.3 / 975.7 tok/s (D-059) |
