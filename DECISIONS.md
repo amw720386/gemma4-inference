@@ -312,3 +312,10 @@ the baseline depth 4 by ≈ 5 %. With n = 1 per config that pattern is best expl
 ≈ 9 %". It closes at most a quarter of the gap to Backboard (76 % → 83 %); speculation depth alone does not explain
 Backboard's lead. Not a claim; separating the effect from noise needs ≥ 3 runs of depth 4 and 6 (≈ $2.5).
 
+*Amendment to D-042 (2026-11-11, after a second run of depth 4 and depth 6, approved by the owner, ≈ $0.70):*
+depth 4 = 402.6 / 402.0 tok/s, depth 6 = 437.4 / 434.2 tok/s (acceptance length 4.06 / 4.03 and 4.99 / 4.98). Runs
+repeat within ≈ 1 %, so the earlier "within noise" reading is withdrawn: **depth 6 is ≈ 8 % faster than the article's
+depth 4 at 8192×4** (82 % of Backboard instead of 76 %). n = 2 per config — still below the n = 3 claim threshold,
+and only one workload; the depth-3/5 +5 % results remain n = 1. The budget gate refused the depth-6 repeat at the
+default $2 reservation (committed $8.18 + $2 > $10); it ran at `--max-usd 1.75` (647 s timeout, used ≈ 270 s).
+
