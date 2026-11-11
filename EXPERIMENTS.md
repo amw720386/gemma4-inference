@@ -108,3 +108,4 @@ is both the exact target and the cheapest GPU that fits the whole matrix.
 | 2026-11-10 | E0 | (CPU, mock) | mock-cpu | 4 | 4 | pytest e2e only; numbers meaningless by design |
 | 2026-11-10 | E5c-prep | (CPU, data) | – | – | – | SPEED-Bench prepared; coding digest = InferenceX; tp subsets labelled |
 | 2026-11-10 | E0 | docs/examples/mock-runs/* | mock-cpu | 4 | 4 | example REPORT.md layout; MOCK, not a measurement |
+| 2026-11-11 | E1 | 20261111T012903Z-vllm-0.33.0-mtp4-rtx-pro-6000-sex1-d6761acd-a22c | vllm-0.33.0-mtp4 | 2 (smoke, OSL 256) | 2 | RTX PRO 6000 Blackwell Server Edition 600 W; probes 8/8; AL 3.07 / 3.20 (c1 / c4); TRITON_ATTN; ≈ $0.34 |

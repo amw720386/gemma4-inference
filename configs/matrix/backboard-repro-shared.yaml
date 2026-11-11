@@ -1,0 +1,15 @@
+# Budget variant of backboard-repro (D-040): identical workloads and client policy, but ONE server start per job
+# shared by the points selected with --only (server start ~3 min = ~$0.2 on RTX PRO 6000). Points that share a
+# server are not independent restarts; every result from this matrix is n=1, descriptive only.
+name: backboard-repro-shared
+isl: [1024, 8192]
+osl: [1024]
+conc: [1, 4, 16, 64]
+seeds: [0]
+trials_per_seed: 1
+random_range_ratio: 0.8
+use_chat_template: true
+num_prompts_per_conc: 10
+num_warmups_per_conc: 2
+max_model_len: 10240
+fresh_server_per_point: false
