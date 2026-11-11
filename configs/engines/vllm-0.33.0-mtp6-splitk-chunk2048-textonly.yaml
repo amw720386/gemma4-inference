@@ -1,0 +1,41 @@
+# VARIANT (E5h): E5g combined candidate with 2048-token prefill chunks (D-043 wanted 2048 but v0.33.0 refused it:
+# "Chunked MM input disabled but max_tokens_per_mm_item (2496) ...") made possible by disabling every modality.
+# Source check @ v0.33.0: vllm/multimodal/encoder_budget.py builds the budget only from modalities with limit > 0
+# (enable_mm_embeds off); with none active, compute_mm_encoder_budget (vllm/v1/core/encoder_cache_manager.py) returns
+# (0, 0) before the max_tokens_per_mm_item check. Gemma 4 supports image, audio AND video (gemma4_mm.py), so video:0 is
+# required (the E5d textonly config left video at the default 999). image+video+audio at 0 also skips loading the
+# vision/audio towers (interfaces.py _mark_tower_model) -> more KV memory. Admissibility a: benchmark prompts are text
+# only; the encoder never runs on text, so the text math is unchanged (D-007 precedent).
+# Baseline A: vLLM "published recipe" per Backboard article + vllm-project/recipes
+# models/Google/gemma-4-12B-it.yaml (recipes commit fa1173a1). Article: MTP 4 tokens,
+# async scheduling, gpu-mem-util 0.90, prefix caching off.
+name: vllm-0.33.0-mtp6-splitk-chunk2048-textonly
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E5h
+engine: vllm
+version: "0.33.0"
+client_backend: vllm          # InferenceX benchmark_serving --backend
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--async-scheduling]
+  - [--speculative-config, '{"method":"mtp","model":"{draft_repo}","revision":"{draft_rev}","num_speculative_tokens":6}']
+  - [--max-num-batched-tokens, "2048"]
+  - [--limit-mm-per-prompt, '{"image":0,"audio":0,"video":0}']
+  - [--cudagraph-capture-sizes, "1", "2", "28", "32", "40", "48", "56", "64", "72", "80", "88", "96", "104", "112", "120", "128", "136", "144", "152", "160", "168", "176", "184", "192", "200", "208", "216", "224", "232", "240", "248", "256", "272", "280", "288", "304", "320", "336", "352", "368", "384", "392", "400", "416", "432", "448", "464", "480", "496", "504", "512"]
+  # Deliberately NO --max-model-len (engine default, as in E5g); text-only via --limit-mm-per-prompt above.
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env: {}
+unknowns:
+  - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
+  - "Article does not state whether speculative 'revision' was pinned (pinning has no perf effect)."
+  - "If the engine-default max-model-len fails to fit, the fallback is the textonly variant; log it in DECISIONS."
