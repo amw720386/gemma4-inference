@@ -1,0 +1,4 @@
+# Check out LF everywhere: vendored files are checksum-pinned and the repo is uploaded into Linux containers.
+* text=auto eol=lf
+*.png binary
+*.parquet binary
