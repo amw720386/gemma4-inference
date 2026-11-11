@@ -479,3 +479,55 @@ seed 0, n=1, probes 8/8 on every run. Output tok/s (vs Backboard; vs E6b):
 **Geometric mean 1.039** (E6b 0.977); 7/8 within 5 % or above, 5/8 above. Not a "beats Backboard" claim under the
 pre-registered criteria (n=1, class b). 8K/c64 remains prefill-bound (D-047 model: ≈ 69 % of wall time), which no change
 here touches. Spend ≈ $15.7 billed in total of the $50 cap.
+
+**D-057 (2026-11-11) Two concurrent paid launches.** The spend gate (`spend.MAX_OPEN_LAUNCHES = 2`, `6093a88`) now
+admits a second launch while one is open. Every open reservation already counts at its worst case in `committed`, so
+the $50 total / $3 per-job cap is unchanged; the environment can still only tighten the limit. Used to run repeats
+and the E8b/E8c variants side by side.
+
+**D-058 (2026-11-11) Experimental patched image on its own app.** Patches under evaluation go into
+`VLLM_PATCHES_EXP` = `VLLM_PATCHES` + `prefill_attn_g4`, built as a separate image on the Modal app
+`g4repro-vllm-patched-exp` (`7f76c3d`). A config whose patches are a subset of `VLLM_PATCHES_EXP` but not of
+`VLLM_PATCHES` is routed there. The production patched image (`g4repro-vllm-patched`) stays byte-identical, so the
+E8a repeat series (D-060) runs on one image throughout.
+
+**D-059 (2026-11-11) Packed-head prefill attention lifts 8K; 8K/c64 still just below Backboard.**
+`kernels/prefill_attn.py`: FlashAttention-2-style prefill kernel that packs the (token, head) rows sharing one KV head
+into one tile, so each K/V block is read once per group. Bench (`…-prefill_attn_bench-01f4bf`, 8192-token prompt in
+3072/3072/2048 chunks, 8 global + 40 sliding layers, CUDA graphs): prefill attention **189.8 → 114.0 ms per prompt**
+(global 12.9 → 9.2 ms per layer, **1.40×**, `m64_dv512_n32_d64`; sliding 2.17 → 1.01 ms per layer, **2.15×**, `m64_dv256_n64_d64`); max abs
+difference vs vLLM ≤ 0.016, i.e. within BF16 rounding. Patch `prefill_attn_g4` (`G4_PREFILL_ATTN=1`, experimental
+image, D-058) sub-batches each attention call: the decode/verify prefix (q_len ≤ 8) goes to vLLM's kernel, prefill
+rows to the new kernel. Lossless (FP reduction order only); class unchanged (b, from the draft head). Serving, seed 0,
+n=1, probes 8/8, acceptance unchanged:
+- E8b `vllm-0.33.0-best-e8-pfa` (E8a + `prefill_attn_g4`): 8K/c4 **525.2**, 8K/c16 **986.0**, 8K/c64 **1226** tok/s
+  (0.992 / 1.025 / 0.978 of Backboard; `…-0460`, `…-e5f7`).
+- E8c `vllm-0.33.0-best-e8-pfa-c8k` (E8b + 8192-token prefill chunks): 8K/c64 seeds 0/1/2 **1243.4 / 1219.0 /
+  1140.6** (mean 1201.0, 0.958, n=3); 8K/c4 seeds 1/2 508.0 / 535.3 (mean 521.6, 0.985, n=2); 8K/c16 seeds 1/2
+  1000.0 / 975.7 (mean 987.9, 1.027, n=2).
+A step-level model predicted 1.017 (E8b) / 1.045 (E8c) of Backboard at 8K/c64; measured 0.978 (n=1) / 0.958 (n=3).
+The model over-predicts by 4–9 %; part of that is hardware spread (D-060).
+
+**D-060 (2026-11-11) Repeats: 1K beats Backboard; 8K is a statistical tie, not a proven win.** E8a
+(`vllm-0.33.0-best-e8-all`, production patched image) at all 8 workloads, seeds 0/1/2, n=3, 24/24 points valid.
+Mean output tok/s, ratio to Backboard and Student-t 95 % CI of the ratio (t₂ = 4.303):
+
+| workload | seeds 0 / 1 / 2 tok/s | mean | vs Backboard | 95 % CI |
+|---|---|---:|---:|---|
+| 1024×1 | 238.1 / 233.6 / 232.7 | 234.8 | 1.153 | 111.8–118.8 % |
+| 1024×4 | 813.1 / 814.1 / 818.5 | 815.2 | 1.046 | 103.7–105.5 % |
+| 1024×16 | 2235 / 2178 / 2207 | 2207 | 1.060 | 102.6–109.4 % |
+| 1024×64 | 3916 / 3906 / 3929 | 3917 | 1.025 | 101.7–103.2 % |
+| 8192×1 | 197.5 / 184.6 / 198.3 | 193.5 | 1.080 | 97.3–118.7 % |
+| 8192×4 | 528.0 / 488.4 / 507.3 | 507.9 | 0.959 | 86.6–105.2 % |
+| 8192×16 | 945.8 / 948.5 / 928.7 | 941.0 | 0.978 | 95.1–100.6 % |
+| 8192×64 | 1170 / 1083.9 / 1092.6 | 1115.6 | 0.890 | 79.5–98.4 % |
+
+Geometric mean of the means 1.021. All four 1K CIs lie above 100 % of Backboard. At 8K the best measured config per
+workload has means 0.958–1.080 (E8a at c1, E8c at c4/c16/c64), with CIs spanning 100 % — and E8c at c4/c16 is n=2.
+Cause of the width: Modal assigns a different physical GPU per launch (19 distinct GPU UUIDs over 20 E8 runs), and some
+run hot. All three slow 8K/c64 runs are throttled: E8a seed 1 **1083.9** (mean SM clock 2220 MHz, min 2040; GPU
+83 °C mean, 88 °C max), E8a seed 2 1092.6 (2217 MHz, 83 °C), E8c seed 2 **1140.6** (2199 MHz, min 1995; 83 °C, 89 °C
+max) vs 2369–2386 MHz at 68–70 °C for E8a seed 0 (1170.2) and E8c seed 0 (1243.4). Machine-to-machine spread at 8K is
+≈ 5–8 % (also 7.5 % at 8K/c4 without throttling: 528.0 vs 488.4), larger than the remaining 8K gap, so 8K vs Backboard is
+a tie within noise. Not run: E8c at 1K, a third E8c run at 8K/c4 and 8K/c16. Spend ≈ $24.1 billed in total of the $50 cap.
