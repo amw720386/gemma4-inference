@@ -16,7 +16,7 @@ Locally, before every launch (`src/g4bench/spend.py`, tested in `tests/test_spen
 | Control | Value | Mechanism |
 |---|---|---|
 | Project cap | **$10.00** | refuse unless committed + worst case ≤ $10. Committed = max(local ledger, **Modal billing for `g4repro*` apps**) + Volume storage accrual |
-| Per-job cap | **$2.00** | the call's Modal `timeout` is derived from its reservation, so Modal kills it before the worst case |
+| Per-job cap | **$3.00** (raised from $2 by the owner on 2026-11-11, D-041; jobs default to `--max-usd 2`) | the call's Modal `timeout` is derived from its reservation, so Modal kills it before the worst case |
 | Concurrency | 1 | refuse while any reservation is unsettled; functions have `max_containers=1`, `retries=0` |
 | Nothing left running | ephemeral `app.run()` | no deployed app; the app stops when the launching process exits |
 | Reconciliation | every launch | `modal billing report` per app id; Modal's figure replaces ours when larger; a crashed launch stays at its worst case until billed **and** past its deadline |
@@ -65,8 +65,11 @@ totals including Modal's billed figure).
 | 2026-11-11 | 20261111T021151Z-a4a32a | SGLang 1024×16, 8192×{1,4} | RTX PRO 6000 | 2.00 | 0.756 | billed 0.603 |
 | 2026-11-11 | 20261111T022252Z-5b43d2 | SGLang 1024×64 | RTX PRO 6000 | 2.00 | 0.607 | billed 0.473 |
 | 2026-11-11 | 20261111T023126Z-a1ef38 | SGLang 8192×16 | RTX PRO 6000 | 2.00 | 0.538 | billed 0.375 |
+| 2026-11-11 | – | selftest (after results) | none (2 CPU) | 0.076 | 0.009 | 100 passed, 1 skipped |
+| 2026-11-11 | – | vLLM 8192×64 ($3 per-job cap, D-041) | RTX PRO 6000 | 2.50 | 0.943 | 796 s runtime |
+| 2026-11-11 | – | SGLang 8192×64 | RTX PRO 6000 | 3.00 | 1.290 | 1109 s runtime |
 
-**Total spent to date: $3.26 billed by Modal for `g4repro*` apps** (ledger estimate $4.30; the gate counts the larger,
+**Total spent to date: $5.10 billed by Modal for `g4repro*` apps** (billing lags ≈ hours; ledger estimate $6.54; the gate counts the larger,
 plus ≈ $0.01 Volume storage). Our settle estimate runs ≈ 30 % above Modal's bill (it prices CPU/memory at limits).
 
 ## Prices (`modal billing rates`, retrieved 2026-11-10)

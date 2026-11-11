@@ -1,9 +1,9 @@
 # Status — 2026-11-11 (checkpoint 6)
 
-**One-line state:** first GPU measurements. 14 of the article's 16 seed-0 points measured on 1× RTX PRO 6000 Blackwell
-Server Edition (Modal), all valid, correctness 8/8 on every server. **vLLM 0.33.0 reproduces the article at 7/7 points
-(+0.9 … +3.1 %); our SGLang 0.5.23 is 7–17 % faster than the article's at 7/7.** n = 1 each: descriptive, not claims.
-Spend ≈ $3.3 billed by Modal (≈ $4.3 on the conservative ledger) of the $10 cap. 8192×64 does not fit a $2 job.
+**One-line state:** all 16 of the article's seed-0 points measured on 1× RTX PRO 6000 Blackwell Server Edition (Modal),
+all valid, correctness 8/8 on every server. **vLLM 0.33.0 reproduces the article at 8/8 points (+0.9 … +3.1 %); our
+SGLang 0.5.23 is 7–17 % faster than the article's at 8/8.** n = 1 each: descriptive, not claims. Spend ≈ $5.1 billed by
+Modal (≈ $6.6 on the conservative ledger) of the $10 cap; per-job cap raised to $3 by the owner for 8192×64 (D-041).
 
 Workflow (CLAUDE.md): Git author Ahamed Mohamed Wajibu + `Co-Authored-By: Claude Opus 5.5`; one semantic branch per
 change (`feat/…`, `fix/…`, `docs/…`) off `main`; focused PR with executed test output and NOT-RUN limits; merge
@@ -31,7 +31,7 @@ commit after verification. No GitHub Actions; `agent/*` branches are retired.
 | Gap attribution (acceptance length vs step speed vs roofline) in per-run reports | ✅ | src/g4bench/gap.py |
 | E5/E6 optimization arms (depth sweep, depth-by-batch-size, draft LM-head FP8, SGLang adaptive) as flag-checked configs; role/admissibility gating in analysis | ✅ prepared, not run | configs/engines/, D-034 |
 | Free `/estimate` preflight in campaigns; one-command setup + dependency lock; claims register (`docs/CLAIMS.md`) | ✅ | PRs #5, #6, #7 |
-| E1 smoke + E2/E3 seed-0 baselines (14/16 points) | ✅ n=1 | results/runs/, results/summary/SUMMARY.md |
+| E1 smoke + E2/E3 seed-0 baselines (16/16 points) | ✅ n=1 | results/runs/, results/summary/SUMMARY.md |
 | E4 repeats, E5/E6 | ⬜ beyond the $10 approval | — |
 
 ## Measured results (output tok/s, seed 0, OSL 1024, n = 1, `results/summary/SUMMARY.md`)
@@ -45,17 +45,16 @@ commit after verification. No GitHub Actions; `agent/*` branches are retired.
 | 8192×1 | 164.6 | 159.6 | 1.031 | 89.4 | 82.5 | 1.084 | 179.1 |
 | 8192×4 | 402.6 | 395.7 | 1.018 | 287.9 | 269.5 | 1.068 | 529.6 |
 | 8192×16 | 801.9 | 794.5 | 1.009 | 587.5 | 533.7 | 1.101 | 961.8 |
-| 8192×64 | – | 1079 | – | – | 673.6 | – | 1254 |
+| 8192×64 | 1095 | 1079 | 1.015 | 728.6 | 673.6 | 1.082 | 1254 |
 
 Readouts (descriptive): speculative acceptance length vLLM 4.06–4.21, SGLang 4.47–4.86 (effective algorithm
 `FROZEN_KV_MTP`); attention backends vLLM `TRITON_ATTN` (no FA4 on sm_120), SGLang `triton`. vLLM/SGLang throughput
 ratio 1.31–1.84× vs the article's implied 1.42–2.08× (C04). Backboard stays ahead of both open engines: vLLM reaches
-76–96 % of it (largest gap 8192×4), SGLang 50–67 %. Points of one job share a server start (D-040).
+76–96 % of it (largest gap 8192×4), SGLang 50–67 %. Throughput at 8192×64 uses one 13–18 min job (D-041). Points of one job share a server start (D-040).
 
 ## Blockers
 
-No technical blockers. 8192×64 (both engines) needs ≈ 14–20 min per job, more than the 876 s a $2 job buys:
-it needs a higher per-job cap (owner decision). Budget: **$10 total / ≤ $2 per job** (BUDGET.md); `g4bench modal spend` shows committed spend.
+No technical blockers. Repeats (seeds 1, 2) for real claims need ≈ $10–15 more: a new budget approval. Budget: **$10 total / ≤ $3 per job** (BUDGET.md); `g4bench modal spend` shows committed spend.
 Note: the `.env` token secret was missing its `as-` prefix's leading `a` and was corrected locally on 2026-11-10.
 
 ## Key findings (CPU-side only)

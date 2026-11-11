@@ -290,3 +290,9 @@ descriptive only (EXPERIMENTS criterion 2, unchanged). SGLang skips the smoke ma
 run: the per-run report compared the smoke's OSL-256 throughput with the article's OSL-1024 numbers (now excluded),
 and Modal runs recorded no code SHA (now `G4_CODE_SHA`).
 
+**D-041 (2026-11-11) Per-job cap raised from $2 to $3 (owner approval) for 8192×64.** 768 requests at 8K input need
+≈ 13 min (vLLM) / ≈ 18 min (SGLang) of runtime plus ≈ 3 min of server start — more than the 876 s timeout a $2
+reservation buys. Ahamed approved a $3 per-job cap; the $10 project cap is unchanged. Ran vLLM at `--max-usd 2.5`
+(1335 s timeout; used 796 s, settled ≈ $0.94) and SGLang at `--max-usd 3` (1794 s; used 1109 s, ≈ $1.29). Other jobs
+keep the $2 default.
+

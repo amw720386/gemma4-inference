@@ -2,14 +2,13 @@
 
 ## A. Paid steps (direct Modal; D-039, D-040)
 
-Done 2026-11-11: selftest, prefetch, vLLM smoke, and 14/16 seed-0 article points (5 vLLM + 5 SGLang jobs on
-`backboard-repro-shared`). Remaining within the $10 approval (≈ $5.7 by the conservative ledger, more by Modal's bill):
+Done 2026-11-11: selftest, prefetch, vLLM smoke, and all 16 seed-0 article points (6 vLLM + 6 SGLang jobs on
+`backboard-repro-shared`; 8192×64 with the $3 per-job cap, D-041). Remaining within the $10 approval: ≈ $3.4 by the
+conservative ledger (≈ $4.9 by Modal's bill).
 
-1. **8192×64, both engines** — needs one job of ≈ 14 min (vLLM) / ≈ 20 min (SGLang) of runtime. A $2 reservation buys
-   876 s, so this needs the owner to raise the per-job cap (≈ $2.6 / $3.0 worst case; expected settle ≈ $1.0 / $1.4),
-   or a reduced-request variant labelled as such.
-2. Then, if budget remains: E5b depth sweep at the largest vLLM-vs-Backboard gap (8192×4), e.g.
-   `job --engine vllm-0.33.0-mtp5 --matrix backboard-repro-shared --only 8192x4 --execute` (≈ $0.5 each).
+1. E5b depth sweep at the largest vLLM-vs-Backboard gap (8192×4, vLLM at 76 % of Backboard), ≈ $0.5 per config:
+   `job --engine vllm-0.33.0-mtp5 --matrix backboard-repro-shared --only 8192x4 --execute`, then mtp3 / mtp6.
+2. Seeds 1, 2 for n = 3 claims (EXPERIMENTS criterion 2) need ≈ $10–15: a new budget approval.
 
 Every command: `g4bench modal job … ` (plan only) → `… --execute`; one launch at a time; `g4bench modal spend --reconcile`
 between launches. Delete the `g4repro-hf-cache` Volume when GPU work pauses for more than a few days.
