@@ -236,7 +236,7 @@ def build(run_dir: Path) -> tuple[str, str]:
     else:
         tg = compare.load_targets()
         lines += [f"Reference: article `{ref}` (and Backboard) numbers for random-token prompts. Classification uses the "
-                  "pre-registered 5 % tolerance (EXPERIMENTS.md); n<3 results are descriptive only.", "",
+                  "pre-registered 5 % tolerance (docs/EXPERIMENTS.md); n<3 results are descriptive only.", "",
                   f"| ISL | conc | ours | n | article {ref} | ours/article | class | article Backboard | ours/Backboard |",
                   "|---:|---:|---:|---:|---:|---:|---|---:|---:|"]
         any_cmp = False

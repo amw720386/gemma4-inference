@@ -1,108 +1,135 @@
 # gemma4-inference-repro
 
-An **independent, open-source** attempt to reproduce — and then measurably improve on — the
-Gemma 4 12B serving numbers reported by Backboard on 2026-11-09
-([article](https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference)).
+An independent, open-source attempt to **reproduce** the Gemma 4 12B serving benchmark that Backboard published on
+2026-11-09 ([article](https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference)), and then to **close the gap** to
+Backboard's proprietary engine using only open engines and lossless changes.
 
-> **What this is not.** Backboard's inference engine is proprietary. This project does not
-> reimplement or claim to reproduce it. We reproduce the article's *open* baselines
-> (vLLM 0.33.0, SGLang 0.5.23) with an InferenceX-style harness, report our own measurements
-> with uncertainty, and treat Backboard's numbers purely as external targets.
+Setup throughout: 1× NVIDIA RTX PRO 6000 Blackwell Server Edition (96 GB, 600 W) on Modal, `google/gemma-4-12B-it`
+BF16 with the `google/gemma-4-12B-it-assistant` MTP draft, random-token prompts (InferenceX client, range ratio 0.8,
+chat template), 1024 output tokens, input length 1K / 8K × concurrency 1 / 4 / 16 / 64.
 
-**Current state (2026-11-11):** one lossless vLLM configuration reaches ≥ 95 % of Backboard's throughput at 5/8
-workloads (geometric mean 0.977; D-050). Earlier: **first GPU results** — vLLM 0.33.0 reproduces the article's throughput at all 8
-seed-0 workloads (within +0.9 … +3.1 %), our SGLang 0.5.23 runs 7–17 % faster than the article's, and Backboard's
-reported numbers remain ahead of both (n = 1, descriptive; [STATUS.md](STATUS.md)). Earlier state: harness, real-prompt (SPEED-Bench) arm, per-run reports, vLLM-vs-SGLang
-matched-load comparison, gap attribution, static engine-flag preflight, prepared E5/E6 optimization arms, and a
-a **$10 project / $2 per-job spend gate** reconciled against Modal billing are complete and CPU-validated. Paid runs
-are launched directly from the owner's machine with `g4bench modal …` (the HTTPS bridge was removed, D-039). See
-[STATUS.md](STATUS.md), [NEXT.md](NEXT.md), [BUDGET.md](BUDGET.md).
+> Every number below is a single run (n = 1, seed 0) unless stated, so it is **descriptive, not a claim**: the
+> pre-registered criteria in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) require n ≥ 3. Repeats we did run agreed within ≈ 1 %.
 
-Paid path (credentials in the untracked `.env`): `g4bench modal spend` (free) → `g4bench modal prefetch --execute`
-(CPU, weights into a Volume) → `g4bench modal job --engine vllm-0.33.0-mtp4 --matrix smoke` (plan only) → `… --execute`.
-No number in this repo is a measured GPU result unless it appears in `results/runs/*/results.csv` with a run ID.
+## Results at a glance
 
-## What the article reports (targets, not our results)
+![Output throughput as % of Backboard](docs/results-vs-backboard.svg)
 
-1× RTX PRO 6000 Blackwell 96 GB, `google/gemma-4-12B-it` BF16, draft `google/gemma-4-12B-it-assistant`,
-1K output tokens, output throughput (tok/s) at concurrency 1 / 4 / 16 / 64:
+| | Result |
+|---|---|
+| **Article baselines reproduced** | vLLM 0.33.0 within **+0.9 … +3.1 %** of the article at **8/8** workloads; SGLang 0.5.23 runs **7–17 % faster** than the article's |
+| **Best single lossless config** (`vllm-0.33.0-best-e6b`) | **≥ 95 % of Backboard at 5/8** workloads, **≥ 90 % at 7/8**, geometric mean **97.7 %** (article vLLM recipe: 88.1 %) |
+| **Biggest single win** | split-K attention on Gemma 4's head-dim-512 layers via CUDA-graph capture sizes: **+8 %** at 8K/c4 |
+| **What is left** | 8K workloads (89–94 %): profile shows the GPU 99.5 % busy and 74 % of time in BF16 GEMMs — kernel work, not configuration |
+| **Cost** | ≈ **$12.9** of Modal compute in total (every launch in [`results/budget_ledger.jsonl`](results/budget_ledger.jsonl)) |
 
-| ISL | Backboard | vLLM 0.33.0 (MTP 4) | SGLang 0.5.23 (NEXTN 5/6) |
-|---|---|---|---|
-| 1K | 203.6 / 779.4 / 2082 / 3822 | 186.8 / 649.0 / 1861 / 3634 | 122.6 / 456.8 / 1122 / 1750 |
-| 8K | 179.1 / 529.6 / 961.8 / 1254 | 159.6 / 395.7 / 794.5 / 1079 | 82.5 / 269.5 / 533.7 / 673.6 |
+### 1. Reproducing the article's open-engine baselines
 
-All tables (p99 TPOT/E2EL, p90 TTFT, per-user speed, 13-metric ratio tables) are in
-[`configs/targets/backboard-2026-11-09.json`](configs/targets/backboard-2026-11-09.json).
+Output throughput (tok/s), our run vs the article, same recipes (vLLM MTP 4 tokens; SGLang NEXTN 5 steps / 6 tokens):
 
-## What we verified before writing any code
+| Workload | vLLM ours | vLLM article | Δ | SGLang ours | SGLang article | Δ |
+|---|---:|---:|---:|---:|---:|---:|
+| 1K × 1 | 190.4 | 186.8 | +1.9 % | 136.9 | 122.6 | +11.7 % |
+| 1K × 4 | 655.0 | 649.0 | +0.9 % | 499.1 | 456.8 | +9.3 % |
+| 1K × 16 | 1905 | 1861 | +2.4 % | 1299 | 1122 | +15.8 % |
+| 1K × 64 | 3668 | 3634 | +0.9 % | 2039 | 1750 | +16.5 % ¹ |
+| 8K × 1 | 164.6 | 159.6 | +3.1 % | 89.4 | 82.5 | +8.4 % |
+| 8K × 4 | 402.6 | 395.7 | +1.8 % | 287.9 | 269.5 | +6.8 % |
+| 8K × 16 | 801.9 | 794.5 | +0.9 % | 587.5 | 533.7 | +10.1 % |
+| 8K × 64 | 1095 | 1079 | +1.5 % | 728.6 | 673.6 | +8.2 % ¹ |
 
-See [docs/SOURCES.md](docs/SOURCES.md). Highlights:
-- Model, draft, licences (Apache-2.0, **ungated**), architecture, and exact HF revisions confirmed.
-- vLLM 0.33.0 / SGLang 0.5.23 exist, are pinned by image digest, and contain Gemma 4 Unified + MTP code.
-- Baseline flags match the vLLM recipe and SGLang cookbook.
-- **Unstated by the article:** InferenceX commit, range ratio, GPU edition/power, driver, server limits.
-- **Inferred:** the article's latency tables are impossible under fixed 1024-token outputs
-  (16/24 violations of p99 E2EL ≥ 1023·p99 TPOT) ⇒ variable lengths, consistent with InferenceX's 0.8.
-- Roofline: no-spec decode on RTX PRO 6000 is capped near ~63 tok/s/stream, so the reported
-  ~185–204 tok/s/user requires speculative acceptance length ≳ 3.1 — the key reproduction variable.
+vLLM's latencies (p99 TPOT, p99 E2EL, p90 TTFT) land at 0.82–1.11× the article's. ¹ SGLang auto-capped itself
+at 48 running requests, so its c64 points queue (TTFT 5–20 s); a like-for-like config (`sglang-0.5.23-nextn-fair64`)
+is prepared but not run.
 
-## Which article claims can be checked
+### 2. Closing the gap to Backboard
 
-See [docs/CLAIMS.md](docs/CLAIMS.md) (generated by `g4bench claims` from `configs/claims.yaml`; status is computed
-only from measured results). Today: 0 measurable claims measured; 2 untestable by anyone outside Backboard plus 1
-unstated client setup; 2 verified from sources/analysis.
+One configuration for all workloads (as Backboard did), every change output-preserving for the BF16 target:
 
-## Layout
+| Workload | Backboard | Article vLLM recipe | **This repo** (`best-e6b`) | % of Backboard |
+|---|---:|---:|---:|---:|
+| 1K × 1 | 203.6 | 190.4 | **223.9** | **110 %** |
+| 1K × 4 | 779.4 | 655.0 | **768.1** | **99 %** |
+| 1K × 16 | 2082 | 1905 | **2106** | **101 %** |
+| 1K × 64 | 3822 | 3668 | **3710** | **97 %** |
+| 8K × 1 | 179.1 | 164.6 | **183.2** | **102 %** |
+| 8K × 4 | 529.6 | 402.6 | **497.8** | 94 % |
+| 8K × 16 | 961.8 | 801.9 | **853.9** | 89 % ² |
+| 8K × 64 | 1254 | 1095 | **1149** | 92 % |
+
+² The same settings without the depth-by-batch schedule reached 885.3 (92 %) at 8K × 16.
+
+**What moved the needle** (details and run IDs in [docs/DECISIONS.md](docs/DECISIONS.md)):
+
+| Change | Effect | Ref |
+|---|---|---|
+| Speculative depth 6 instead of 4 (acceptance 4.05 → 4.99) | +8 % at 8K/c4 (n = 2, ±1 %) | D-042 |
+| CUDA-graph capture sizes `1 2 28 32 …` keep vLLM's Triton **split-K** attention on for 4 requests × 7 tokens (Gemma 4's 8 global layers: 1 KV head, head dim 512) | +8.4 % at 8K/c4, median token gap −12 % | D-044 |
+| Patched vLLM: Gemma 4 MTP **draft prefill on the last token only** (the draft is KV-shared and row-wise) | +2.6 % at 8K/c16, −3.6 % 8K TTFT | D-046 |
+| Depth by batch size: 6 up to 32 running requests, 4 above | +3 % at 1K/c64; with the draft patch, 8K/c64 1098 → 1149 | D-047 |
+| 3072-token prefill chunks | p99 inter-token gap 584 → 274 ms; +1.4 % throughput | D-043 |
+
+**What did not:** patched Triton prefill tiles for sm_120 (no change), depth 5 (never best), depth 7+ (breaks split-K
+at c4). Ruled out from source without a GPU run: FlashInfer (no fast path for head dim 512 on sm_120), draft LM-head
+quantization (vLLM rejects it for Gemma 4 MTP), partial-prefill flags (absent in v0.33.0).
+
+**Where the rest of the gap is.** A torch-profiler trace of `best-e6b` at 8K/c4 shows the GPU busy 99.5 % of the time:
+74 % BF16 GEMMs (CUTLASS sm_80 `mma.sync` kernels — sm_120 has no wgmma/tcgen05), 20 % attention, < 1 % sampling and
+speculative bookkeeping. A step-level scheduler model calibrated on our runs (RMS error 0.35 %) says ≈ 10–15 % faster
+prefill would bring every 8K workload above 95 %; Backboard's TTFTs are consistently 14–17 % below the article's vLLM,
+consistent with faster kernels. Backboard's only disclosed technique — a 4-bit draft shortlist rescored in BF16 —
+raises acceptance, which our depth results show is not the main lever at 8K.
+
+## How it works
 
 ```
-configs/pins.yaml             pinned model revisions, image digests, client commit
-configs/engines/*.yaml        server configs (baselines, controls, variants, CPU mock)
-configs/matrix/*.yaml         workload matrices (article matrix, smoke, mock)
-configs/targets/*.json        article numbers (transcribed, test-checked)
-configs/fingerprints-*.json   CPU-generated fingerprints of the exact request streams
-src/g4bench/                  harness (runner, client, stats, compare, roofline, cost, ...)
-third_party/inferencex/       vendored InferenceX bench_serving @ 0b991451 (Apache-2.0)
-src/g4bench/modal_app.py      ephemeral Modal app (digest-pinned engine images, cache/results Volumes)
-src/g4bench/spend.py          local $10/$2 spend gate reconciled with Modal billing
-results/runs/<run_id>/        raw + normalized results per run (CSV/JSONL/manifest/metadata)
-results/summary/              aggregated tables (g4bench analyze)
-docs/                         sources, analysis
+g4bench modal spend                       # free: committed spend vs the cap, reconciled with Modal billing
+g4bench modal prefetch --execute          # CPU (~$0.01): pinned weights into a Modal Volume
+g4bench modal job --engine vllm-0.33.0-best-e6b --matrix backboard-repro-shared --only 8192x4            # plan only
+g4bench modal job --engine vllm-0.33.0-best-e6b --matrix backboard-repro-shared --only 8192x4 --execute  # run it
+g4bench modal job ... --profile-key 8192x4 --execute   # torch-profiler summary of one point
+g4bench analyze && g4bench claims         # aggregate results/runs → results/summary, docs/CLAIMS.md
 ```
 
-## Quick start (CPU, one command)
+- **Paid runs go straight to Modal** from your machine (credentials in an untracked `.env`), one ephemeral app per
+  launch, nothing left deployed. Engine images are digest-pinned (vLLM v0.33.0, SGLang v0.5.23) and receive no extra
+  packages; optional build-time engine patches are anchored, idempotent and recorded with each run.
+- **Spend gate** (`src/g4bench/spend.py`): before every launch the worst case (container limits × timeout + margins)
+  must fit a per-job and a project cap; the Modal timeout is derived from the reservation, and every launch is
+  reconciled against Modal's per-app bill.
+- **Every run** writes `results/runs/<run_id>/` with raw InferenceX output, server logs, effective engine config,
+  speculative-decoding counters, GPU samples, correctness probes and a `REPORT.md`. Mock, proxy-hardware, profiled
+  and non-article-length runs are never compared with the article.
+
+## Quick start (CPU)
 
 ```bash
-scripts/setup.sh
+scripts/setup.sh            # venv from requirements-lock.txt, pinned-revision check, engine-flag preflight, tests
 ```
 
-Creates `.venv`, installs the exact tested versions from `requirements-lock.txt`, checks the pinned model revisions
-are reachable, statically checks every engine config's flags against the pinned vLLM/SGLang sources, and runs the
-CPU test-suite. Add `--data` to also prepare the SPEED-Bench prompt sets (digest-gated against InferenceX, ~4.6 GB
-streamed). Verified from a fresh clone on 2026-11-10: 120 passed, 1 skipped (the `--data` digest test), ~3 min.
+The harness targets Linux (the GPU images run Python 3.12). On Windows a few process-group tests fail by design;
+`g4bench modal selftest --execute` runs the full suite on Linux inside Modal for about a cent.
 
-Other free checks:
+## Repository layout
 
-```bash
-.venv/bin/g4bench consistency && .venv/bin/g4bench roofline && .venv/bin/g4bench plan
+```
+configs/engines/        engine configs: article baselines (role: baseline) and every experiment (role: variant)
+configs/matrix/         workload matrices (article matrix, shared-server variant, smoke, real-prompt arms)
+configs/targets/        the article's published numbers, transcribed and test-checked
+src/g4bench/            harness: runner, InferenceX client, stats, analysis, Modal app + launcher, spend gate,
+                        engine patches (patches/), profiler summaries
+results/runs/           every measured run, raw and normalized
+results/summary/        aggregated tables (SUMMARY.md, best_vs_backboard.csv, …)
+docs/                   DECISIONS.md (decision log D-001…D-050), EXPERIMENTS.md (pre-registered plan and run log),
+                        CLAIMS.md, SOURCES.md, analysis/
+third_party/inferencex/ vendored InferenceX bench_serving @ 0b991451 (Apache-2.0)
 ```
 
-On a GPU host with the engine installed (or `g4bench modal job … --execute` on Modal):
+## Caveats
 
-```bash
-g4bench run --engine vllm-0.33.0-mtp4 --matrix backboard-repro --seeds 0
-```
+- Backboard's engine is proprietary; we reproduce its *numbers* as targets, not its engine.
+- n = 1 per point (seed 0); repeats for claims (n = 3) were not run within the budget.
+- Points in one job share a server start (`backboard-repro-shared`), unlike the article's fresh server per point.
+- Random-token prompts only; real-prompt arms (SPEED-Bench) are prepared but not measured.
 
-```bash
-g4bench analyze
-```
-
-Every run writes `results/runs/<run_id>/REPORT.md` + `throughput.svg` (regenerate with
-`g4bench report <run_dir>`). See `docs/examples/` for the layout (MOCK engine — not a measurement).
-
-## Project docs
-
-[STATUS.md](STATUS.md) · [NEXT.md](NEXT.md) · [EXPERIMENTS.md](EXPERIMENTS.md) (plan + pre-registered
-acceptance criteria) · [DECISIONS.md](DECISIONS.md) · [BUDGET.md](BUDGET.md) · [docs/SOURCES.md](docs/SOURCES.md)
-
-Licence: not yet chosen by the repository owner (see NEXT.md). `third_party/inferencex` keeps its upstream Apache-2.0 licence and notice.
+Licence: not yet chosen. `third_party/inferencex` keeps its upstream Apache-2.0 licence and notice.
