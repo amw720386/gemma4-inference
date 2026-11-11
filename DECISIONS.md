@@ -252,3 +252,14 @@ overwriting local files; > 20 MB skipped and reported), and the campaign fetches
 automatically. `run-file-listing` is a required `/health` feature, so a bridge deployed before this change is refused
 until redeployed. The campaign CLI also gains `--ledger` / `--fetch-dir`, so rehearsals no longer write to the real
 `results/budget_ledger.jsonl`.
+
+**D-038 (2026-11-11) Make the pinned engine images deployable without changing their Python.** The first `modal deploy`
+(modal 1.6.3, Colab) failed for `run_vllm`: "unable to determine the version of Python installed in the Image".
+`from_registry` without `add_python` requires `python` + `pip` on PATH. Source check of the pinned images: vLLM
+v0.33.0's runtime stage installs vLLM into system Python 3.12 (deadsnakes; `python3` via update-alternatives, pip via
+get-pip) and ships no bare `python`; SGLang v0.5.23 already has `python`/`pip` in its venv `/opt/sglang/bin` (first on
+PATH). Fix: `g4bench.image_setup.python_setup_commands(engine)` is passed as `setup_dockerfile_commands` (inserted right
+after `FROM`, before Modal's setup): if `python` is missing it is symlinked to the image's own `python3`; an existing
+`python` is never touched; the step then asserts Python 3.12, `find_spec(engine)` and `python -m pip`, so a broken
+interpreter fails at image build, not on a paid GPU start. `add_python` was rejected: it would put a second interpreter
+first on PATH that cannot import the engine. Tests run the exact RUN line under /bin/sh with an isolated PATH.
