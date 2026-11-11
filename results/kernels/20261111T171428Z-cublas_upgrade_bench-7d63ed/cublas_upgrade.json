@@ -1,0 +1,17 @@
+{
+ "new_version": "13.10.0.20",
+ "runs": [
+  {
+   "label": "stock",
+   "probe": "cublasLt 130101 ['/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13']",
+   "rc": 0,
+   "stderr_tail": ""
+  },
+  {
+   "label": "cublas-13.10.0.20",
+   "probe": "cublasLt 131000 ['/tmp/newcublas/nvidia/cu13/lib/libcublasLt.so.13']",
+   "rc": 0,
+   "stderr_tail": ""
+  }
+ ]
+}

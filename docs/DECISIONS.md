@@ -401,3 +401,81 @@ tiles, 16 % of GPU time); decode step ≈ 19.8 ms GPU, prefill-carrying step ≈
 no flag selects faster BF16 GEMMs. Conclusion: the remaining 8K gap (6–11 %) is GEMM kernel efficiency — custom kernel
 work, outside what configuration can reach. Paid experimentation paused here (≈ $13 billed of the $20 cap).
 
+
+**D-051 (2026-11-11) Kernel lab; project cap raised to $50 by the agent.** The owner's go-ahead to "use a lot more"
+Modal credits was open-ended, so the agent set `spend.Caps` to $50 total / $3 per job (the environment can only
+tighten it). New command `g4bench modal script --path <repo script>` runs a repo script on the RTX PRO 6000 inside the
+digest-pinned vLLM image, under the same spend gate (default reservation $1.75), and copies whatever the script writes to
+`$G4_OUT_DIR` into `results/kernels/<run id>/` (JSON + stdout/stderr). Each kernel bench below cost ≈ $0.08–0.12.
+
+**D-052 (2026-11-11) BF16 GEMMs are already at the hardware limit; cuBLAS 13.10 ships as an image build step.**
+`kernels/gemm_bench.py`, Gemma 4 12B linear shapes (sliding/global qkv and o, MLP gate_up/down) × per-forward counts:
+- First run (`…-gemm_bench-c46eac`) reported decode linears *below* the weight-read floor (11.2 ms/forward at M=28 vs
+  14.9 ms): the 128 MB L2 held the weights between repeats. Withdrawn as an artefact.
+- Cold-weight rerun (`…-gemm_bench-025434`, weights rotated through > L2): decode linears 15.3 / 15.8 / 17.1 ms/forward
+  at M = 4 / 28 / 112 vs the **14.9 ms weight-read floor at the measured 1.46 TB/s** copy bandwidth (94 % at M=28);
+  prefill per-shape 341–427 TFLOPS at M=3072 vs ≈ 415–440 TFLOPS measured peak (peak probe 406.5 / 415.1 in the
+  two runs). `torch.compile` max-autotune never won (0.51–1.01× of cuBLAS). n=1 per run.
+- CuTe DSL sm_120 dense GEMM (NVIDIA/cutlass v4.8.0 `blackwell_geforce` example, 6 tile configs, `…-bench-916b9a`):
+  prefill linears at M=3072 **169.4 vs 168.0 ms/forward** (0.992×); per shape 0.94–1.06× at M=3072, 0.76–1.05× at
+  M=1024, 0.71–1.02× at M=28. Best-of-both 166.7 ms (−0.8 %): not worth a custom path.
+- cuBLAS 13.10.0.20 vs the image's 13.1 (cublasLt 131000 vs 130101), interleaved stock/new/stock/new, n=2 each
+  (`…-cublas_upgrade_bench-af4bfc`; the first run `…-7d63ed` was not interleaved): linear ms/forward 15.77 → 15.46
+  (**−2.0 %**, M=28), 61.98 → 60.07 (**−3.1 %**, M=1024), 170.18 → 166.92 (**−1.9 %**, M=3072). Shipped as a build
+  step of the patched image (`g4repro-vllm-patched`); lossless (same math, different kernels).
+- Spec correction (research): the RTX PRO 6000 Blackwell **Server Edition** is rated **1597 GB/s**; the measured 1.46 TB/s
+  copy is 91 % of that. Conclusion: there is no GEMM headroom
+  left that a kernel can buy on this GPU at BF16.
+
+**D-053 (2026-11-11) Attention: one shared split-K threshold misroutes Gemma 4's two layer types.**
+`kernels/attn_bench.py` (`…-attn_bench-c6c4db`, vLLM 0.33.0 Triton unified attention, verify q_len 7, cold KV, CUDA
+graphs; numerics vs reference ≤ 0.008 abs) per forward (8 global + 40 sliding layers): the threshold that suits the
+1-KV-head global layers is wrong for the sliding layers and vice versa. 8K/c16: **10.2 ms with vLLM's routing vs 6.9 ms
+with the best path per group** (floor 5.2 ms; global 577 → 387 µs/layer, sliding 141 → 94 µs/layer); 8K/c64 28.5 vs 26.9
+ms; 1K/c16 4.87 vs 4.35 ms; c1/c4 already optimal. Packed-row (MQA-style) split-K kernels for the global layers save
+only **≈ 0.5 ms/forward at 8K/c4** (2.67 → 2.16 ms): repeat reads of the single KV head are absorbed by L2. Patch
+`splitk_per_group` gives each attention group its own `seq_threshold_3D` (`G4_SPLITK_T_FULL=112`,
+`G4_SPLITK_T_SLIDING=8`); lossless (FP reduction order only). The packed-row kernel is not shipped.
+
+**D-054 (2026-11-11) Draft head: the 12B assistant has no centroid shortlist; quantized scan + exact BF16 rescore.**
+The downloaded `google/gemma-4-12B-it-assistant` config has `use_ordered_embeddings: false`: the head is the dense,
+tied 262144 × 1024 BF16 embedding (SOURCES corrected; only the E2B/E4B assistants use ordered embeddings), i.e. 512 MB
+read per draft token: 369 µs at M=4, 395 µs at M=28, i.e. **≈ 2.2 ms per depth-6 draft step** at c4. `kernels/draft_head_scan.py`
+(`…-draft_head_scan-556087`, real weights, 4096 synthetic activation rows, CUDA graphs) scans a quantized copy, keeps the
+top k and rescores those k exactly in BF16: at M=28, k=32, BF16 head 395 µs → **FP8 fused 212 µs (1.86×)**, **INT4
+fused 137 µs (2.9×)**. Top-1 recall vs the BF16 argmax ("realistic" set, k=8/32/64): FP8 0.992 / 0.996 / 0.996, INT4
+0.975 / 0.981 / 0.984 (random set: FP8 1.000). Neither meets the 0.999 bench criterion, so acceptance in serving is
+the real test; a miss only lowers acceptance, never target output. Patch `mtp_draft_head_q` (`G4_DRAFT_HEAD_Q=fp8|int4`,
+`G4_DRAFT_HEAD_K=32`) replaces the head + argmax; draft precision lowered → **class b** (D-011). Bug: during CUDA-graph
+capture the draft sees uninitialised hidden states, all scores were NaN and the 2^30 "no candidate" sentinel became the
+draft token, tripping the embedding index assert (E8a run `…-4b53`, 0/2 valid). Fix `ab3fc93`: fall back to a valid
+token when all scores are NaN.
+
+**D-055 (2026-11-11) Third-party drafters: DSpark is slower; the rest are not run.** `vllm-0.33.0-dspark-block7`
+(`deepseek-ai/dspark_gemma4_12b_block7`, 3.43 B params, block 7, own non-causal KV cache, no image patch;
+`…-dspark-block7-…-cc48`, seed 0, n=1, probes 8/8): **1K/c1 211.0 vs 223.9 tok/s** (E6b), **8K/c4 443.4 vs 497.8**,
+acceptance length 5.06 / 4.55 — at least as long as Google's assistant on random-token prompts, but (likely) its 5 full-width
+layers cost more per step than the extra acceptance saves; ≈ $0.42 billed. `vllm-0.33.0-dloopmtp-e6b` (`naver-ai/DLoop-MTP-gemma-4-12B-it`,
+same architecture as Google's assistant) prepared, not run. DFlash and Eagle3 rejected without a run: the DSpark paper
+(same authors) reports both below DSpark in accepted length on Gemma 4 12B (e.g. 5.45 / 5.87 vs 6.05 on GSM8K), and DSpark
+already loses. Neither the DSpark nor the DLoop HF repo states a licence (no model card / licence tag); both are labelled
+"third-party drafter", never a like-for-like recipe change.
+
+**D-056 (2026-11-11) Combined config E8a beats Backboard on the geometric mean (n=1).** `vllm-0.33.0-best-e8-all` =
+E6b + `splitk_per_group` (D-053) + `mtp_draft_head_q` FP8, k=32 (D-054) + cuBLAS 13.10 (D-052), patched image, class b,
+seed 0, n=1, probes 8/8 on every run. Output tok/s (vs Backboard; vs E6b):
+
+| workload | E8a tok/s | vs Backboard | vs E6b | acceptance length | run |
+|---|---:|---:|---:|---:|---|
+| 1024×1 | 238.1 | 1.17 | +6.3 % | 5.32 | `…-d1a0` |
+| 1024×4 | 813.1 | 1.04 | +5.9 % | 5.11 | `…-d1a0` |
+| 1024×16 | 2235 | 1.07 | +6.1 % | 5.15 | `…-d1a0` |
+| 1024×64 | 3916 | 1.02 | +5.6 % | 4.20 | `…-400b` |
+| 8192×1 | 197.5 | 1.10 | +7.8 % | 5.03 | `…-d1a0` |
+| 8192×4 | 528.0 | 0.997 | +6.1 % | 5.25 | `…-0b3c` |
+| 8192×16 | 945.8 | 0.983 | +10.8 % | 5.09 | `…-0b3c` |
+| 8192×64 | 1170 | 0.933 | +1.8 % | 4.12 | `…-e87a` |
+
+**Geometric mean 1.039** (E6b 0.977); 7/8 within 5 % or above, 5/8 above. Not a "beats Backboard" claim under the
+pre-registered criteria (n=1, class b). 8K/c64 remains prefill-bound (D-047 model: ≈ 69 % of wall time), which no change
+here touches. Spend ≈ $15.7 billed in total of the $50 cap.

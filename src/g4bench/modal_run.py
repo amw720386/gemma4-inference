@@ -57,11 +57,11 @@ def gpu_kind(engine_name: str, engine: str) -> str:
     patches = tuple(EngineConfig.load(engine_name).raw.get("image_patches") or ())
     if not patches:
         return f"gpu:{engine}"
-    from .modal_app import VLLM_PATCHES
+    from .modal_app import ALWAYS_ON_PATCHES, VLLM_PATCHES
 
-    if engine != "vllm" or patches != VLLM_PATCHES:
+    if engine != "vllm" or not set(patches) <= set(VLLM_PATCHES) or not ALWAYS_ON_PATCHES <= set(patches):
         raise SystemExit(f"{engine_name}: image_patches {list(patches)} unsupported; the patched image is "
-                         f"vllm + {list(VLLM_PATCHES)}")
+                         f"vllm + {list(VLLM_PATCHES)} (configs must include {sorted(ALWAYS_ON_PATCHES)})")
     return "gpu:vllm-patched"
 
 
@@ -116,7 +116,8 @@ def launch(kind: str, spec: dict[str, Any], max_usd: float, *, ledger: Path = S.
     lid = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:6]}"
     app, fn = {"prefetch": (M.cpu_app, M.prefetch_weights), "selftest": (M.cpu_app, M.selftest),
                "gpu:vllm": (M.vllm_app, M.run_vllm), "gpu:sglang": (M.sglang_app, M.run_sglang),
-               "gpu:vllm-patched": (M.vllm_patched_app, M.run_vllm_patched)}[kind]
+               "gpu:vllm-patched": (M.vllm_patched_app, M.run_vllm_patched),
+               "gpu:script": (M.vllm_app, M.run_script_vllm)}[kind]
     result: dict[str, Any] | None = None
     err = None
     now: float | None = None
@@ -174,6 +175,10 @@ def main(args) -> int:
         kind, spec = "prefetch", {"speedbench": bool(args.speedbench)}
     elif args.modal_cmd == "selftest":
         kind, spec = "selftest", {}
+    elif args.modal_cmd == "script":
+        if not (REPO / args.path).is_file():
+            raise SystemExit(f"no such script {args.path}")
+        kind, spec = "gpu:script", {"script": Path(args.path).as_posix(), "args": args.args or []}
     else:
         eng = allowed_engines().get(args.engine)
         if not eng:
@@ -194,7 +199,7 @@ def main(args) -> int:
                           "budget": preflight(p)}, indent=2))
         return 0
     os.environ["G4_CODE_SHA"] = _code_sha()
-    out = launch(kind, spec, args.max_usd)
+    out = launch(kind, spec, args.max_usd, dest=RESULTS / ("kernels" if kind == "gpu:script" else "runs"))
     print(json.dumps(out, indent=2, default=str))
     return 0 if not out.get("error") and not out.get("aborted") and out.get("rc", 0) == 0 else 1
 
@@ -202,7 +207,7 @@ def main(args) -> int:
 def add_parser(sub) -> None:
     m = sub.add_parser("modal", help="paid Modal runs launched from this machine (budget-gated)")
     ms = m.add_subparsers(dest="modal_cmd", required=True)
-    s = ms.add_parser("spend", help="free: committed spend vs the $10 cap")
+    s = ms.add_parser("spend", help="free: committed spend vs the project cap")
     s.add_argument("--reconcile", action="store_true", help="record Modal's billed cost per launch in the ledger")
     s.add_argument("--offline", action="store_true", help="skip Modal billing (ledger only)")
     pf = ms.add_parser("prefetch", help="CPU: download pinned weights into the cache Volume")
@@ -210,6 +215,10 @@ def add_parser(sub) -> None:
     pf.add_argument("--max-usd", type=float, default=0.2)
     st = ms.add_parser("selftest", help="CPU: run the test-suite on Linux inside Modal (~1 cent)")
     st.add_argument("--max-usd", type=float, default=0.1)
+    sc = ms.add_parser("script", help="GPU kernel lab: run a repo script inside the pinned vLLM image")
+    sc.add_argument("--path", required=True, help="repo-relative script, e.g. kernels/gemm_bench.py")
+    sc.add_argument("--max-usd", type=float, default=1.75)
+    sc.add_argument("args", nargs="*", help="arguments passed to the script (after --)")
     j = ms.add_parser("job", help="GPU: run one engine config over a matrix")
     j.add_argument("--engine", required=True)
     j.add_argument("--matrix", required=True)
@@ -221,5 +230,5 @@ def add_parser(sub) -> None:
     j.add_argument("--profile-seconds", type=float, default=4.0, help="profiler window length (keep short)")
     j.add_argument("--profile-warmup-s", type=float, default=30.0,
                    help="seconds after the client starts before /start_profile")
-    for x in (pf, st, j):
+    for x in (pf, st, sc, j):
         x.add_argument("--execute", action="store_true", help="actually launch (default: plan only)")

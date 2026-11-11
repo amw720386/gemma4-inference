@@ -24,7 +24,7 @@ source says; "Status" = ✅ confirmed / ⚠️ partly / ❓ unverifiable / ❌ c
 | Architecture | "Gemma 4 12B" | `Gemma4UnifiedForConditionalGeneration`, `model_type=gemma4_unified`; encoder-free unified multimodal (text/image/audio); 48 layers (40 sliding-window 1024 + 8 global, final layer global); hidden 3840, 16 heads, 8 KV heads × 256 (sliding), 1 KV head × 512 (global) with `attention_k_eq_v=true`; vocab 262144, tied embeddings; final logit softcap 30; model card: 11.95B params, 256K context (vLLM recipe pins 128K from config) | ✅ |
 | Precision | BF16 | `config.dtype=bfloat16`; single `model.safetensors` = 23,919,549,408 bytes | ✅ |
 | Licence / access | – | `license: apache-2.0` (card links Gemma 4 licence page), **`gated: false`** → no HF token needed | ✅ |
-| Draft model | "official Gemma assistant model" | `google/gemma-4-12B-it-assistant`, `sha=3b0b0a4a3b31b5556516329227fb55f275c23c9f`, `Gemma4UnifiedAssistantForCausalLM`; 4 layers, hidden 1024, `num_kv_shared_layers=4` (reads target KV), **centroid-masked LM head** (`num_centroids=2048`, `centroid_intermediate_top_k=32` → only ~4096 of 262144 vocab logits computed per draft step); 845,719,296 bytes; Apache-2.0, ungated | ✅ |
+| Draft model | "official Gemma assistant model" | `google/gemma-4-12B-it-assistant`, `sha=3b0b0a4a3b31b5556516329227fb55f275c23c9f`, `Gemma4UnifiedAssistantForCausalLM`; 4 layers, hidden 1024, `num_kv_shared_layers=4` (reads target KV), ~~centroid-masked LM head, only ~4096 logits per step~~ *corrected 2026-11-11 (D-054)*: config has `use_ordered_embeddings: false`, so the head is the **dense, tied 262144 × 1024 BF16 embedding** (all 262144 logits per draft token); the centroid/ordered-embedding shortlist in vLLM/SGLang `gemma4_mtp.py` applies only to the E2B/E4B assistants; 845,719,296 bytes; Apache-2.0, ungated | ✅ |
 
 Model-availability test: `g4bench sources` (HF API + HEAD on weights at the pinned revision) — passes for both repos.
 
@@ -33,6 +33,7 @@ Model-availability test: `g4bench sources` (HF API + HEAD on weights at the pinn
 | Item | Claim | Verified | Status |
 |---|---|---|---|
 | GPU | 1× RTX PRO 6000 Blackwell 96 GB, "two identical machines, default clocks and power" | Edition (Workstation 600 W / Server / Max-Q 300 W), driver, CUDA, host CPU **not stated** | ⚠️ |
+| Memory bandwidth | – | RTX PRO 6000 Blackwell **Server Edition** (the edition Modal serves, per `nvidia-smi`): rated **1597 GB/s** (added 2026-11-11, D-052); measured device copy 1.46 TB/s | ✅ |
 | Availability for us | – | Modal lists `gpu="RTX-PRO-6000"` at $0.000842/s (≈$3.03/h) on modal.com/pricing; edition not stated by Modal either → we record `nvidia-smi` name, power limits, clocks per run | ✅ (exact model), ❓ (edition) |
 
 ## Software versions
