@@ -174,14 +174,28 @@ def committed(entries: list[dict[str, Any]], billed_total: float | None = None, 
     return max(ledger_total(entries), billed_total or 0.0) + storage_accrual_usd(entries, now)
 
 
+MAX_OPEN_LAUNCHES = 2  # concurrent paid launches (D-057); each open one counts at its worst case in `committed`
+
+
+def max_open() -> int:
+    """Environment may only tighten MAX_OPEN_LAUNCHES."""
+    try:
+        return max(1, min(MAX_OPEN_LAUNCHES, int(os.environ.get("G4_MAX_OPEN_LAUNCHES") or MAX_OPEN_LAUNCHES)))
+    except ValueError:
+        return 1
+
+
 def check_launch(worst_usd: float, caps: Caps, entries: list[dict[str, Any]],
                  billed_total: float | None = None) -> float:
-    """Raise BudgetError unless the launch fits; return the remaining budget after it."""
+    """Raise BudgetError unless the launch fits; return the remaining budget after it.
+
+    Up to ``max_open()`` launches may be open at once; every open launch is already counted at its worst case in
+    ``committed``, so their sum plus the new worst case must still fit the project cap."""
     if worst_usd > caps.per_job_usd + 1e-9:
         raise BudgetError(f"worst case ${worst_usd:.2f} exceeds the per-job cap ${caps.per_job_usd:.2f}")
     open_ = [lid for lid, r in launches(entries).items() if r.get("status") == "reserved"]
-    if open_:
-        raise BudgetError(f"open reservation(s) {open_}: settle/reconcile before launching another job")
+    if len(open_) >= max_open():
+        raise BudgetError(f"open reservation(s) {open_} (max {max_open()} concurrent): wait for one to settle")
     c = committed(entries, billed_total)
     if c + worst_usd > caps.project_usd + 1e-9:
         raise BudgetError(f"committed ${c:.2f} + worst case ${worst_usd:.2f} exceeds the project cap "

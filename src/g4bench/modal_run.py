@@ -57,8 +57,11 @@ def gpu_kind(engine_name: str, engine: str) -> str:
     patches = tuple(EngineConfig.load(engine_name).raw.get("image_patches") or ())
     if not patches:
         return f"gpu:{engine}"
-    from .modal_app import ALWAYS_ON_PATCHES, VLLM_PATCHES
+    from .modal_app import ALWAYS_ON_PATCHES, VLLM_PATCHES, VLLM_PATCHES_EXP
 
+    if engine == "vllm" and not set(patches) <= set(VLLM_PATCHES) and set(patches) <= set(VLLM_PATCHES_EXP) \
+            and ALWAYS_ON_PATCHES <= set(patches):
+        return "gpu:vllm-patched-exp"
     if engine != "vllm" or not set(patches) <= set(VLLM_PATCHES) or not ALWAYS_ON_PATCHES <= set(patches):
         raise SystemExit(f"{engine_name}: image_patches {list(patches)} unsupported; the patched image is "
                          f"vllm + {list(VLLM_PATCHES)} (configs must include {sorted(ALWAYS_ON_PATCHES)})")
@@ -117,6 +120,7 @@ def launch(kind: str, spec: dict[str, Any], max_usd: float, *, ledger: Path = S.
     app, fn = {"prefetch": (M.cpu_app, M.prefetch_weights), "selftest": (M.cpu_app, M.selftest),
                "gpu:vllm": (M.vllm_app, M.run_vllm), "gpu:sglang": (M.sglang_app, M.run_sglang),
                "gpu:vllm-patched": (M.vllm_patched_app, M.run_vllm_patched),
+               "gpu:vllm-patched-exp": (M.vllm_patched_exp_app, M.run_vllm_patched_exp),
                "gpu:script": (M.vllm_app, M.run_script_vllm)}[kind]
     result: dict[str, Any] | None = None
     err = None
