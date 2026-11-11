@@ -35,6 +35,7 @@ import time
 import modal
 
 from g4bench import budget as B  # noqa: E402  (deployer runs `modal deploy` from the repo root with src on PYTHONPATH)
+from g4bench.image_setup import python_setup_commands  # noqa: E402
 from g4bench.bridge_api import (ALLOWED_ENGINES, ALLOWED_GPUS, ALLOWED_MATRICES, GPU_JOB, PREFETCH,  # noqa: F401
                                 SELFTEST, BridgeConfig, build_api)
 
@@ -87,16 +88,17 @@ GPU_DEFAULT_TIMEOUT_S = B.timeout_for_budget(GPU_JOB.rate(), PER_JOB_CAP_USD)
 SCALEDOWN_WINDOW_S = 10  # <= budget.SCALEDOWN_MARGIN_S
 
 
-def _engine_image(ref: str) -> modal.Image:
+def _engine_image(ref: str, engine_module: str) -> modal.Image:
     # Engine images already ship python3, pyyaml, numpy, requests, aiohttp, transformers, jinja2,
     # huggingface_hub and tqdm (all engine dependencies). We add NOTHING via pip, so the engine's
-    # dependency set is exactly the published image.
-    return (modal.Image.from_registry(ref).entrypoint([]).env(ENV)
-            .add_local_dir(str(REPO_LOCAL), REPO_REMOTE, ignore=IGNORE))
+    # dependency set is exactly the published image. The setup line only aliases `python` to the image's own
+    # python3 when missing (vLLM image) and verifies it can see the engine (D-038, g4bench.image_setup).
+    return (modal.Image.from_registry(ref, setup_dockerfile_commands=python_setup_commands(engine_module))
+            .entrypoint([]).env(ENV).add_local_dir(str(REPO_LOCAL), REPO_REMOTE, ignore=IGNORE))
 
 
-vllm_image = _engine_image(VLLM_IMAGE)
-sglang_image = _engine_image(SGLANG_IMAGE)
+vllm_image = _engine_image(VLLM_IMAGE, "vllm")
+sglang_image = _engine_image(SGLANG_IMAGE, "sglang")
 bridge_image = (modal.Image.debian_slim(python_version="3.13")
                 # Exactly the versions the CPU test-suite passed with (see STATUS.md).
                 .pip_install("fastapi[standard]==0.162.4", "pyyaml==6.0.3", "numpy==2.5.4", "requests==2.34.2",

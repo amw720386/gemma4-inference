@@ -68,7 +68,9 @@ Ensure the active profile is the `<workspace>` workspace (otherwise `modal profi
 modal deploy modal_bridge/app.py
 ```
 
-The output lists the web endpoint URL (label `g4repro-bridge`); note it exactly for step 3.
+The output lists the web endpoint URL (label `g4repro-bridge`); note it exactly for step 3. The vLLM image build adds
+one setup step that aliases `python` to the image's own `python3` and checks it can import `vllm` (D-038); if that step
+fails, the deploy stops at image build with the reason, before any GPU is used.
 
 ## 2. Create a scoped proxy-auth token
 
