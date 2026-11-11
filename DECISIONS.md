@@ -388,3 +388,16 @@ with `--profiler-config` (torch profiler, CPU + CUDA, gzip) and `VLLM_CUSTOM_SCO
 steady-state window via `/start_profile` / `/stop_profile`, and writes `points/<id>/profile_summary.{json,md}`
 (kernel classes, per-step summary). Profiled rows carry profiler overhead and are excluded from analysis and
 comparisons. First run (E6b at 8192×4) pending.
+
+**D-050 (2026-11-11) Single config E6b measured at all 8 workloads; profile says the rest is GEMM kernels.**
+`vllm-0.33.0-best-e6b` (vLLM v0.33.0 + `mtp_draft_prefill_last` patch, split-K capture sizes, 3072-token chunks,
+depth 6 up to 32 running requests then 4), seed 0, n = 1, output tok/s vs Backboard: 1K c1/c4/c16/c64 223.9 / 768.1 /
+2106 / 3710 (1.100 / 0.986 / 1.012 / 0.971); 8K c1/c4/c16/c64 183.2 / 497.8 / 853.9 / 1149 (1.023 / 0.940 / 0.888 /
+0.916). 5/8 within 5 %, geometric mean 0.977 (article vLLM recipe: 0.881). 8K/c16 is 3.5 % below the same settings
+without a depth schedule (885.3, `…-930d`) — schedule cost (partial graphs) or noise; untested. Torch profile of E6b at
+8K/c4 (4 s window, `…-0d48`): GPU idle 0.5 %; GEMM 74 %, attention 20 %, norm/activation 5 %, sampling and
+spec-decode bookkeeping < 1 %; GEMMs are CUTLASS sm_80 mma.sync kernels from cuBLAS (decode-sized ones as 32×32 WMMA
+tiles, 16 % of GPU time); decode step ≈ 19.8 ms GPU, prefill-carrying step ≈ 211 ms. sm_120 has no wgmma/tcgen05, so
+no flag selects faster BF16 GEMMs. Conclusion: the remaining 8K gap (6–11 %) is GEMM kernel efficiency — custom kernel
+work, outside what configuration can reach. Paid experimentation paused here (≈ $13 billed of the $20 cap).
+
