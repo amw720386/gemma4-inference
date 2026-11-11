@@ -296,3 +296,26 @@ reservation buys. Ahamed approved a $3 per-job cap; the $10 project cap is uncha
 (1335 s timeout; used 796 s, settled ≈ $0.94) and SGLang at `--max-usd 3` (1794 s; used 1109 s, ≈ $1.29). Other jobs
 keep the $2 default.
 
+**D-042 (2026-11-11) E5b depth sweep at 8192×4: a small, noisy gain at most.** Approved by the owner (≈ $1.5).
+vLLM 0.33.0, seed 0, one shared-server job per depth, otherwise identical to the baseline recipe:
+
+| draft tokens | config | output tok/s | vs baseline (MTP 4) | acceptance length | p99 TPOT ms | vs Backboard (529.6) |
+|---:|---|---:|---:|---:|---:|---:|
+| 3 | vllm-0.33.0-mtp3 | 424.4 | +5.4 % | 3.50 | – | 0.801 |
+| 4 | vllm-0.33.0-mtp4 (baseline) | 402.6 | – | 4.06 | – | 0.760 |
+| 5 | vllm-0.33.0-mtp5 | 423.9 | +5.3 % | 4.56 | 12.7 | 0.800 |
+| 6 | vllm-0.33.0-mtp6 | 437.4 | +8.6 % | 4.99 | 13.2 | 0.826 |
+
+Acceptance length rises with depth as expected (3.50 → 4.99), but throughput is non-monotonic: depth 3 and 5 both beat
+the baseline depth 4 by ≈ 5 %. With n = 1 per config that pattern is best explained by ≈ 5 % run-to-run variation
+(the baseline run may have been low), so the only defensible reading is "depth 6 is not worse and may help by up to
+≈ 9 %". It closes at most a quarter of the gap to Backboard (76 % → 83 %); speculation depth alone does not explain
+Backboard's lead. Not a claim; separating the effect from noise needs ≥ 3 runs of depth 4 and 6 (≈ $2.5).
+
+*Amendment to D-042 (2026-11-11, after a second run of depth 4 and depth 6, approved by the owner, ≈ $0.70):*
+depth 4 = 402.6 / 402.0 tok/s, depth 6 = 437.4 / 434.2 tok/s (acceptance length 4.06 / 4.03 and 4.99 / 4.98). Runs
+repeat within ≈ 1 %, so the earlier "within noise" reading is withdrawn: **depth 6 is ≈ 8 % faster than the article's
+depth 4 at 8192×4** (82 % of Backboard instead of 76 %). n = 2 per config — still below the n = 3 claim threshold,
+and only one workload; the depth-3/5 +5 % results remain n = 1. The budget gate refused the depth-6 repeat at the
+default $2 reservation (committed $8.18 + $2 > $10); it ran at `--max-usd 1.75` (647 s timeout, used ≈ 270 s).
+
