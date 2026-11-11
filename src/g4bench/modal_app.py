@@ -74,6 +74,10 @@ def _engine_image(ref: str, engine_module: str, patches: tuple[str, ...] = ()) -
 
 vllm_image = _engine_image(VLLM_IMAGE, "vllm")
 vllm_patched_image = _engine_image(VLLM_IMAGE, "vllm", VLLM_PATCHES)
+# Second patched image: VLLM_PATCHES + experimental patches still under evaluation, on its own app so the first
+# image (and any run series on it) stays byte-identical while they are tested (D-058).
+VLLM_PATCHES_EXP: tuple[str, ...] = VLLM_PATCHES + ("prefill_attn_g4",)
+vllm_patched_exp_image = _engine_image(VLLM_IMAGE, "vllm", VLLM_PATCHES_EXP)
 sglang_image = _engine_image(SGLANG_IMAGE, "sglang")
 cpu_image = (modal.Image.debian_slim(python_version="3.12")
              .pip_install("pyyaml==6.0.3", "numpy==2.5.4", "requests==2.34.2", "huggingface_hub==2.4.0",
@@ -89,6 +93,7 @@ res_vol = modal.Volume.from_name("g4repro-results", create_if_missing=True)
 cpu_app = modal.App(f"{APP_NAME}-cpu", include_source=False)
 vllm_app = modal.App(f"{APP_NAME}-vllm", include_source=False)
 vllm_patched_app = modal.App(f"{APP_NAME}-vllm-patched", include_source=False)
+vllm_patched_exp_app = modal.App(f"{APP_NAME}-vllm-patched-exp", include_source=False)
 sglang_app = modal.App(f"{APP_NAME}-sglang", include_source=False)
 
 
@@ -178,6 +183,12 @@ def _run_script(spec: dict) -> dict:
 @vllm_app.function(image=vllm_image, **_gpu_kw)
 def run_script_vllm(spec: dict) -> dict:
     return _guarded(_run_script, spec)
+
+
+@vllm_patched_exp_app.function(image=vllm_patched_exp_image, **_gpu_kw)
+def run_vllm_patched_exp(spec: dict) -> dict:
+    """vLLM on the experimental patched image (VLLM_PATCHES_EXP)."""
+    return _guarded(_run_job, spec)
 
 
 @vllm_patched_app.function(image=vllm_patched_image, **_gpu_kw)
