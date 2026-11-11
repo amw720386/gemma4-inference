@@ -3,73 +3,64 @@
 ## Authorization (2026-11-10)
 
 **Approved: an INITIAL project-wide cap of USD $10 total** (by Ahamed). This supersedes the earlier $100
-*proposal*, which was never approved. Any increase needs a new explicit approval and a redeploy of the bridge
-with a new `G4_PROJECT_CAP_USD`.
+*proposal*, which was never approved. Any increase needs a new explicit approval and a code change to `spend.Caps`
+(the `G4_PROJECT_CAP_USD` / `G4_PER_JOB_CAP_USD` environment variables can only tighten the caps).
 
-Preconditions before any paid launch (none are met yet):
-1. the bridge is deployed by the user (not from this cloud session);
-2. a separate, scoped proxy-auth token is provisioned by the user (the agent does not request it);
-3. `GET /health` returns `ok: true`, `cap_usd: 10`, `per_job_cap_usd <= 2`, and `GET /budget` shows
-   `available_usd` covering the next job. Then **smoke first**, one job at a time.
+Paid runs are launched **directly from the owner's machine** with `g4bench modal …` (D-039; the HTTPS bridge was
+removed). Credentials come from `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` in the untracked `.env`.
 
 ## How the cap is enforced (and what it is not)
 
-Server-side in the deployed bridge (`modal_bridge/app.py` + `src/g4bench/budget.py`, tested in
-`tests/test_budget.py`, `tests/test_bridge_api.py`):
+Locally, before every launch (`src/g4bench/spend.py`, tested in `tests/test_spend.py`):
 
 | Control | Value | Mechanism |
 |---|---|---|
-| Project cap | **$10.00** (`G4_PROJECT_CAP_USD`) | ledger in Modal Dict `g4repro-budget`; reservation refused if platform reserve + open reservations + settled estimates would exceed it |
-| Platform spend | committed = max($0.50 reserve, **metered**) | every bridge request is metered: bridge (≤ 1 core / 1 GiB, `max_containers=1`) + ledger (≤ 0.5 core / 0.5 GiB) warm time at ≈ $0.08/h; idle gaps count as one 60 s window → **usable for jobs ≤ $9.50**, less if the bridge is polled for > ~6 h |
-| Per-job cap | **$2.00** (`G4_PER_JOB_CAP_USD`) | each job's Modal `timeout` is derived from its reservation so Modal kills it before the worst case |
-| Concurrency | 1 open reservation (`G4_BRIDGE_MAX_ACTIVE`) | covers `/jobs`, `/prefetch` and `/selftest` alike |
-| Race safety | single-container, one-input ledger function + Dict lease lock (atomic put-if-absent) | 40-thread and 12-request parallel tests never exceed the cap |
-| Restart safety | whole ledger in one Dict key, re-read on every op | restart test |
-| Fail closed | unreadable/corrupt ledger ⇒ 503, nothing launched | test |
+| Project cap | **$10.00** | refuse unless committed + worst case ≤ $10. Committed = max(local ledger, **Modal billing for `g4repro*` apps**) + Volume storage accrual |
+| Per-job cap | **$2.00** | the call's Modal `timeout` is derived from its reservation, so Modal kills it before the worst case |
+| Concurrency | 1 | refuse while any reservation is unsettled; functions have `max_containers=1`, `retries=0` |
+| Nothing left running | ephemeral `app.run()` | no deployed app; the app stops when the launching process exits |
+| Reconciliation | every launch | `modal billing report` per app id; Modal's figure replaces ours when larger; a crashed launch stays at its worst case until billed **and** past its deadline |
+| Fail closed | – | billing unreadable ⇒ no launch |
 
-Worst-case reservation = rate at the container's **limits** × (Modal timeout + 900 s startup margin + 60 s
-scaledown margin). Rates: GPU job (RTX PRO 6000 + 8 cores + 64 GiB limits) **$0.001089/s = $3.92/h**; CPU
-prefetch/selftest (2 cores, 4 GiB) $0.126/h. A $2 reservation buys a **876 s** GPU timeout.
+Worst case = rate at the container's **limits** × (Modal timeout + 900 s startup margin + 60 s scaledown margin).
+Rates (`modal billing rates`, 2026-11-10): GPU job (RTX PRO 6000 + 8 cores + 64 GiB limits) **$3.92/h**;
+CPU prefetch (2 cores, 4 GiB) $0.13/h; Volumes $0.09/GiB-month. A $2 reservation buys an **876 s** GPU timeout.
+Settled estimate = rate × (end − reservation time + 60 s), counted from before the container started.
 
-Settlement: held at the full reservation until Modal confirms the call terminal. A job that finished and reported
-its end: cost = rate × (end − reservation time + 60 s), counted from *before* the container started, never capped.
-Timeouts, crashes, cancellations and expired outputs settle at the **worst case**. Workers refuse to start later than
-reservation + 900 s and hard-exit at the reservation deadline, so start + Modal timeout cannot pass it. Only a spawn
-rejected locally before any RPC is released; an ambiguous spawn or lost attach is held as an orphan and settled at its
-full reservation after its deadline. Transient poll errors keep holding. (Independent review fixes: DECISIONS D-030.)
-
-**This is a conservative *estimate* that gates launches made through this bridge. It is NOT a Modal billing hard
-stop**, it cannot see anything launched outside the bridge, and Modal's invoice is authoritative. Estimated
-settled amounts are labelled "estimate" everywhere (`/budget` includes a disclaimer).
+**This is a conservative estimate that gates launches made by this tool. It is NOT a Modal billing hard stop**;
+Modal's invoice is authoritative, which is why every launch first reconciles against it.
 
 ## What $10 buys (pessimistic `g4bench plan`, same full-container pricing as the ledger)
 
 | Step | Est. GPU-h | Est. $ (settled) | Reserved while running |
 |---|---:|---:|---:|
-| `/selftest` (CPU) | – | ≤ 0.10 | 0.10 |
-| `/prefetch` (CPU; weights + SPEED-Bench) | – | ≤ 0.16 | 0.16 |
+| `modal selftest` (CPU; test-suite on Linux) | – | ≈ 0.01 | 0.08 |
+| `modal prefetch` (CPU; weights) | – | ≤ 0.05 | 0.13 |
 | E1 smoke vLLM (2 pts, 1K/OSL 256) | 0.17 | 0.68 | 2.00 |
 | E1 smoke SGLang | 0.18 | 0.69 | 2.00 |
 | one article point, seed 0 (e.g. 1K/c1 or 8K/c4), per engine | ~0.2 | 0.76–0.86 | 2.00 |
 
-So after E1 (~$1.6 incl. CPU steps + $0.50 reserve), roughly **$7.5 remains ≈ 8–9 single-point jobs**. The full
+So after E1 (~$1.4 incl. prefetch), roughly **$8.5 remains ≈ 8–9 single-point jobs**. The full
 seed-0 matrix (≈ $6.08 vLLM + $7.81 SGLang) and the repeats (≈ $27) do **not** fit in $10; jobs must also be split
 so each fits the 876 s timeout (`--only <key>`). The plan within $10 is in NEXT.md.
 
-## Ledger (agent's copy; the bridge's `/budget` is the source of truth once deployed)
+## Ledger
 
-Machine-readable per-step log: `results/budget_ledger.jsonl` (written by the campaign runner).
+Machine-readable: `results/budget_ledger.jsonl` (written by `g4bench modal`; `g4bench modal spend` prints the
+totals including Modal's billed figure).
 
 | Date (UTC) | Job id | Experiment | GPU | Reserved $ | Settled est. $ | Notes |
 |---|---|---|---|---:|---:|---|
 | 2026-11-10 | – | E0 CPU-only (this container) | none | 0 | **0.00** | no paid compute |
 | 2026-11-10 | – | E5c data prep (this container) | none | 0 | **0.00** | SPEED-Bench prepared locally |
 | 2026-11-10 | – | e1-smoke `--execute` gate test | none | 0 | **0.00** | refused at /health (404, not deployed) before any POST |
+| 2026-11-11 | 20261111T005351Z-2c8cb0 | selftest (direct Modal) | none | 0.076 | 0.003 | failed at app creation: vLLM image had no `python` (fixed by D-038) |
+| 2026-11-11 | 20261111T005544Z-a782f7 | selftest (direct Modal) | none (2 CPU) | 0.076 | 0.012 | 98 passed, 1 skipped on Linux |
 
-**Total spent to date: $0.00.** Bridge not deployed; no Modal compute has run.
+**Total spent to date: ≈ $0.02 (estimate)**; `g4bench modal spend --reconcile` replaces estimates with Modal's billed figures.
 
-## Prices (modal.com/pricing, retrieved 2026-11-10)
+## Prices (`modal billing rates`, retrieved 2026-11-10)
 
 RTX-PRO-6000 $0.000842/s · L40S $0.000542/s · A100-80GB $0.000694/s · H100 $0.001097/s · H200 $0.001261/s ·
-B200 $0.001736/s · CPU $0.0000131/core/s · memory $0.00000222/GiB/s. Hard-coded in `src/g4bench/budget.py`;
+B200 $0.001736/s · CPU $0.0000131/core/s · memory $0.00000222/GiB/s. Hard-coded in `src/g4bench/spend.py`;
 re-check before launches and update both if Modal changes prices.
