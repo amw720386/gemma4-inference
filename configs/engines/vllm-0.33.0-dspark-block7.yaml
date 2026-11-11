@@ -1,0 +1,69 @@
+# CANDIDATE (E7a, prepared 2026-11-11, NOT RUN): E6b with the Gemma 4 MTP assistant replaced by DeepSeek's DSpark drafter
+# deepseek-ai/dspark_gemma4_12b_block7 @ 2fa72e765eec2965fc4d86a8663ce6769eba6218 (HF API sha; created 2026-06-28; not gated;
+# no model card / no licence tag on HF; one model.safetensors, 6,860,897,028 B = 3.43 B BF16 params; arch Gemma4DSparkModel,
+# 5 full-attention Gemma 4 layers (hidden 3840, 16 heads x 512, 1 KV head, k_eq_v, MLP 15360) + fc over target layers
+# [5,17,29,41,46] + rank-256 Markov head + confidence head; block_size 7). Paper: DSpark, arXiv 2607.05147 (DeepSeek-AI/PKU):
+# drafters trained 10 epochs on Open-PerfectBlend prompts (1.3 M) with target-regenerated answers; embedding + LM head are
+# the target's, frozen. Gemma4-12B Table 1 (block 7, temperature 1.0) accepted length: DSpark 6.05 GSM8K .. 2.92 Arena-Hard,
+# above the same authors' Eagle3 (5.87 .. 2.72) and DFlash (5.45 .. 2.59); no comparison with Google's MTP assistant.
+# Checked here: the checkpoint's embed_tokens and lm_head rows equal the target's embed_tokens (rows 1000/50000/200000).
+#
+# vLLM v0.33.0 support (github.com/vllm-project/vllm tag v0.33.0): registry.py:697 Gemma4DSparkModel ->
+# gemma4_dspark.Gemma4DSparkForCausalLM; config/speculative.py:1568-1582 normalises target_layer_ids and sets
+# parallel_drafting; :1592-1599 num_speculative_tokens defaults to block_size; config/vllm.py:3110-3113 DSpark is Model
+# Runner V2 only (V2 is the default). v1/worker/gpu/spec_decode/dspark/speculator.py: one parallel backbone pass for N=7
+# query rows (anchor-as-first-prediction, :49-55), then 7 sequential Markov-bias steps, all in one FULL CUDA graph (:22-23,
+# dflash/speculator.py:143-160). gemma4_dspark.py:308-332 never sets has_own_lm_head/has_own_embed_tokens, so
+# dspark/utils.py:133-149 aliases the TARGET's embedding and lm_head (harmless: identical weights, see above). The draft
+# keeps its OWN KV cache (5 layers x 512-d K and V per token) and its attention is non-causal (qwen3_dflash.py:62-81:
+# full-attention layers -> causal False), so it can never use the Triton split-K kernel
+# (v1/attention/ops/triton_unified_attention.py:1066-1086). Draft backend pinned to TRITON_ATTN
+# (triton_attn.py:351 supports_non_causal, :379 any head >= 32, CG support ALWAYS); auto-selection on sm_120 would land on
+# FlashInfer (platforms/cuda.py priority FLASH_ATTN > FLASHINFER > TRITON_ATTN; FA2 rejects head 512), whose non-causal
+# CUDA-graph support on sm_120 is unverified.
+#
+# Depth / split-K (D-044): DSpark verifies 1 + K tokens per request (K <= 7). Split-K needs 4 x (1+K) <= 28 at c4 with the
+# E6b capture list (threshold 32 would need dropping size 1), so K = 7 for 1-3 running requests (3 x 8 = 24), K = 6 for
+# 4-32 (4 x 7 = 28), K = 4 above 32 (E6a). The draft always runs all 7 rows; the V2 scheduler truncates verification
+# (scheduler.py dynamic_sd_lookup; config/vllm.py:1088-1096). Capture list = E6b's (sizes round up to multiples of 1+K).
+# No image patch: mtp_draft_prefill_last (D-046) patches the Gemma 4 MTP speculator only.
+#
+# Lossless: at temperature 0 every emitted token is the target's argmax; the drafter only changes how many are accepted per
+# step. Verification width changes (8 vs 7 tokens per request) can change FP reduction order exactly as E6b's depth schedule
+# does. Admissibility a under D-011 (BF16 target, draft at its shipped BF16 precision), BUT this departs from the article's
+# premise of Google's official assistant drafter (google/gemma-4-12B-it-assistant): report it as "third-party drafter",
+# never as a like-for-like recipe change. Note pins.yaml still lists the assistant as the draft (unused here); the drafter
+# pin lives in this file.
+# Baseline A: vLLM "published recipe" per Backboard article + vllm-project/recipes
+# models/Google/gemma-4-12B-it.yaml (recipes commit fa1173a1). Article: MTP 4 tokens,
+# async scheduling, gpu-mem-util 0.90, prefix caching off.
+name: vllm-0.33.0-dspark-block7
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E7a
+engine: vllm
+version: "0.33.0"
+client_backend: vllm          # InferenceX benchmark_serving --backend
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--async-scheduling]
+  - [--speculative-config, '{"method":"dspark","model":"deepseek-ai/dspark_gemma4_12b_block7","revision":"2fa72e765eec2965fc4d86a8663ce6769eba6218","num_speculative_tokens":7,"attention_backend":"TRITON_ATTN","num_speculative_tokens_per_batch_size":[[1,3,7],[4,32,6],[33,4096,4]]}']
+  - [--max-num-batched-tokens, "3072"]
+  - [--cudagraph-capture-sizes, "1", "2", "28", "32", "40", "48", "56", "64", "72", "80", "88", "96", "104", "112", "120", "128", "136", "144", "152", "160", "168", "176", "184", "192", "200", "208", "216", "224", "232", "240", "248", "256", "272", "280", "288", "304", "320", "336", "352", "368", "384", "392", "400", "416", "432", "448", "464", "480", "496", "504", "512"]
+  # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env: {}
+unknowns:
+  - "Acceptance on our random-token prompts is unknown; the paper reports temperature-1.0 chat/math/code numbers only."
+  - "Gemma4DSpark + Triton non-causal draft attention + dynamic K schedule is untested by us on sm_120; first run = 1K/c1 smoke."
+  - "Draft KV cache (5 full-attention layers) reduces target KV capacity; 8K/c64 may preempt."
+  - "HF repo has no licence statement; DeepSpec code is the paper's companion repo (github.com/deepseek-ai/DeepSpec)."
