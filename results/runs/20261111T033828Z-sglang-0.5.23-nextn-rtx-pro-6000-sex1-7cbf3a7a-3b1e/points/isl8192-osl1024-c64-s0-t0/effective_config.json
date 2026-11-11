@@ -1,0 +1,26 @@
+{
+  "engine": "sglang",
+  "sglang_server_args": {
+    "attention_backend": "triton",
+    "decode_attention_backend": "None",
+    "prefill_attention_backend": "None",
+    "speculative_algorithm": "FROZEN_KV_MTP",
+    "speculative_num_steps": "5",
+    "speculative_num_draft_tokens": "6",
+    "speculative_eagle_topk": "1",
+    "speculative_draft_attention_backend": "None",
+    "mem_fraction_static": "0.85",
+    "max_running_requests": "48",
+    "chunked_prefill_size": "8192",
+    "context_length": "None",
+    "disable_radix_cache": "True",
+    "disable_cuda_graph": "False",
+    "dtype": "bfloat16",
+    "kv_cache_dtype": "auto",
+    "sampling_backend": "flashinfer"
+  },
+  "kv_cache_tokens": 1074408,
+  "max_running_requests": 48,
+  "attention_backend": "triton",
+  "speculative_algorithm": "FROZEN_KV_MTP"
+}
