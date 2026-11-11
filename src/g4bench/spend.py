@@ -180,12 +180,20 @@ def check_launch(worst_usd: float, caps: Caps, entries: list[dict[str, Any]],
 # ----------------------------------------------------------------------------- Modal billing (authoritative)
 
 def modal_billing(since: str = "2026-11-01") -> list[dict[str, Any]]:
-    """Rows of ``modal billing report`` for this project's apps (daily, per app). Needs Modal credentials."""
-    p = subprocess.run([sys.executable, "-m", "modal", "billing", "report", "--start", since, "--json"],
-                       capture_output=True, text=True, timeout=120, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
-    if p.returncode != 0:
-        raise RuntimeError(f"modal billing report failed: {(p.stderr or p.stdout)[-500:]}")
-    return [r for r in json.loads(p.stdout or "[]") if str(r.get("description", "")).startswith(APP_PREFIX)]
+    """Rows of ``modal billing report`` for this project's apps (daily, per app). Needs Modal credentials.
+
+    ``--start`` alone omits the current (partial) UTC day, so ``--for today`` is queried too; rows are de-duplicated
+    by (app, day)."""
+    rows: dict[tuple, dict[str, Any]] = {}
+    for args in (["--start", since], ["--for", "today"]):
+        p = subprocess.run([sys.executable, "-m", "modal", "billing", "report", *args, "--json"], capture_output=True,
+                           text=True, timeout=120, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        if p.returncode != 0:
+            raise RuntimeError(f"modal billing report failed: {(p.stderr or p.stdout)[-500:]}")
+        for r in json.loads(p.stdout or "[]"):
+            if str(r.get("description", "")).startswith(APP_PREFIX):
+                rows[(r["object_id"], r.get("interval_start"))] = r
+    return list(rows.values())
 
 
 def billed_by_app(rows: list[dict[str, Any]]) -> dict[str, float]:

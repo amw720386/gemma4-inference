@@ -74,8 +74,15 @@ def test_project_cap_uses_larger_of_ledger_and_bill_plus_storage(tmp_path):
     assert S.storage_accrual_usd(entries, now) == pytest.approx(15 * 0.09)
 
 
-def test_billing_rows_filtered_to_project_apps(monkeypatch):
-    rows = [{"object_id": "ap-1", "description": "g4repro", "cost": "1"},
-            {"object_id": "ap-2", "description": "someone-else", "cost": "50"}]
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(rows), ""))
-    assert [r["object_id"] for r in S.modal_billing()] == ["ap-1"]
+def test_billing_rows_filtered_to_project_apps_and_include_today(monkeypatch):
+    past = [{"object_id": "ap-1", "description": "g4repro", "cost": "1", "interval_start": "2026-11-10T00:00:00"},
+            {"object_id": "ap-2", "description": "someone-else", "cost": "50", "interval_start": "2026-11-10T00:00:00"}]
+    today = [{"object_id": "ap-1", "description": "g4repro", "cost": "2", "interval_start": "2026-11-11T00:00:00"}]
+
+    def fake(argv, **k):  # `--start` omits the current UTC day (observed 2026-11-11); `--for today` returns it
+        return subprocess.CompletedProcess(argv, 0, json.dumps(today if "today" in argv else past + today * 0), "")
+
+    monkeypatch.setattr(subprocess, "run", fake)
+    rows = S.modal_billing()
+    assert sorted((r["object_id"], r["cost"]) for r in rows) == [("ap-1", "1"), ("ap-1", "2")]
+    assert S.billed_by_app(rows) == {"ap-1": 3.0}
