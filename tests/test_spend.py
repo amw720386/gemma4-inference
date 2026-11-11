@@ -7,7 +7,7 @@ import pytest
 
 from g4bench import spend as S
 
-CAPS = S.Caps(10.0, 2.0)
+CAPS = S.Caps(10.0, 3.0)
 
 
 def test_rates_match_modal_billing_rates():
@@ -21,7 +21,7 @@ def test_rates_match_modal_billing_rates():
 def test_env_only_tightens(monkeypatch):
     monkeypatch.setenv("G4_PROJECT_CAP_USD", "50")
     monkeypatch.setenv("G4_PER_JOB_CAP_USD", "5")
-    assert S.Caps.from_env() == S.Caps(10.0, 2.0)
+    assert S.Caps.from_env() == S.Caps(10.0, 3.0)
     monkeypatch.setenv("G4_PROJECT_CAP_USD", "4")
     monkeypatch.setenv("G4_PER_JOB_CAP_USD", "1.5")
     assert S.Caps.from_env() == S.Caps(4.0, 1.5)
@@ -68,7 +68,7 @@ def test_project_cap_uses_larger_of_ledger_and_bill_plus_storage(tmp_path):
     with pytest.raises(S.BudgetError, match="project cap"):
         S.check_launch(2.0, CAPS, S.read(L), billed_total=8.5)
     with pytest.raises(S.BudgetError, match="per-job"):
-        S.check_launch(2.01, CAPS, [])
+        S.check_launch(3.01, CAPS, [])
     now = time.time()
     entries = [{"kind": "storage", "gib": 30, "unix": now - 30 * 86400}]
     assert S.storage_accrual_usd(entries, now) == pytest.approx(30 * 0.09)
