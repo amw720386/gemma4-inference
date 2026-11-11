@@ -1,9 +1,9 @@
-# Status — 2026-11-11 (checkpoint 6)
+# Status — 2026-11-11 (checkpoint 7)
 
-**One-line state:** all 16 of the article's seed-0 points measured on 1× RTX PRO 6000 Blackwell Server Edition (Modal),
-all valid, correctness 8/8 on every server. **vLLM 0.33.0 reproduces the article at 8/8 points (+0.9 … +3.1 %); our
-SGLang 0.5.23 is 7–17 % faster than the article's at 8/8.** n = 1 each: descriptive, not claims. Spend ≈ $6.5 billed by
-Modal (≈ $8.5 on the conservative ledger) of the $10 cap; per-job cap raised to $3 by the owner for 8192×64 (D-041).
+**One-line state:** baselines reproduced (vLLM 0.33.0 within +0.9…+3.1 % of the article at 8/8). One lossless vLLM
+configuration (`vllm-0.33.0-best-e6b`, D-050) reaches **≥ 0.95 of Backboard at 5/8 workloads (geometric mean 0.977)**:
+1K c1/c4/c16/c64 = 1.10 / 0.99 / 1.01 / 0.97, 8K c1/c4/c16/c64 = 1.02 / 0.94 / 0.89 / 0.92 (n = 1, descriptive). The
+remaining 8K gap is GEMM kernel efficiency (profile: GPU 99.5 % busy, 74 % GEMM). ≈ $13 billed of the $20 cap.
 
 Workflow (CLAUDE.md): Git author Ahamed Mohamed Wajibu + `Co-Authored-By: Claude Opus 5.5`; one semantic branch per
 change (`feat/…`, `fix/…`, `docs/…`) off `main`; focused PR with executed test output and NOT-RUN limits; merge

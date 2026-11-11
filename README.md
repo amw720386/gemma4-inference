@@ -9,7 +9,8 @@ Gemma 4 12B serving numbers reported by Backboard on 2026-11-09
 > (vLLM 0.33.0, SGLang 0.5.23) with an InferenceX-style harness, report our own measurements
 > with uncertainty, and treat Backboard's numbers purely as external targets.
 
-**Current state (2026-11-11): first GPU results** — vLLM 0.33.0 reproduces the article's throughput at all 8
+**Current state (2026-11-11):** one lossless vLLM configuration reaches ≥ 95 % of Backboard's throughput at 5/8
+workloads (geometric mean 0.977; D-050). Earlier: **first GPU results** — vLLM 0.33.0 reproduces the article's throughput at all 8
 seed-0 workloads (within +0.9 … +3.1 %), our SGLang 0.5.23 runs 7–17 % faster than the article's, and Backboard's
 reported numbers remain ahead of both (n = 1, descriptive; [STATUS.md](STATUS.md)). Earlier state: harness, real-prompt (SPEED-Bench) arm, per-run reports, vLLM-vs-SGLang
 matched-load comparison, gap attribution, static engine-flag preflight, prepared E5/E6 optimization arms, and a
