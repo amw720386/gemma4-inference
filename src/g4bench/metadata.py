@@ -77,6 +77,10 @@ def is_exact_hardware(gpus: list[dict[str, str]]) -> bool:
 def git_info() -> dict[str, Any]:
     rc, sha = _run(["git", "-C", str(REPO), "rev-parse", "HEAD"])
     rc2, st = _run(["git", "-C", str(REPO), "status", "--porcelain"])
+    if rc != 0 and os.environ.get("G4_CODE_SHA", "unknown") != "unknown":
+        # Inside Modal the repo is uploaded without .git; the launcher passes "<sha>[-dirty]" instead.
+        env_sha = os.environ["G4_CODE_SHA"]
+        return {"sha": env_sha.removesuffix("-dirty"), "dirty": env_sha.endswith("-dirty"), "source": "G4_CODE_SHA"}
     return {"sha": sha.strip() if rc == 0 else None, "dirty": bool(st.strip()) if rc2 == 0 else None}
 
 
