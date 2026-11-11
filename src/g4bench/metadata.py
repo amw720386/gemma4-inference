@@ -21,6 +21,7 @@ from .paths import REPO
 ENV_ALLOWLIST = (
     "CUDA_VISIBLE_DEVICES", "NVIDIA_DRIVER_CAPABILITIES", "VLLM_USE_V1", "VLLM_ATTENTION_BACKEND",
     "SGLANG_VERSION", "HF_HUB_OFFLINE", "MODAL_REGION", "MODAL_CLOUD_PROVIDER", "MODAL_TASK_ID",
+    "G4_IMAGE_PATCHES",  # build-time engine patches baked into the image (src/g4bench/patches)
 )
 
 NVSMI_FIELDS = (

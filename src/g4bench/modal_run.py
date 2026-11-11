@@ -49,6 +49,21 @@ def allowed_engines() -> dict[str, str]:
     return out
 
 
+def gpu_kind(engine_name: str, engine: str) -> str:
+    """``gpu:<engine>``, or ``gpu:vllm-patched`` when the config lists image_patches (must equal VLLM_PATCHES)."""
+    from .config import EngineConfig
+
+    patches = tuple(EngineConfig.load(engine_name).raw.get("image_patches") or ())
+    if not patches:
+        return f"gpu:{engine}"
+    from .modal_app import VLLM_PATCHES
+
+    if engine != "vllm" or patches != VLLM_PATCHES:
+        raise SystemExit(f"{engine_name}: image_patches {list(patches)} unsupported; the patched image is "
+                         f"vllm + {list(VLLM_PATCHES)}")
+    return "gpu:vllm-patched"
+
+
 def _code_sha() -> str:
     import subprocess
 
@@ -99,7 +114,8 @@ def launch(kind: str, spec: dict[str, Any], max_usd: float, *, ledger: Path = S.
     pre = preflight(p, ledger=ledger)
     lid = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:6]}"
     app, fn = {"prefetch": (M.cpu_app, M.prefetch_weights), "selftest": (M.cpu_app, M.selftest),
-               "gpu:vllm": (M.vllm_app, M.run_vllm), "gpu:sglang": (M.sglang_app, M.run_sglang)}[kind]
+               "gpu:vllm": (M.vllm_app, M.run_vllm), "gpu:sglang": (M.sglang_app, M.run_sglang),
+               "gpu:vllm-patched": (M.vllm_patched_app, M.run_vllm_patched)}[kind]
     result: dict[str, Any] | None = None
     err = None
     now: float | None = None
@@ -161,7 +177,7 @@ def main(args) -> int:
         eng = allowed_engines().get(args.engine)
         if not eng:
             raise SystemExit(f"unknown/non-GPU engine config {args.engine!r}")
-        kind = f"gpu:{eng}"
+        kind = gpu_kind(args.engine, eng)
         spec = {"engine": args.engine, "matrix": args.matrix, "notes": args.notes,
                 "seeds": [int(x) for x in args.seeds.split(",")] if args.seeds else None,
                 "only": args.only.split(",") if args.only else None}
