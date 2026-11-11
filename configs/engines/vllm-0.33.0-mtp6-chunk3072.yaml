@@ -1,10 +1,10 @@
-# VARIANT (E5e): speculative depth 6 + 2048-token prefill chunks (D-043). Our 8K runs showed vLLM's default
+# VARIANT (E5e): speculative depth 6 + 3072-token prefill chunks (D-043; 2048 is refused: Gemma 4 is multimodal and vLLM keeps an image item (2496 tokens) unchunked). Our 8K runs showed vLLM's default
 # max_num_batched_tokens=8192 prefills a whole 8K prompt in one ~600 ms step, stalling every running decode
 # (22 % of decode time at 8K/c4). Smaller chunks let decodes keep stepping during a prefill. Lossless for outputs.
 # Baseline A: vLLM "published recipe" per Backboard article + vllm-project/recipes
 # models/Google/gemma-4-12B-it.yaml (recipes commit fa1173a1). Article: MTP 4 tokens,
 # async scheduling, gpu-mem-util 0.90, prefix caching off.
-name: vllm-0.33.0-mtp6-chunk2048
+name: vllm-0.33.0-mtp6-chunk3072
 role: variant            # baseline = article's published recipe; variant = our experiment
 admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
 experiment: E5e
@@ -23,7 +23,7 @@ args:
   - [--no-enable-prefix-caching]
   - [--async-scheduling]
   - [--speculative-config, '{"method":"mtp","model":"{draft_repo}","revision":"{draft_rev}","num_speculative_tokens":6}']
-  - [--max-num-batched-tokens, "2048"]
+  - [--max-num-batched-tokens, "3072"]
   # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
   # Those live in the vllm-0.33.0-mtp4-textonly variant (DECISIONS D-007).
   - [--host, 0.0.0.0]
