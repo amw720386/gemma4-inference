@@ -57,11 +57,11 @@ def gpu_kind(engine_name: str, engine: str) -> str:
     patches = tuple(EngineConfig.load(engine_name).raw.get("image_patches") or ())
     if not patches:
         return f"gpu:{engine}"
-    from .modal_app import VLLM_PATCHES
+    from .modal_app import ALWAYS_ON_PATCHES, VLLM_PATCHES
 
-    if engine != "vllm" or patches != VLLM_PATCHES:
+    if engine != "vllm" or not set(patches) <= set(VLLM_PATCHES) or not ALWAYS_ON_PATCHES <= set(patches):
         raise SystemExit(f"{engine_name}: image_patches {list(patches)} unsupported; the patched image is "
-                         f"vllm + {list(VLLM_PATCHES)}")
+                         f"vllm + {list(VLLM_PATCHES)} (configs must include {sorted(ALWAYS_ON_PATCHES)})")
     return "gpu:vllm-patched"
 
 
