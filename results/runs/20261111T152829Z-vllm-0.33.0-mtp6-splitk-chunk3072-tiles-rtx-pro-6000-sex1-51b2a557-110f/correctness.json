@@ -1,0 +1,59 @@
+{
+  "probes": {
+    "n_ok": 8,
+    "n": 8,
+    "pass": true,
+    "items": [
+      {
+        "q": "What is 17 + 25? Answer with just the number.",
+        "a": "42",
+        "ok": true
+      },
+      {
+        "q": "What is the capital of France? Answer with one word.",
+        "a": "Paris",
+        "ok": true
+      },
+      {
+        "q": "Spell the word 'cat' backwards. Answer with just the result.",
+        "a": "tac",
+        "ok": true
+      },
+      {
+        "q": "What is 9 times 8? Answer with just the number.",
+        "a": "72",
+        "ok": true
+      },
+      {
+        "q": "What color do you get by mixing blue and yellow? One word.",
+        "a": "Green",
+        "ok": true
+      },
+      {
+        "q": "How many days are in a leap year? Answer with just the number.",
+        "a": "366",
+        "ok": true
+      },
+      {
+        "q": "What is the chemical symbol for gold? Answer with just the symbol.",
+        "a": "Au",
+        "ok": true
+      },
+      {
+        "q": "Translate 'thank you' into Spanish. Answer with just the translation.",
+        "a": "Gracias",
+        "ok": true
+      }
+    ]
+  },
+  "greedy_outputs": [
+    "A **Hash Map** (also known as a Hash Table) is a data structure that implements an associative array, a structure that can map **keys** to **values**. It is designed for high-performance data retrieval, offering an average time complexity of **O(1)** (constant time) for insertion, deletion, and lookup operations.\n\nTo understand how a hash map works, we need to break it down into three core components: the Hash Function, the Underlying Array, and Collision Handling.\n\n---\n\n### 1. The Core Components\n\n#### A. The Underlying Array\nAt its simplest level, a hash map is just an array. Each index in the array represents a \"bucket.\" The goal is to store the data in these buckets so that we can jump directly to the correct index without searching through the entire list.\n\n#### B. The Hash Function\nThe hash function is the \"brain\" of the map. It takes a **key** (like a string, integer, or object) and transforms it into an **integer**.\n\n*   **Example:** If you want to store the value \"Apple\" with the key `101`.\n*   The hash function processes `101` and outputs a number, say `",
+    "Here are the first 30 prime numbers:\n\n2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113\n\n***\n\n### The Sieve of Eratosthenes\nThe **Sieve of Eratosthenes** is one of the oldest and most efficient algorithms used to find all prime numbers up to a specific limit (let's call this limit $n$). Instead of checking every number to see if it is prime (which is slow), the sieve works by systematically \"filtering out\" composite numbers (numbers that have factors other than 1 and themselves).\n\n#### How the Algorithm Works:\nImagine you want to find all primes up to 100. You would follow these steps:\n\n1.  **Create",
+    "To parse ISO-8601 dates without the `datetime` module, we must manually handle the string splitting, integer conversion, and the logic for timezones (offsets).\n\nBelow is a robust implementation that handles the standard format: `YYYY-MM-DDTHH:MM:SS` and optional offsets like `+HH:MM` or `Z`.\n\n### The Python Code\n\n```python\ndef parse_iso8601(date_string):\n    \"\"\"\n    Parses an ISO-8601 string into a dictionary of components.\n    Supports: YYYY-MM-DDTHH:MM:SS, YYYY-MM-DDTHH:MM:SS+HH:MM, and YYYY-MM-DDTHH:MM:SSZ\n    \n    Returns:\n        dict: {'year', 'month', 'day', 'hour', 'minute', 'second', 'offset_seconds'}\n    \"\"\"\n    # Remove whitespace\n    date_string = date_string.strip()\n    \n    # Handle the 'Z' (Zulu/UTC) suffix\n    if date_string.endswith('Z'):\n        date_string = date",
+    "The French Revolution was triggered by a combination of deep-seated social inequalities and a crumbling economic system. Under the *Ancien R\u00e9gime*, French society was divided into three estates: the clergy, the nobility, and the commoners. While the first two estates enjoyed immense privileges and tax exemptions, the Third Estate\u2014comprising peasants and the bourgeoisie\u2014bore the entire tax burden while possessing little political power. This systemic inequality created a volatile atmosphere of resentment toward the monarchy and the aristocracy.\n\nEconomic distress acted as the immediate catalyst for the uprising. By the late 1780s, France was nearly bankrupt due to its involvement in costly wars, including the American Revolution, and the extravagant spending of the royal court at Versailles. Simultaneously, a series of poor harvests led to severe food shortages and skyrocketing bread prices. As the peasantry faced starvation and the middle class faced financial ruin, the populace turned their frustration toward King Louis XVI, whose perceived incompetence and indecisiveness exacerbated the crisis.\n\nThe intellectual foundation of the Revolution was provided by the Enlightenment. Philosophers like Voltaire, Rousseau, and Montesquieu challenged the \"Divine Right of Kings\" and advocated for reason, liberty, and equality. Their ideas permeated the public consciousness, encouraging people to question traditional authority and demand a",
+    "To understand the difference between TCP and UDP, it is helpful to think of them as two different styles of delivery: **TCP is like a registered letter** (where you get a receipt and confirmation), and **UDP is like a postcard** (you send it and hope it gets there).\n\nBoth are **Transport Layer** protocols used to move data across the internet, but they prioritize different things.\n\n---\n\n### 1. TCP (Transmission Control Protocol)\nTCP is a **connection-oriented** protocol. Before any data is sent, TCP establishes a formal connection between the sender and the receiver (a process called the \"Three-Way Handshake\").\n\n**Key Characteristics:**\n*   **Reliability:** It guarantees that every packet arrives. If a packet is lost or corrupted, TCP detects it and asks the sender to re-transmit it.\n*   **Ordering:** It ensures that data arrives in the exact order it was sent. If Packet 2 arrives before Packet 1, TCP holds it until Packet 1 arrives.\n*   **Flow & Congestion Control:** TCP manages the speed of data transmission. If the network is congested, TCP slows down to prevent crashing the connection.\n*   **Overhead:** Because it does all this",
+    "The salt air was a permanent resident in Elias\u2019s lungs, a sharp, briny sting that tasted of old shipwrecks and deep-water secrets. For twenty years, his world had been defined by the rhythmic sweep of the Great Lantern and the relentless percussion of the Atlantic against the jagged teeth of the coast.\n\nElias was a man of routine. He polished the brass, trimmed the wicks, logged the weather, and watched the horizon. He didn't mind the solitude; the ocean was a vast, roaring companion that never asked for anything but his attention.\n\nOne Tuesday, following a gale that had whipped the sea into a frothing, gray madness, Elias found it.\n\nIt was wedged between two slick, barnacle-encrusted rocks in the tide pool at the base of the cliff. It wasn't a grand vessel\u2014just a thick glass bottle, green-tinted and frosted by years of tumbling against sand and stone.\n\nHe brought it up to the gallery, his joints aching from the climb. He sat on a wooden stool, the lighthouse beam rotating behind him, casting long, sweeping shadows across the floor. With a pocketknife, he pried away the stubborn cork.\n\nInside was a scrap of paper",
+    "The Krebs Cycle (also known as the **Citric Acid Cycle** or the **TCA Cycle**) is a series of chemical reactions used by all aerobic organisms to generate energy. It takes place in the **mitochondrial matrix**.\n\nBefore the cycle begins, Pyruvate (from glycolysis) is converted into **Acetyl-CoA** via pyruvate oxidation. The Krebs cycle then begins with the following steps:\n\n---\n\n### Step 1: Formation of Citrate\n**Reactants:** Acetyl-CoA (2 carbons) + Oxaloacetate (4 carbons)\n**Product:** Citrate (6 carbons)\n*   **Enzyme:** **Citrate synthase**\n*   **Role:** This enzyme catalyzes the condensation of the acetyl group from Acetyl-CoA with oxaloacetate. It is a key regulatory step; it is inhibited by high levels of ATP and NADH.\n\n### Step 2: Isomerization of Citrate\n**Reactant:** Citrate\n**Product:** Isocitrate\n*   **Enzyme:** **Aconitase**\n*   **Role:** This enzyme rearranges the atoms of citrate to form isocitrate. It involves a two-step process: dehydration (removing water) followed by re",
+    "To derive the quadratic formula, we start with the standard form of a quadratic equation and use a technique called **completing the square**.\n\n### 1. The Standard Form\nWe begin with the general quadratic equation:\n$$ax^2 + bx + c = 0$$\n*(Where $a \\neq 0$)*\n\n### 2. Isolate the $x$ terms\nFirst, move the constant term $c$ to the right side of the equation by subtracting it from both sides:\n$$ax^2 + bx = -c$$\n\n### 3. Divide by the leading coefficient\nTo make completing the square easier, we want the coefficient of $x^2$ to be $1$. Divide every term by $a$:\n$$x^2 + \\frac{b}{a}x = -\\frac{c}{a}$$\n\n### 4. Complete the Square\nTo \"complete the square,\" we need to add a specific value to both sides of the equation. That value is found by taking half of the coefficient of $x$, and then squaring it.\n\n*   Coefficient of $x$: $\\frac{b}{a}$\n*   Half of that: $\\frac{b}{2a}$\n"
+  ]
+}

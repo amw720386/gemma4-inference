@@ -4,6 +4,7 @@
     g4bench modal selftest --execute                        CPU: the test-suite on Linux inside Modal (~1 cent)
     g4bench modal prefetch [--speedbench] --execute         CPU: weights (+ SPEED-Bench) into the cache Volume
     g4bench modal job --engine E --matrix M [--only K] [--seeds 0] [--max-usd 2] --execute
+    g4bench modal job --engine E --matrix M --profile-key 8192x4 [--profile-seconds 4]   E5g torch profile
 
 Without ``--execute`` nothing is launched: the command prints the reservation it would make. Every launch:
 reconcile with Modal billing -> refuse unless worst case fits the per-job and remaining project budget ->
@@ -47,6 +48,21 @@ def allowed_engines() -> dict[str, str]:
         if e.engine in ("vllm", "sglang"):
             out[e.name] = e.engine
     return out
+
+
+def gpu_kind(engine_name: str, engine: str) -> str:
+    """``gpu:<engine>``, or ``gpu:vllm-patched`` when the config lists image_patches (must equal VLLM_PATCHES)."""
+    from .config import EngineConfig
+
+    patches = tuple(EngineConfig.load(engine_name).raw.get("image_patches") or ())
+    if not patches:
+        return f"gpu:{engine}"
+    from .modal_app import VLLM_PATCHES
+
+    if engine != "vllm" or patches != VLLM_PATCHES:
+        raise SystemExit(f"{engine_name}: image_patches {list(patches)} unsupported; the patched image is "
+                         f"vllm + {list(VLLM_PATCHES)}")
+    return "gpu:vllm-patched"
 
 
 def _code_sha() -> str:
@@ -99,7 +115,8 @@ def launch(kind: str, spec: dict[str, Any], max_usd: float, *, ledger: Path = S.
     pre = preflight(p, ledger=ledger)
     lid = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:6]}"
     app, fn = {"prefetch": (M.cpu_app, M.prefetch_weights), "selftest": (M.cpu_app, M.selftest),
-               "gpu:vllm": (M.vllm_app, M.run_vllm), "gpu:sglang": (M.sglang_app, M.run_sglang)}[kind]
+               "gpu:vllm": (M.vllm_app, M.run_vllm), "gpu:sglang": (M.sglang_app, M.run_sglang),
+               "gpu:vllm-patched": (M.vllm_patched_app, M.run_vllm_patched)}[kind]
     result: dict[str, Any] | None = None
     err = None
     now: float | None = None
@@ -161,10 +178,16 @@ def main(args) -> int:
         eng = allowed_engines().get(args.engine)
         if not eng:
             raise SystemExit(f"unknown/non-GPU engine config {args.engine!r}")
-        kind = f"gpu:{eng}"
+        kind = gpu_kind(args.engine, eng)
         spec = {"engine": args.engine, "matrix": args.matrix, "notes": args.notes,
                 "seeds": [int(x) for x in args.seeds.split(",")] if args.seeds else None,
                 "only": args.only.split(",") if args.only else None}
+        if args.profile_key:  # E5g: torch-profiler window on one point (rows flagged ``profiled``)
+            spec["profile"] = {"key": args.profile_key, "duration_s": args.profile_seconds,
+                               "warmup_s": args.profile_warmup_s}
+            spec["only"] = spec["only"] or [args.profile_key]
+            if not spec["seeds"]:
+                spec["seeds"] = [0]
     p = plan(kind, args.max_usd)
     if not args.execute:
         print(json.dumps({"plan_only": True, **p, "spec": spec,
@@ -194,5 +217,9 @@ def add_parser(sub) -> None:
     j.add_argument("--only")
     j.add_argument("--notes", default="")
     j.add_argument("--max-usd", type=float, default=2.0)
+    j.add_argument("--profile-key", help="E5g: torch-profile this workload key (e.g. 8192x4); rows flagged profiled")
+    j.add_argument("--profile-seconds", type=float, default=4.0, help="profiler window length (keep short)")
+    j.add_argument("--profile-warmup-s", type=float, default=30.0,
+                   help="seconds after the client starts before /start_profile")
     for x in (pf, st, j):
         x.add_argument("--execute", action="store_true", help="actually launch (default: plan only)")

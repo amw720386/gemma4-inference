@@ -1,0 +1,37 @@
+# VARIANT (E5f): speculative depth 6 + CUDA-graph capture sizes that keep vLLM's Triton split-K ("3D") attention
+# kernel on for 4 requests x 7 tokens (D-044). vLLM v0.33.0 sets seq_threshold_3D = 128 // num_kv_heads (=16) and
+# snaps it to the nearest capture size (ties -> smaller), so 4*(k+1) > 16 tokens fall back to the 2D kernel on
+# Gemma 4's 8 global layers (1 KV head, head_dim 512). Dropping every size 3..27 makes the threshold 28. Lossless
+# (same math; FP reduction order only).
+# Baseline A: vLLM "published recipe" per Backboard article + vllm-project/recipes
+# models/Google/gemma-4-12B-it.yaml (recipes commit fa1173a1). Article: MTP 4 tokens,
+# async scheduling, gpu-mem-util 0.90, prefix caching off.
+name: vllm-0.33.0-mtp6-splitk
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E5f
+engine: vllm
+version: "0.33.0"
+client_backend: vllm          # InferenceX benchmark_serving --backend
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--async-scheduling]
+  - [--speculative-config, '{"method":"mtp","model":"{draft_repo}","revision":"{draft_rev}","num_speculative_tokens":6}']
+  - [--cudagraph-capture-sizes, "1", "2", "28", "32", "40", "48", "56", "64", "72", "80", "88", "96", "104", "112", "120", "128", "136", "144", "152", "160", "168", "176", "184", "192", "200", "208", "216", "224", "232", "240", "248", "256", "272", "280", "288", "304", "320", "336", "352", "368", "384", "392", "400", "416", "432", "448", "464", "480", "496", "504", "512"]
+  # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
+  # Those live in the vllm-0.33.0-mtp4-textonly variant (DECISIONS D-007).
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env: {}
+unknowns:
+  - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
+  - "Article does not state whether speculative 'revision' was pinned (pinning has no perf effect)."
+  - "If the engine-default max-model-len fails to fit, the fallback is the textonly variant; log it in DECISIONS."

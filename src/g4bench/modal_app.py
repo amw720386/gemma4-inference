@@ -45,13 +45,26 @@ GPU_DEFAULT_TIMEOUT_S = S.timeout_for_budget(S.GPU_JOB.rate(), 2.0)
 SCALEDOWN_WINDOW_S = 10  # <= spend.SCALEDOWN_MARGIN_S
 
 
-def _engine_image(ref: str, engine_module: str) -> modal.Image:
+PATCHES_REMOTE = "/opt/g4patches"
+# The one patch set the patched vLLM function is built with (an engine config's `image_patches` must equal it).
+VLLM_PATCHES: tuple[str, ...] = ("mtp_draft_prefill_last",)  # sm120_attn_tiles retired: no gain (D-046)
+
+
+def _engine_image(ref: str, engine_module: str, patches: tuple[str, ...] = ()) -> modal.Image:
     # Only aliases `python` to the image's own python3 when missing (vLLM image) and checks it sees the engine (D-038).
-    return (modal.Image.from_registry(ref, setup_dockerfile_commands=python_setup_commands(engine_module))
-            .entrypoint([]).env(ENV).add_local_dir(str(REPO_LOCAL), REPO_REMOTE, ignore=IGNORE))
+    img = modal.Image.from_registry(ref, setup_dockerfile_commands=python_setup_commands(engine_module)).entrypoint([])
+    if patches:
+        # Build-time text patches of the installed engine (src/g4bench/patches). copy=True: a non-copied local dir is
+        # only mounted at container start, so a build step could not see it; the repo mount stays the last layer.
+        img = (img.add_local_dir(str(REPO_LOCAL / "src" / "g4bench" / "patches"), PATCHES_REMOTE, copy=True,
+                                 ignore=["**/__pycache__", "*.pyc"])
+               .run_commands(f"python {PATCHES_REMOTE}/apply.py {' '.join(patches)}"))
+    env = {**ENV, "G4_IMAGE_PATCHES": ",".join(patches)} if patches else ENV
+    return img.env(env).add_local_dir(str(REPO_LOCAL), REPO_REMOTE, ignore=IGNORE)
 
 
 vllm_image = _engine_image(VLLM_IMAGE, "vllm")
+vllm_patched_image = _engine_image(VLLM_IMAGE, "vllm", VLLM_PATCHES)
 sglang_image = _engine_image(SGLANG_IMAGE, "sglang")
 cpu_image = (modal.Image.debian_slim(python_version="3.12")
              .pip_install("pyyaml==6.0.3", "numpy==2.5.4", "requests==2.34.2", "huggingface_hub==2.4.0",
@@ -66,6 +79,7 @@ res_vol = modal.Volume.from_name("g4repro-results", create_if_missing=True)
 # include_source=False: the code comes only from /repo (add_local_dir), so paths.REPO resolves to /repo.
 cpu_app = modal.App(f"{APP_NAME}-cpu", include_source=False)
 vllm_app = modal.App(f"{APP_NAME}-vllm", include_source=False)
+vllm_patched_app = modal.App(f"{APP_NAME}-vllm-patched", include_source=False)
 sglang_app = modal.App(f"{APP_NAME}-sglang", include_source=False)
 
 
@@ -77,11 +91,22 @@ def _commit_loop(stop) -> None:
             pass
 
 
+def _check_image_patches(spec: dict) -> None:
+    """Refuse a job whose engine config's image_patches differ from what this image was built with."""
+    from g4bench.config import EngineConfig
+
+    want = ",".join(EngineConfig.load(spec["engine"]).raw.get("image_patches") or [])
+    have = os.environ.get("G4_IMAGE_PATCHES", "")
+    if want != have:
+        raise RuntimeError(f"engine config wants image_patches [{want}] but this image has [{have}]")
+
+
 def _run_job(spec: dict) -> dict:
     import threading
 
     from g4bench.jobs import collect_run_files, run_job
 
+    _check_image_patches(spec)
     hf_vol.reload()
     stop = threading.Event()
     threading.Thread(target=_commit_loop, args=(stop,), daemon=True).start()
@@ -112,6 +137,12 @@ _gpu_kw = dict(gpu=S.GPU_JOB.gpu, timeout=GPU_DEFAULT_TIMEOUT_S, startup_timeout
 
 @vllm_app.function(image=vllm_image, **_gpu_kw)
 def run_vllm(spec: dict) -> dict:
+    return _guarded(_run_job, spec)
+
+
+@vllm_patched_app.function(image=vllm_patched_image, **_gpu_kw)
+def run_vllm_patched(spec: dict) -> dict:
+    """vLLM on the image with VLLM_PATCHES applied; only for engine configs whose image_patches equal them."""
     return _guarded(_run_job, spec)
 
 

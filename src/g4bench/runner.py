@@ -51,6 +51,7 @@ class RunOptions:
     dry_run: bool = False
     correctness: bool = True
     notes: str = ""
+    profile: dict[str, Any] | None = None  # E5g: {"key": "8192x4", "warmup_s": 30, "duration_s": 4}
 
 
 def resolve_tokenizer(pins: dict[str, Any]) -> str:
@@ -81,6 +82,9 @@ def run(opts: RunOptions) -> Path:
     values = placeholder_values(pins, int(mat.get("max_model_len", 10240)), port)
     server_argv = eng.launcher() + eng.render_args(values) + list(opts.extra_server_args or [])
     model_name = opts.model_name or pins["model"]["target"]["repo"]
+    prof = profile_plan(opts.profile, eng, points, run_dir) if opts.profile else None
+    if prof:
+        server_argv += prof["server_argv"]
 
     # Fail fast (before any run dir, server or GPU time): flags must exist in the pinned engine source,
     # and every real-prompt set must exist and re-verify.
@@ -93,6 +97,7 @@ def run(opts: RunOptions) -> Path:
         "pins": pins, "server_argv": server_argv, "points": [p.to_dict() for p in points],
         "cost_estimate": {"usd": est.usd, "gpu_seconds": est.gpu_seconds, "summary": est.summary()},
         "options": {k: (str(v) if isinstance(v, Path) else v) for k, v in opts.__dict__.items()},
+        "profile": prof,
         "argv": sys.argv,
     }
     (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
@@ -105,6 +110,8 @@ def run(opts: RunOptions) -> Path:
     tokenizer = opts.tokenizer or resolve_tokenizer(pins)
     env = dict(os.environ)
     env.update(eng.env)
+    if prof:
+        env.update(prof["server_env"])
     t_start = time.monotonic()
     server: Server | None = None
     try:
@@ -130,7 +137,8 @@ def run(opts: RunOptions) -> Path:
             _run_point(run_dir, pdir, p, eng=eng, base_url=base_url, model=model_name, tokenizer=tokenizer,
                        chash=chash, run_id=run_id, meta=meta, start_s=start_s, server=server,
                        timeout_s=_bounded(opts.client_timeout_s, opts.max_wall_s, t_start), notes=opts.notes,
-                       dataset_file=ds_files.get(p.dataset, (None,))[0])
+                       dataset_file=ds_files.get(p.dataset, (None,))[0],
+                       profile=prof if prof and p.point_id == prof["point_id"] else None, profiled=bool(prof))
             if i == 0 and opts.correctness:
                 # After the first measured point, so the gate never perturbs a measurement.
                 _correctness(run_dir, base_url, model_name)
@@ -204,7 +212,8 @@ def check_datasets(points: list[Point]) -> dict[str, tuple[Path, dict[str, Any]]
 
 def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_url: str, model: str,
                tokenizer: str, chash: str, run_id: str, meta: dict, start_s: float | None,
-               server: Server, timeout_s: float, notes: str, dataset_file: Path | None = None) -> dict[str, Any]:
+               server: Server, timeout_s: float, notes: str, dataset_file: Path | None = None,
+               profile: dict[str, Any] | None = None, profiled: bool = False) -> dict[str, Any]:
     result_path = pdir / "inferencex_result.json"
     argv = client_argv(p, base_url=base_url, model=model, backend=eng.client_backend, result=result_path,
                        tokenizer=tokenizer, endpoint=eng.endpoint, dataset_file=dataset_file)
@@ -213,13 +222,30 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
     sampler = GpuSampler(pdir / "gpu_samples.csv")
     sampler.start()
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    prof_rec: dict[str, Any] | None = None
     with open(pdir / "client.log", "w", encoding="utf-8") as log:
-        try:
-            rc = subprocess.run(argv, env=client_env(dict(os.environ)), stdout=log, stderr=subprocess.STDOUT,
-                                timeout=timeout_s).returncode
-        except subprocess.TimeoutExpired:
-            rc = -9
+        if profile is None:
+            try:
+                rc = subprocess.run(argv, env=client_env(dict(os.environ)), stdout=log, stderr=subprocess.STDOUT,
+                                    timeout=timeout_s).returncode
+            except subprocess.TimeoutExpired:
+                rc = -9
+        else:
+            proc = subprocess.Popen(argv, env=client_env(dict(os.environ)), stdout=log, stderr=subprocess.STDOUT)
+            t0 = time.monotonic()
+            try:
+                prof_rec = profile_window(proc, base_url, profile, deadline=t0 + timeout_s)
+                rc = proc.wait(timeout=max(t0 + timeout_s - time.monotonic(), 1.0))
+            except subprocess.TimeoutExpired:
+                rc = -9
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
     gpu = sampler.stop()
+    if prof_rec is not None:
+        prof_rec["summary"] = _summarize_profile(Path(profile["trace_dir"]), pdir) if "stop" in prof_rec else None
+        (pdir / "profile.json").write_text(json.dumps(prof_rec, indent=2))
     after = promscrape.scrape(base_url)
     d = promscrape.delta(before, after)
     acc = promscrape.acceptance(d)
@@ -244,6 +270,8 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
         "eff_kv_cache_tokens": eff.get("kv_cache_tokens"),
         "eff_max_running_requests": eff.get("max_running_requests"),
     }
+    if profiled:
+        ctx["notes"] = (notes + " " if notes else "") + "[PROFILED: torch profiler enabled; not comparable]"
     if result_path.exists():
         raw = json.loads(result_path.read_text())
         rec = results.normalize(raw, context=ctx)
@@ -257,6 +285,8 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
         problems.append(f"client exit code {rc}")
     rec["valid"] = not problems
     rec["problems"] = problems
+    if profiled:
+        rec["profiled"] = True  # analyze/report never compare these rows (profiler overhead)
     results.append_csv(run_dir / "results.csv", rec)
     results.append_jsonl(run_dir / "results.jsonl", rec)
     return rec
@@ -283,3 +313,109 @@ def _record_skip(run_dir: Path, p: Point, why: str) -> None:
                 "valid": False, "problems": [why]})
     results.append_csv(run_dir / "results.csv", rec)
     results.append_jsonl(run_dir / "results.jsonl", rec)
+
+
+# ---------------------------------------------------------------- E5g torch-profiler window
+PROFILE_DEFAULTS = {"warmup_s": 30.0, "duration_s": 4.0, "stop_timeout_s": 600.0, "top_n": 25}
+
+
+def vllm_profiler_config(trace_dir: Path) -> dict[str, Any]:
+    """``--profiler-config`` for vLLM v0.33.0 (``vllm/config/profiler.py::ProfilerConfig``).
+
+    torch profiler, CPU+CUDA activities (CPU is needed for launch->kernel correlation and step annotations),
+    no Python stacks (trace size), gzip, no frontend (AsyncLLM CPU) trace, no key_averages table on stop."""
+    return {"profiler": "torch", "torch_profiler_dir": str(Path(trace_dir).resolve()),
+            "torch_profiler_activities": ["CPU", "CUDA"], "torch_profiler_with_stack": False,
+            "torch_profiler_use_gzip": True, "torch_profiler_dump_cuda_time_total": False,
+            "ignore_frontend": True}
+
+
+def profile_plan(spec: dict[str, Any], eng: EngineConfig, points: list[Point], run_dir: Path) -> dict[str, Any]:
+    """Resolve a profile spec: which point is profiled, and the exact server argv / env additions."""
+    spec = {**PROFILE_DEFAULTS, **{k: v for k, v in spec.items() if v is not None}}
+    key = spec.get("key")
+    match = [p for p in points if p.key == key]
+    if not match:
+        raise SystemExit(f"profile key {key!r} is not among the selected points "
+                         f"({sorted({p.key for p in points})})")
+    if float(spec["duration_s"]) <= 0 or float(spec["warmup_s"]) < 0:
+        raise SystemExit("profile duration_s must be > 0 and warmup_s >= 0")
+    pid = match[0].point_id
+    trace_dir = (Path(run_dir) / "points" / pid / "torch_trace").resolve()
+    if eng.engine == "vllm":
+        argv = ["--profiler-config", json.dumps(vllm_profiler_config(trace_dir), separators=(",", ":"))]
+        env = {"VLLM_CUSTOM_SCOPES_FOR_PROFILING": "1"}  # gpu_model_runner: forward/sample/draft ranges
+    elif eng.engine == "mock":
+        argv, env = ["--profile-dir", str(trace_dir)], {}
+    else:
+        raise SystemExit(f"profiling is implemented for vLLM (and the mock) only, not {eng.engine!r}")
+    return {"key": key, "point_id": pid, "trace_dir": str(trace_dir), "server_argv": argv, "server_env": env,
+            **{k: (int(spec[k]) if k == "top_n" else float(spec[k])) for k in PROFILE_DEFAULTS}}
+
+
+def _post(url: str, timeout_s: float) -> dict[str, Any]:
+    import urllib.error
+    import urllib.request
+
+    t = time.monotonic()
+    req = urllib.request.Request(url, data=b"{}", method="POST", headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as r:
+            status, err = r.status, None
+    except urllib.error.HTTPError as e:
+        status, err = e.code, repr(e)[:500]
+    except Exception as e:  # noqa: BLE001 - recorded in profile.json
+        status, err = None, repr(e)[:500]
+    return {"status": status, "error": err, "latency_s": round(time.monotonic() - t, 3)}
+
+
+def _sleep_while_running(proc: subprocess.Popen, seconds: float, deadline: float) -> bool:
+    """Sleep up to ``seconds`` (never past ``deadline``); False if the client exited or the deadline hit."""
+    end = min(time.monotonic() + seconds, deadline)
+    while time.monotonic() < end:
+        if proc.poll() is not None:
+            return False
+        time.sleep(min(0.2, max(end - time.monotonic(), 0)))
+    return proc.poll() is None and time.monotonic() < deadline
+
+
+def profile_window(proc: subprocess.Popen, base_url: str, prof: dict[str, Any], deadline: float) -> dict[str, Any]:
+    """While the client runs: wait ``warmup_s``, POST /start_profile, wait ``duration_s``, POST /stop_profile.
+
+    /stop_profile is always sent once /start_profile was (even if the client finished early)."""
+    rec: dict[str, Any] = {"key": prof["key"], "point_id": prof["point_id"], "warmup_s": prof["warmup_s"],
+                           "duration_s": prof["duration_s"], "server_argv_added": prof["server_argv"],
+                           "server_env_added": prof["server_env"]}
+    t0 = time.monotonic()
+    if not _sleep_while_running(proc, prof["warmup_s"], deadline):
+        rec["skipped"] = "client finished (or deadline) before the warmup ended; no profile taken"
+        return rec
+    rec["start_at_s"] = round(time.monotonic() - t0, 3)
+    rec["start"] = _post(base_url + "/start_profile", 120)
+    rec["client_running_at_stop"] = _sleep_while_running(proc, prof["duration_s"], deadline)
+    rec["stop_at_s"] = round(time.monotonic() - t0, 3)
+    rec["stop"] = _post(base_url + "/stop_profile", prof["stop_timeout_s"])
+    rec["stop_returned_at_s"] = round(time.monotonic() - t0, 3)
+    return rec
+
+
+def _summarize_profile(trace_dir: Path, pdir: Path, wait_s: float = 60.0, poll_s: float = 2.0) -> dict[str, Any]:
+    """Wait (bounded) for the trace file(s) to exist and stop growing, then write profile_summary.{json,md}."""
+    from . import profile_trace
+
+    end = time.monotonic() + wait_s
+    last = None
+    while time.monotonic() < end:
+        files = profile_trace.find_traces(trace_dir)
+        sizes = tuple(f.stat().st_size for f in files)
+        if files and sizes == last:
+            break
+        last = sizes
+        time.sleep(poll_s)
+    try:
+        s = profile_trace.write_summary(trace_dir, pdir, top_n=int(PROFILE_DEFAULTS["top_n"]))
+    except Exception as e:  # noqa: BLE001 - a parser bug must never lose the run
+        return {"error": repr(e)[:2000]}
+    if s is None:
+        return {"error": f"no *.pt.trace.json[.gz] under {trace_dir}"}
+    return {"traces": s["traces"], "gpu_idle_fraction": s["gpu_idle_fraction"], "buckets": s["buckets"]}

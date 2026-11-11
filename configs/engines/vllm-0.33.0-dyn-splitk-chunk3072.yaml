@@ -1,0 +1,41 @@
+# VARIANT (E6a): E5g combined candidate (depth 6 + split-K capture sizes D-044 + 3072-token chunks D-043) plus a
+# depth-by-batch-size schedule (D-034: SpeculativeConfig.num_speculative_tokens_per_batch_size, inclusive ranges,
+# first range starts at 1, K clamped to num_speculative_tokens; vllm/v1/spec_decode/dynamic/utils.py @ v0.33.0).
+# Idea: keep depth 6 at low batch (<= 8 running requests) where acceptance pays (D-042), drop to 5 / 4 at c16 / c64
+# to cut verify cost. Lossless (rejection sampling keeps target outputs; only draft length changes).
+# Caveat from vllm/config/vllm.py @ v0.33.0: with dynamic SD on Model Runner V1, cudagraph_mode is forced from FULL*
+# to PIECEWISE ("for reliability"), so c4 may differ from E5g for that reason alone; MTP stays supported on V1.
+# At c16 depth 5 = 16 x 6 = 96 tokens > threshold 28, so split-K does not apply there (see E5g-c16 diagnostic).
+# Baseline A: vLLM "published recipe" per Backboard article + vllm-project/recipes
+# models/Google/gemma-4-12B-it.yaml (recipes commit fa1173a1). Article: MTP 4 tokens,
+# async scheduling, gpu-mem-util 0.90, prefix caching off.
+name: vllm-0.33.0-dyn-splitk-chunk3072
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: a       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E6a
+engine: vllm
+version: "0.33.0"
+client_backend: vllm          # InferenceX benchmark_serving --backend
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--async-scheduling]
+  - [--speculative-config, '{"method":"mtp","model":"{draft_repo}","revision":"{draft_rev}","num_speculative_tokens":6,"num_speculative_tokens_per_batch_size":[[1,8,6],[9,24,5],[25,4096,4]]}']
+  - [--max-num-batched-tokens, "3072"]
+  - [--cudagraph-capture-sizes, "1", "2", "28", "32", "40", "48", "56", "64", "72", "80", "88", "96", "104", "112", "120", "128", "136", "144", "152", "160", "168", "176", "184", "192", "200", "208", "216", "224", "232", "240", "248", "256", "272", "280", "288", "304", "320", "336", "352", "368", "384", "392", "400", "416", "432", "448", "464", "480", "496", "504", "512"]
+  # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
+  # Those live in the vllm-0.33.0-mtp4-textonly variant (DECISIONS D-007).
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env: {}
+unknowns:
+  - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
+  - "Article does not state whether speculative 'revision' was pinned (pinning has no perf effect)."
+  - "If the engine-default max-model-len fails to fit, the fallback is the textonly variant; log it in DECISIONS."

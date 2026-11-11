@@ -1,0 +1,73 @@
+# argv: vllm serve google/gemma-4-12B-it --revision 43c9d014b231474fa7212dbb48a762566c2b255d --tensor-parallel-size 1 --dtype bfloat16 --gpu-memory-utilization 0.90 --no-enable-prefix-caching --async-scheduling --speculative-config {"method":"mtp","model":"google/gemma-4-12B-it-assistant","revision":"3b0b0a4a3b31b5556516329227fb55f275c23c9f","num_speculative_tokens":6} --max-num-batched-tokens 2048 --host 0.0.0.0 --port 8000
+W1111 14:20:17.154000 22 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1111 14:20:17.155000 22 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W1111 14:20:17.156000 22 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+(APIServer pid=22) INFO 11-11 14:20:26 [startup.py:38] 
+(APIServer pid=22) INFO 11-11 14:20:26 [startup.py:38]        █     █     █▄   ▄█
+(APIServer pid=22) INFO 11-11 14:20:26 [startup.py:38]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.33.0
+(APIServer pid=22) INFO 11-11 14:20:26 [startup.py:38]   █▄█▀ █     █     █     █  model   google/gemma-4-12B-it
+(APIServer pid=22) INFO 11-11 14:20:26 [startup.py:38]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=22) INFO 11-11 14:20:26 [startup.py:38] 
+(APIServer pid=22) INFO 11-11 14:20:26 [startup.py:96] non-default args: {'model_tag': 'google/gemma-4-12B-it', 'host': '0.0.0.0', 'model': 'google/gemma-4-12B-it', 'dtype': 'bfloat16', 'revision': '43c9d014b231474fa7212dbb48a762566c2b255d', 'gpu_memory_utilization': 0.9, 'enable_prefix_caching': False, 'max_num_batched_tokens': 2048, 'async_scheduling': True, 'speculative_config': {'method': 'mtp', 'model': 'google/gemma-4-12B-it-assistant', 'revision': '3b0b0a4a3b31b5556516329227fb55f275c23c9f', 'num_speculative_tokens': 6}}
+(APIServer pid=22) INFO 11-11 14:20:37 [model.py:744] Resolved architecture: Gemma4UnifiedForConditionalGeneration
+(APIServer pid=22) INFO 11-11 14:20:37 [model.py:2170] Using max model len 262144
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 1061.31it/s]
+(APIServer pid=22) INFO 11-11 14:20:50 [model.py:744] Resolved architecture: Gemma4MTPModel
+(APIServer pid=22) INFO 11-11 14:20:50 [model.py:2170] Using max model len 262144
+(APIServer pid=22) WARNING 11-11 14:20:50 [speculative.py:1491] Enabling num_speculative_tokens > 1 will run multiple times of forward on same MTP layer,which may result in lower acceptance rate
+(APIServer pid=22) INFO 11-11 14:20:50 [config.py:364] Gemma4 model has heterogeneous head dimensions {'sliding_attention': 256, 'full_attention': 512}. FA4 not available, forcing TRITON_ATTN backend.
+(APIServer pid=22) INFO 11-11 14:20:50 [kernel.py:480] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(APIServer pid=22) WARNING 11-11 14:20:50 [vllm.py:2360] max_num_scheduled_tokens is set to 2048 based on the speculative decoding settings. This may lead to suboptimal performance. Consider increasing max_num_batched_tokens to accommodate the additional draft token slots, or decrease num_speculative_tokens.
+(APIServer pid=22) WARNING 11-11 14:20:50 [cuda.py:341] Forcing --disable_chunked_mm_input for models with multimodal-bidirectional attention.
+Traceback (most recent call last):
+  File "/usr/local/bin/vllm", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/cli/main.py", line 117, in main
+    args.dispatch_function(args)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/cli/serve.py", line 156, in cmd
+    uvloop.run(run_server(args))
+  File "/usr/local/lib/python3.12/dist-packages/uvloop/__init__.py", line 96, in run
+    return __asyncio.run(
+           ^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "uvloop/loop.pyx", line 1515, in uvloop.loop.Loop.run_until_complete
+  File "/usr/local/lib/python3.12/dist-packages/uvloop/__init__.py", line 48, in wrapper
+    return await main
+           ^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py", line 176, in run_server
+    await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py", line 190, in run_server_worker
+    async with build_async_engine_client(
+  File "/usr/lib/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py", line 60, in build_async_engine_client
+    async with build_async_engine_client_from_engine_args(
+  File "/usr/lib/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/launchers/api_server/entry.py", line 94, in build_async_engine_client_from_engine_args
+    async_llm = AsyncLLM.from_vllm_config(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py", line 264, in from_vllm_config
+    return cls(
+           ^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/async_llm.py", line 170, in __init__
+    self.input_processor = InputProcessor(self.vllm_config, renderer)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/input_processor.py", line 72, in __init__
+    mm_budget = MultiModalBudget(vllm_config, mm_registry)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/multimodal/encoder_budget.py", line 119, in __init__
+    encoder_compute_budget, encoder_cache_size = compute_mm_encoder_budget(
+                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/core/encoder_cache_manager.py", line 366, in compute_mm_encoder_budget
+    raise ValueError(
+ValueError: Chunked MM input disabled but max_tokens_per_mm_item (2496) is larger than max_num_batched_tokens (2048). Please increase max_num_batched_tokens.
