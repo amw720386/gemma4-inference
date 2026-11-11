@@ -56,6 +56,10 @@ E5b depth sweep at 8192×4 (D-042): depth 3 / 5 / 6 give 424.4 / 423.9 / 437.4 t
 repeats (n = 2) of depth 4 (402.6 / 402.0) and depth 6 (437.4 / 434.2) agree within ≈ 1 %, so depth 6 is ≈ +8 % (82 % of
 Backboard) — real, but below the n = 3 claim threshold and measured at one workload only.
 
+Optimization toward Backboard (D-043, D-044; n = 1): split-K attention via CUDA-graph capture sizes +8.4 % on top of
+depth 6; combined candidate `vllm-0.33.0-mtp6-splitk-chunk3072` reaches **98 % of Backboard at 1K/c4 (765.1 tok/s)
+and 92 % at 8K/c4 (488.3)**, all lossless for the BF16 target. Cap now $20 (D-045).
+
 ## Blockers
 
 No technical blockers. Repeats (seeds 1, 2) for real claims need ≈ $10–15 more: a new budget approval. Budget: **$10 total / ≤ $3 per job** (BUDGET.md); `g4bench modal spend` shows committed spend.

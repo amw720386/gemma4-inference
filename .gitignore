@@ -11,3 +11,4 @@ results/scratch/
 .env
 data/speedbench/*.jsonl
 .cache/
+.claude/*.local.md

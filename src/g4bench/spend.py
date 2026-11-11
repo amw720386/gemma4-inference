@@ -67,15 +67,15 @@ SELFTEST_TIMEOUT_S = 1200
 
 @dataclass(frozen=True)
 class Caps:
-    # Approved by the owner: $10 project (2026-11-10); per-job cap raised $2 -> $3 on 2026-11-11 so one job can
-    # cover an 8192x64 point (D-041). Jobs still default to --max-usd 2.
-    project_usd: float = 10.0
+    # Owner approvals: $10 project (2026-11-10); per-job $2 -> $3 (2026-11-11, D-041); "more Modal credits beyond
+    # the allowance, but do not waste them" (2026-11-11) -> project cap set to $20 by the agent (D-045).
+    project_usd: float = 20.0
     per_job_usd: float = 3.0
 
     @classmethod
     def from_env(cls) -> "Caps":
-        """Environment may only *tighten* the approved $10 / $3 (never relax it)."""
-        p = min(10.0, float(os.environ.get("G4_PROJECT_CAP_USD") or 10.0))
+        """Environment may only *tighten* the approved $20 / $3 (never relax it)."""
+        p = min(20.0, float(os.environ.get("G4_PROJECT_CAP_USD") or 20.0))
         j = min(3.0, p, float(os.environ.get("G4_PER_JOB_CAP_USD") or 3.0))
         return cls(p, j)
 
