@@ -263,3 +263,17 @@ after `FROM`, before Modal's setup): if `python` is missing it is symlinked to t
 `python` is never touched; the step then asserts Python 3.12, `find_spec(engine)` and `python -m pip`, so a broken
 interpreter fails at image build, not on a paid GPU start. `add_python` was rejected: it would put a second interpreter
 first on PATH that cannot import the engine. Tests run the exact RUN line under /bin/sh with an isolated PATH.
+
+**D-039 (2026-11-11) The HTTPS bridge is removed; paid runs launch directly from the owner's machine.** The bridge
+existed only because the earlier cloud agent could reach Modal over HTTPS but not its gRPC control plane (D-010,
+now superseded). The owner now runs the agent locally with Modal credentials in the untracked `.env` and asked for the
+bridge to be eliminated. Replacement: `modal_app.py` (same digest-pinned images, Volumes, resource limits,
+`retries=0`, `max_containers=1`, start-deadline + hard-kill guard, the D-038 image setup) run as an **ephemeral** `app.run()` per launch, so
+nothing stays deployed; `spend.py` keeps the $10 / $2 caps locally — worst case reserved in
+`results/budget_ledger.jsonl` before the call, the Modal timeout derived from it, wall-clock settlement afterwards —
+and, new, reconciles against Modal's authoritative per-app billing (`modal billing report`, filtered to `g4repro*`)
+before every launch, counting the larger figure, plus Volume storage accrual. Removed: `modal_bridge/`,
+`bridge_api.py`, `budget.py` (Dict ledger), `campaign.py` and `configs/campaigns/` (HTTP campaign runner), their tests.
+Run evidence now comes back as the worker's return value (all files ≤ 20 MB) instead of a fetch endpoint. Platform
+reserve/metering (D-030 #3) is obsolete: there is no always-on web container. Trade-off: the per-launch billing lag
+means a just-finished launch is counted at our estimate until Modal bills it; the gate takes the larger of the two.

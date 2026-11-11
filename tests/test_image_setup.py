@@ -82,7 +82,7 @@ def test_engine_images_use_setup_commands_not_add_python(monkeypatch):
         return real(tag, *a, **kw)
 
     monkeypatch.setattr(modal.Image, "from_registry", staticmethod(spy))
-    spec = importlib.util.spec_from_file_location("app_under_test", REPO / "modal_bridge" / "app.py")
+    spec = importlib.util.spec_from_file_location("app_under_test", REPO / "src" / "g4bench" / "modal_app.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     by_tag = {t: (cmds, py) for t, cmds, py in calls}

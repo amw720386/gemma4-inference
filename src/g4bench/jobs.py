@@ -1,7 +1,7 @@
-"""Job bodies executed by the bridge's workers, kept Modal-free so the exact paid code path runs in CPU tests.
+"""Job bodies executed inside the Modal workers, kept Modal-free so the exact paid code path runs in CPU tests.
 
-``modal_bridge/app.py`` wraps these in Modal functions (adding Volume reload/commit); tests call them directly
-with the mock engine, through the same bridge API, so spec-key mismatches surface before any paid call.
+``modal_app.py`` wraps these in Modal functions (adding Volume reload/commit); tests call them directly with the
+mock engine, so spec-key mismatches surface before any paid call.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def guarded(fn: Callable[[dict[str, Any]], dict[str, Any]], spec: dict[str, Any]
 
 def run_job(spec: dict[str, Any], results_root: Path, clock: Callable[[], float] = time.time,
             **runner_overrides: Any) -> dict[str, Any]:
-    """Map a bridge job spec onto RunOptions and run it. Soft wall budget never exceeds the deadline."""
+    """Map a job spec onto RunOptions and run it. Soft wall budget never exceeds the deadline."""
     from .runner import RunOptions, run
 
     remaining = float(spec["deadline_unix"]) - clock() - DEADLINE_HEADROOM_S
@@ -70,18 +70,36 @@ def run_job(spec: dict[str, Any], results_root: Path, clock: Callable[[], float]
 MAX_FETCH_BYTES = 20_000_000
 
 
-def list_run_files(runs_root: Path, run_id: str) -> list[dict[str, Any]] | None:
-    """All regular files of one run (relative path + size), or None if the run does not exist / escapes the root."""
+def collect_run_files(runs_root: Path, run_id: str) -> dict[str, bytes]:
+    """Every regular file of one run (relative POSIX path -> bytes) so the worker can return it to the caller.
+
+    Files over ``MAX_FETCH_BYTES`` are replaced by a short note (they stay on the results Volume)."""
     root = (Path(runs_root) / run_id).resolve()
     if Path(runs_root).resolve() not in root.parents or not root.is_dir():
-        return None
-    return [{"path": str(f.relative_to(root)), "bytes": f.stat().st_size}
-            for f in sorted(root.rglob("*")) if f.is_file()]
+        return {}
+    out: dict[str, bytes] = {}
+    for f in sorted(root.rglob("*")):
+        if f.is_file():
+            rel = f.relative_to(root).as_posix()
+            size = f.stat().st_size
+            if size > MAX_FETCH_BYTES:
+                out[rel + ".SKIPPED.txt"] = f"{size} bytes; on Modal volume g4repro-results".encode()
+            else:
+                out[rel] = f.read_bytes()
+    return out
 
 
-def read_run_file(runs_root: Path, run_id: str, path: str) -> str | None:
-    root = (Path(runs_root) / run_id).resolve()
-    f = (root / path).resolve()
-    if root not in f.parents or not f.is_file() or f.stat().st_size > MAX_FETCH_BYTES:
-        return None
-    return f.read_text(errors="replace")
+def write_run_files(dest_root: Path, run_id: str, files: dict[str, bytes]) -> Path:
+    """Write files returned by a worker under ``dest_root/run_id`` (refuses traversal and overwrites)."""
+    root = (Path(dest_root) / run_id).resolve()
+    if Path(dest_root).resolve() not in root.parents:
+        raise ValueError(f"bad run id {run_id!r}")
+    for rel, data in files.items():
+        f = (root / rel).resolve()
+        if root not in f.parents:
+            raise ValueError(f"path escapes run dir: {rel!r}")
+        if f.exists():
+            raise FileExistsError(f)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(data)
+    return root
