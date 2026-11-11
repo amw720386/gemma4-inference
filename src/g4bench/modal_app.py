@@ -47,7 +47,7 @@ SCALEDOWN_WINDOW_S = 10  # <= spend.SCALEDOWN_MARGIN_S
 
 PATCHES_REMOTE = "/opt/g4patches"
 # The one patch set the patched vLLM function is built with (an engine config's `image_patches` must equal it).
-VLLM_PATCHES: tuple[str, ...] = ("sm120_attn_tiles",)
+VLLM_PATCHES: tuple[str, ...] = ("mtp_draft_prefill_last",)  # sm120_attn_tiles retired: no gain (D-046)
 
 
 def _engine_image(ref: str, engine_module: str, patches: tuple[str, ...] = ()) -> modal.Image:
