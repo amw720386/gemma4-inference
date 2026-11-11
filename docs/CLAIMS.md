@@ -6,7 +6,7 @@ Status is computed only from measured results in `results/` (exact hardware, bas
 |---|---|---|---|---|
 | C01 | vLLM 0.33.0 (MTP 4 tokens, async scheduling, gpu-mem 0.90, prefix caching off) output throughput on 1x RTX PRO 6000, Gemma 4 12B BF16, at ISL {1K,8K} x conc {1,4,16,64}, OSL 1K | measurable | partial | measured 8/8 (8 consistent) - descriptive, n<3 |
 | C02 | SGLang 0.5.23 (NEXTN 5 steps / 6 draft tokens, mem 0.85, radix cache off) output throughput at the same 8 workloads | measurable | partial | measured 8/8 (8 higher) - descriptive, n<3 |
-| C03 | Open-engine latency figures: p99 TPOT, p99 E2EL and p90 TTFT for vLLM and SGLang at the 8 workloads | measurable | partial | measured 48/48 (19 consistent, 9 higher, 20 lower) - descriptive, n<3 |
+| C03 | Open-engine latency figures: p99 TPOT, p99 E2EL and p90 TTFT for vLLM and SGLang at the 8 workloads | measurable | partial | measured 48/48 (20 consistent, 9 higher, 19 lower) - descriptive, n<3 |
 | C04 | vLLM outperforms SGLang by 1.4-2.1x in throughput/TPOT at every workload (implied by the article's ratio tables; Backboard cancels out) | measurable | partial | measured 8/8: vLLM/SGLang 1.31-1.84x (article 1.42-2.08x) - descriptive, n<3 |
 | C05 | Backboard's engine achieves the reported throughput/latency and wins 208/208 metric comparisons | untestable | n/a | untestable (see reason) |
 | C06 | Backboard's draft head shortlists candidates in 4-bit and rescores in BF16 without changing the BF16 target output | untestable | n/a | untestable (see reason) |

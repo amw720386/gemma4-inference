@@ -72,7 +72,7 @@ Seeds 1,2 for both engines (completing n=3 per point); optionally a second trial
 ### E5 – Profiling & ablations (⬜, est. $15–30, each sub-item estimated before launch)
 Ordered by expected information per dollar; run only those the E2–E4 data justify:
 - a. **No-spec control** (`vllm-0.33.0-nospec`, seed 0) – spec-decode gain and the acceptance-free floor.
-- b. ✅ (8192×4 only, n=1, D-042: depth 6 +8.6 %, depth 3/5 +5 %, likely within noise) **Speculative depth sweep** `num_speculative_tokens ∈ {2,3,5,6}` at 1K/c1, 8K/c4, 1K/c64 – the
+- b. ✅ (8192×4 only, D-042: depth 6 +8.3 % over depth 4, n=2 each, runs agree within ≈ 1 %; depth 3/5 +5 %, n=1) **Speculative depth sweep** `num_speculative_tokens ∈ {2,3,5,6}` at 1K/c1, 8K/c4, 1K/c64 – the
   article's largest vLLM gap is 8K/c4 (1.34×); depth is the most likely lever. Configs ready:
   `vllm-0.33.0-mtp{2,3,5,6}`, `sglang-0.5.23-nextn{3,4}` (D-034).
 - c. **Prompt-content sensitivity** (🟨 CPU side done; GPU ⛔) – random tokens vs real prompts at the same
@@ -108,6 +108,7 @@ is both the exact target and the cheapest GPU that fits the whole matrix.
 | 2026-11-10 | E0 | (CPU, mock) | mock-cpu | 4 | 4 | pytest e2e only; numbers meaningless by design |
 | 2026-11-10 | E5c-prep | (CPU, data) | – | – | – | SPEED-Bench prepared; coding digest = InferenceX; tp subsets labelled |
 | 2026-11-10 | E0 | docs/examples/mock-runs/* | mock-cpu | 4 | 4 | example REPORT.md layout; MOCK, not a measurement |
+| 2026-11-11 | E5b | `…-mtp4-…-13d9`, `…-mtp6-…-5c27` | vllm mtp4/mtp6 repeats | 2 (8192×4) | 2 | 402.0 / 434.2 tok/s; depth-6 gain confirmed (≈ +8 %) |
 | 2026-11-11 | E5b | `…-mtp3-…-1a1a`, `…-mtp5-…-1982`, `…-mtp6-…-cc24` | vllm mtp3/5/6 | 3 (8192×4) | 3 | 424.4 / 423.9 / 437.4 tok/s vs baseline 402.6; ≈ $1.17 est. |
 | 2026-11-11 | E2/E3 | `…-ad4e` (vLLM), `…-3b1e` (SGLang) | both baselines | 2 (8192×64) | 2 | vLLM +1.5 %, SGLang +8.2 % vs article; $3 per-job cap (D-041) |
 | 2026-11-11 | E2/E3 | 7 runs `20261111T01…`–`T023134Z…` (see STATUS) | vllm-0.33.0-mtp4, sglang-0.5.23-nextn | 14 (seed 0, OSL 1024, shared server per job) | 14 | vLLM 7/7 within +0.9…+3.1 % of the article; SGLang +6.8…+16.5 %; ≈ $3.3 billed |

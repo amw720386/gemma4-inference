@@ -69,8 +69,9 @@ totals including Modal's billed figure).
 | 2026-11-11 | – | vLLM 8192×64 ($3 per-job cap, D-041) | RTX PRO 6000 | 2.50 | 0.943 | 796 s runtime |
 | 2026-11-11 | – | SGLang 8192×64 | RTX PRO 6000 | 3.00 | 1.290 | 1109 s runtime |
 | 2026-11-11 | – | E5b vLLM mtp5 / mtp3 / mtp6 at 8192×4 | RTX PRO 6000 | 3 × 2.00 | 0.428 / 0.370 / 0.371 | D-042 |
+| 2026-11-11 | – | E5b repeats: vLLM mtp4 / mtp6 at 8192×4 | RTX PRO 6000 | 2.00 / 1.75 | 0.366 / 0.334 | mtp6 first refused at $2 by the gate |
 
-**Total spent to date: $5.98 billed by Modal for `g4repro*` apps** (billing lags ≈ hours; ledger estimate $7.71; the gate counts the larger,
+**Total spent to date: $6.48 billed by Modal for `g4repro*` apps** (billing lags ≈ hours; ledger estimate $8.41; the gate counts the larger,
 plus ≈ $0.01 Volume storage). Our settle estimate runs ≈ 30 % above Modal's bill (it prices CPU/memory at limits).
 
 ## Prices (`modal billing rates`, retrieved 2026-11-10)

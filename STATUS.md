@@ -2,8 +2,8 @@
 
 **One-line state:** all 16 of the article's seed-0 points measured on 1× RTX PRO 6000 Blackwell Server Edition (Modal),
 all valid, correctness 8/8 on every server. **vLLM 0.33.0 reproduces the article at 8/8 points (+0.9 … +3.1 %); our
-SGLang 0.5.23 is 7–17 % faster than the article's at 8/8.** n = 1 each: descriptive, not claims. Spend ≈ $6.0 billed by
-Modal (≈ $7.8 on the conservative ledger) of the $10 cap; per-job cap raised to $3 by the owner for 8192×64 (D-041).
+SGLang 0.5.23 is 7–17 % faster than the article's at 8/8.** n = 1 each: descriptive, not claims. Spend ≈ $6.5 billed by
+Modal (≈ $8.5 on the conservative ledger) of the $10 cap; per-job cap raised to $3 by the owner for 8192×64 (D-041).
 
 Workflow (CLAUDE.md): Git author Ahamed Mohamed Wajibu + `Co-Authored-By: Claude Opus 5.5`; one semantic branch per
 change (`feat/…`, `fix/…`, `docs/…`) off `main`; focused PR with executed test output and NOT-RUN limits; merge
@@ -53,7 +53,8 @@ ratio 1.31–1.84× vs the article's implied 1.42–2.08× (C04). Backboard stay
 76–96 % of it (largest gap 8192×4), SGLang 50–67 %. Throughput at 8192×64 uses one 13–18 min job (D-041). Points of one job share a server start (D-040).
 
 E5b depth sweep at 8192×4 (D-042): depth 3 / 5 / 6 give 424.4 / 423.9 / 437.4 tok/s vs 402.6 for the baseline depth 4 —
-at most ≈ +9 % (82.6 % of Backboard), non-monotonic and within plausible n = 1 noise.
+repeats (n = 2) of depth 4 (402.6 / 402.0) and depth 6 (437.4 / 434.2) agree within ≈ 1 %, so depth 6 is ≈ +8 % (82 % of
+Backboard) — real, but below the n = 3 claim threshold and measured at one workload only.
 
 ## Blockers
 
