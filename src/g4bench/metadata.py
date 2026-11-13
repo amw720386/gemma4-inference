@@ -23,6 +23,7 @@ ENV_ALLOWLIST = (
     "SGLANG_VERSION", "HF_HUB_OFFLINE", "MODAL_REGION", "MODAL_CLOUD_PROVIDER", "MODAL_TASK_ID",
     "G4_IMAGE_PATCHES", "G4_IMAGE_PIP", "G4_SPLITK_T_FULL", "G4_SPLITK_T_SLIDING", "G4_DRAFT_HEAD_Q",
     "G4_DRAFT_HEAD_K",  # build-time engine patches baked into the image (src/g4bench/patches)
+    "G4_DRAFT_PREFILL_LAST", "G4_PREFILL_ATTN", "G4_CUBLAS", "G4_CUBLAS_SIDE",  # D-061 gates / side cuBLAS
 )
 
 NVSMI_FIELDS = (

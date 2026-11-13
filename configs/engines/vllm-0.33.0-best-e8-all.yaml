@@ -2,6 +2,9 @@
 #   draft prefill on the last token (D-046) + per-group split-K thresholds (splitk_per_group) + quantized FP8
 #   draft-head scan with exact BF16 rescoring (mtp_draft_head_q; "use_local_argmax_reduction": true) + cuBLAS 13.10
 #   (image build step) + depth 6 up to 32 running requests then 4 + 3072-token prefill chunks.
+# cuBLAS: every E8a run (D-056, D-060) used the production patched image, whose cuBLAS 13.10 is upgraded IN the image
+#   (VLLM_PATCH_PIP); no G4_CUBLAS here. On the experimental image (e.g. paired with the stock recipe) it would get that
+#   image's default cuBLAS 13.1 instead; `g4bench modal pair` warns about it (D-061).
 # Target outputs are unchanged (the target verifies every draft token); draft precision is lowered -> class b (D-011).
 name: vllm-0.33.0-best-e8-all
 image_patches: [mtp_draft_prefill_last, splitk_per_group, mtp_draft_head_q]
@@ -30,6 +33,7 @@ args:
   - [--host, 0.0.0.0]
   - [--port, "{port}"]
 env:
+  G4_DRAFT_PREFILL_LAST: "1"    # mtp_draft_prefill_last gate (D-061): on; unset = upstream draft prefill
   G4_SPLITK_T_FULL: "112"      # full/global group: 3D iff num_seqs * q_len <= 112 (BLOCK_Q 1)
   G4_SPLITK_T_SLIDING: "8"     # sliding group: 3D iff num_seqs * cdiv(q_len, 8) <= 8
   G4_DRAFT_HEAD_Q: fp8          # quantized draft-head scan format (fp8 | int4)

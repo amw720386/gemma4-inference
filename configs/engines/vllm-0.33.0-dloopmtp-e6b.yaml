@@ -51,7 +51,8 @@ args:
   # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
   - [--host, 0.0.0.0]
   - [--port, "{port}"]
-env: {}
+env:
+  G4_DRAFT_PREFILL_LAST: "1"    # mtp_draft_prefill_last gate (D-061): on; unset = upstream draft prefill
 unknowns:
   - "Whether loop-aware fine-tuning raises plain chained-MTP acceptance on our random-token prompts (could also lower it)."
   - "Whether the image's transformers parses per_layer_config (startup check; 1K/c1 smoke first)."
