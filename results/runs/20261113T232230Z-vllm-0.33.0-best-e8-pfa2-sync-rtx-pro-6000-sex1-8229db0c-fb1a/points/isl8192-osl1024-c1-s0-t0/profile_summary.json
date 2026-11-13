@@ -1,0 +1,296 @@
+{
+  "n_events": 799260,
+  "n_gpu_events": 597722,
+  "n_kernel_names": 82,
+  "gpu_time_ms": 12845.279,
+  "gpu_span_ms": 13011.549,
+  "gpu_busy_ms": 12822.513,
+  "gpu_idle_fraction": 0.0145,
+  "buckets": {
+    "memcpy": {
+      "ms": 8.686,
+      "share": 0.0007
+    },
+    "attention": {
+      "ms": 719.466,
+      "share": 0.056
+    },
+    "spec_decode": {
+      "ms": 12.86,
+      "share": 0.001
+    },
+    "sampling": {
+      "ms": 62.664,
+      "share": 0.0049
+    },
+    "gemm": {
+      "ms": 10479.45,
+      "share": 0.8158
+    },
+    "norm_act": {
+      "ms": 619.448,
+      "share": 0.0482
+    },
+    "other": {
+      "ms": 942.705,
+      "share": 0.0734
+    }
+  },
+  "phases_available": false,
+  "phases": {
+    "unattributed": {
+      "ms": 12845.279,
+      "share": 1.0
+    }
+  },
+  "phase_buckets": {
+    "unattributed": {
+      "gemm": 10479.45,
+      "other": 942.705,
+      "attention": 719.466,
+      "norm_act": 619.448,
+      "sampling": 62.664,
+      "spec_decode": 12.86,
+      "memcpy": 8.686
+    }
+  },
+  "steps": {
+    "all": {
+      "n": 538,
+      "cpu_ms_mean": 2.339,
+      "cpu_ms_p50": 2.0986,
+      "cpu_ms_p90": 2.4684,
+      "gpu_kernel_ms_mean": 19.05,
+      "gen_reqs_mean": 0.993,
+      "gen_tokens_mean": 6.948
+    },
+    "decode_only": {
+      "n": 536,
+      "cpu_ms_mean": 2.2007,
+      "cpu_ms_p50": 2.0986,
+      "cpu_ms_p90": 2.4544,
+      "gpu_kernel_ms_mean": 17.2604,
+      "gen_reqs_mean": 0.996,
+      "gen_tokens_mean": 6.974
+    },
+    "with_prefill": {
+      "n": 2,
+      "cpu_ms_mean": 39.4062,
+      "cpu_ms_p50": 39.3105,
+      "cpu_ms_p90": 39.5019,
+      "gpu_kernel_ms_mean": 498.6626,
+      "gen_reqs_mean": 0.0,
+      "gen_tokens_mean": 0.0
+    }
+  },
+  "top_kernels": [
+    {
+      "name": "nvjet_sm120_tst_mma_64x8x128_5_16x8x128_tmaAB_alignCD4_bz_TNNN",
+      "bucket": "gemm",
+      "count": 36360,
+      "total_us": 4289911.6,
+      "mean_us": 117.984,
+      "share": 0.334
+    },
+    {
+      "name": "nvjet_sm120_tst_mma_128x8x64_5_32x8x64_tmaAB_alignCD4_splitK_TNNN",
+      "bucket": "gemm",
+      "count": 54042,
+      "total_us": 2499139.2,
+      "mean_us": 46.244,
+      "share": 0.1946
+    },
+    {
+      "name": "nvjet_sm120_tst_mma_64x8x64_10_16x8x64_tmaAB_alignCD4_bz_TNNN",
+      "bucket": "gemm",
+      "count": 28302,
+      "total_us": 1176875.6,
+      "mean_us": 41.583,
+      "share": 0.0916
+    },
+    {
+      "name": "void cutlass::Kernel2<cutlass_75_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x2_tn_align1>(cutlass_75_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x2_tn_align1::Params)",
+      "bucket": "gemm",
+      "count": 534,
+      "total_us": 725928.1,
+      "mean_us": 1359.416,
+      "share": 0.0565
+    },
+    {
+      "name": "kernel_unified_attention",
+      "bucket": "attention",
+      "count": 38496,
+      "total_us": 676632.3,
+      "mean_us": 17.577,
+      "share": 0.0527
+    },
+    {
+      "name": "_g4_dhq_fp8_scan",
+      "bucket": "other",
+      "count": 3216,
+      "total_us": 589149.6,
+      "mean_us": 183.193,
+      "share": 0.0459
+    },
+    {
+      "name": "nvjet_sm120_tst_mma_256x128x64_2_64x64x64_tmaAB_alignCD4_bz_TNNN",
+      "bucket": "gemm",
+      "count": 192,
+      "total_us": 506657.0,
+      "mean_us": 2638.838,
+      "share": 0.0394
+    },
+    {
+      "name": "nvjet_sm120_tst_mma_256x8x64_2_64x8x64_tmaAB_alignCD4_splitK_TNNN",
+      "bucket": "gemm",
+      "count": 21360,
+      "total_us": 485949.9,
+      "mean_us": 22.75,
+      "share": 0.0378
+    },
+    {
+      "name": "nvjet_sm120_tst_mma_128x8x64_5_32x8x64_tmaAB_alignCD4_bz_TNNN",
+      "bucket": "gemm",
+      "count": 15546,
+      "total_us": 346735.1,
+      "mean_us": 22.304,
+      "share": 0.027
+    },
+    {
+      "name": "reduce_segments",
+      "bucket": "other",
+      "count": 38496,
+      "total_us": 162767.4,
+      "mean_us": 4.228,
+      "share": 0.0127
+    },
+    {
+      "name": "triton_red_fused_add_mul_rms_norm_2",
+      "bucket": "norm_act",
+      "count": 25728,
+      "total_us": 153992.3,
+      "mean_us": 5.985,
+      "share": 0.012
+    },
+    {
+      "name": "nvjet_sm120_tst_mma_128x160x64_2_64x40x64_tmaAB_alignCD4_bz_TNNN",
+      "bucket": "gemm",
+      "count": 96,
+      "total_us": 144203.9,
+      "mean_us": 1502.124,
+      "share": 0.0112
+    },
+    {
+      "name": "_g4_pfa_gl_fwd",
+      "bucket": "other",
+      "count": 96,
+      "total_us": 128109.0,
+      "mean_us": 1334.468,
+      "share": 0.01
+    },
+    {
+      "name": "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __nv_bfloat16, false, float, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, float const*, __nv_bfloat16 const*, float*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, float const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)",
+      "bucket": "gemm",
+      "count": 80208,
+      "total_us": 112885.6,
+      "mean_us": 1.407,
+      "share": 0.0088
+    },
+    {
+      "name": "triton_red_fused_add_rms_norm_0",
+      "bucket": "norm_act",
+      "count": 25728,
+      "total_us": 112634.9,
+      "mean_us": 4.378,
+      "share": 0.0088
+    },
+    {
+      "name": "triton_poi_fused_gelu_mul_slice_1",
+      "bucket": "norm_act",
+      "count": 38592,
+      "total_us": 108727.8,
+      "mean_us": 2.817,
+      "share": 0.0085
+    },
+    {
+      "name": "nvjet_sm120_tst_mma_128x176x64_2_32x88x64_tmaAB_alignCD4_bz_TNNN",
+      "bucket": "gemm",
+      "count": 48,
+      "total_us": 103487.0,
+      "mean_us": 2155.978,
+      "share": 0.0081
+    },
+    {
+      "name": "triton_per_fused_add_cat_index_select_mul_rms_norm_split_split_with_sizes_sub_unsqueeze_view_4",
+      "bucket": "norm_act",
+      "count": 25192,
+      "total_us": 63403.4,
+      "mean_us": 2.517,
+      "share": 0.0049
+    },
+    {
+      "name": "triton_per_fused_add_cat_index_select_mul_rms_norm_split_split_with_sizes_sub_unsqueeze_view_3",
+      "bucket": "norm_act",
+      "count": 25192,
+      "total_us": 62515.5,
+      "mean_us": 2.482,
+      "share": 0.0049
+    },
+    {
+      "name": "nvjet_sm120_tst_mma_64x8x128_5_16x8x128_tmaAB_alignCD4_splitK_TNNN",
+      "bucket": "gemm",
+      "count": 4806,
+      "total_us": 53830.8,
+      "mean_us": 11.201,
+      "share": 0.0042
+    },
+    {
+      "name": "void at::native::sbtopk::gatherTopK<float, unsigned int, 1, false>(at::cuda::detail::TensorInfo<float const, unsigned int>, unsigned int, unsigned int, bool, unsigned int, unsigned int, at::cuda::detail::TensorInfo<float, unsigned int>, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, float*)",
+      "bucket": "sampling",
+      "count": 3216,
+      "total_us": 48540.7,
+      "mean_us": 15.094,
+      "share": 0.0038
+    },
+    {
+      "name": "reshape_and_cache_kernel_flash",
+      "bucket": "attention",
+      "count": 25728,
+      "total_us": 42834.0,
+      "mean_us": 1.665,
+      "share": 0.0033
+    },
+    {
+      "name": "triton_per_fused_rms_norm_split_with_sizes_view_5",
+      "bucket": "norm_act",
+      "count": 25192,
+      "total_us": 31437.0,
+      "mean_us": 1.248,
+      "share": 0.0024
+    },
+    {
+      "name": "triton_per_fused_add_mul_rms_norm_2",
+      "bucket": "norm_act",
+      "count": 12864,
+      "total_us": 31290.3,
+      "mean_us": 2.432,
+      "share": 0.0024
+    },
+    {
+      "name": "nvjet_sm120_tst_mma_96x256x64_2_48x64x64_tmaAB_alignCD4_bz_TNNN",
+      "bucket": "gemm",
+      "count": 48,
+      "total_us": 31109.4,
+      "mean_us": 648.113,
+      "share": 0.0024
+    }
+  ],
+  "summarized": "rank0.1794612341383347343.pt.trace.json.gz",
+  "traces": [
+    {
+      "file": "rank0.1794612341383347343.pt.trace.json.gz",
+      "bytes": 24530154,
+      "gpu_time_ms": 12845.279
+    }
+  ]
+}
