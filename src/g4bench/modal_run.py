@@ -5,6 +5,7 @@
     g4bench modal prefetch [--speedbench] --execute         CPU: weights (+ SPEED-Bench) into the cache Volume
     g4bench modal job --engine E --matrix M [--only K] [--seeds 0] [--max-usd 2] --execute
     g4bench modal job --engine E --matrix M --profile-key 8192x4 [--profile-seconds 4]   E5g torch profile
+    g4bench modal job --engine E --matrix M --only 1024x1 --seeds 0 --correctness-only --execute   gates only
 
 Without ``--execute`` nothing is launched: the command prints the reservation it would make. Every launch:
 reconcile with Modal billing -> refuse unless worst case fits the per-job and remaining project budget ->
@@ -168,6 +169,9 @@ def launch(kind: str, spec: dict[str, Any], max_usd: float, *, ledger: Path = S.
 
 def main(args) -> int:
     load_dotenv()
+    # Before anything imports modal_app: its image ENV captures G4_CODE_SHA at import time, and gpu_kind() imports
+    # modal_app for patched configs. Setting it later (as before) left every patched-image run with sha=null.
+    code_sha = os.environ["G4_CODE_SHA"] = _code_sha()
     if args.modal_cmd == "spend":
         caps = S.Caps.from_env()
         rows = S.modal_billing() if not args.offline else None
@@ -178,6 +182,12 @@ def main(args) -> int:
     if args.modal_cmd == "prefetch":
         kind, spec = "prefetch", {"speedbench": bool(args.speedbench)}
     elif args.modal_cmd == "selftest":
+        from .test_gate import TestGateError, check_selftest_interval
+
+        try:  # owner policy: the suite runs on Modal at most once every 2.5 h (src/g4bench/test_gate.py)
+            check_selftest_interval(S.read())
+        except TestGateError as e:
+            raise SystemExit(f"selftest refused: {e}") from None
         kind, spec = "selftest", {}
     elif args.modal_cmd == "script":
         if not (REPO / args.path).is_file():
@@ -190,7 +200,13 @@ def main(args) -> int:
         kind = gpu_kind(args.engine, eng)
         spec = {"engine": args.engine, "matrix": args.matrix, "notes": args.notes,
                 "seeds": [int(x) for x in args.seeds.split(",")] if args.seeds else None,
-                "only": args.only.split(",") if args.only else None}
+                "only": args.only.split(",") if args.only else None, "code_sha": code_sha,
+                "greedy": not args.no_greedy, "correctness_only": bool(args.correctness_only)}
+        if args.greedy_reference:  # repo-relative path; the repo (minus results/) is uploaded to /repo
+            ref = Path(args.greedy_reference)
+            if ref.is_absolute() or not (REPO / ref).is_file() or ref.parts[0] == "results":
+                raise SystemExit(f"--greedy-reference must be a repo-relative file outside results/: {ref}")
+            spec["greedy_reference"] = ref.as_posix()
         if args.profile_key:  # E5g: torch-profiler window on one point (rows flagged ``profiled``)
             spec["profile"] = {"key": args.profile_key, "duration_s": args.profile_seconds,
                                "warmup_s": args.profile_warmup_s}
@@ -202,7 +218,6 @@ def main(args) -> int:
         print(json.dumps({"plan_only": True, **p, "spec": spec,
                           "budget": preflight(p)}, indent=2))
         return 0
-    os.environ["G4_CODE_SHA"] = _code_sha()
     out = launch(kind, spec, args.max_usd, dest=RESULTS / ("kernels" if kind == "gpu:script" else "runs"))
     print(json.dumps(out, indent=2, default=str))
     return 0 if not out.get("error") and not out.get("aborted") and out.get("rc", 0) == 0 else 1
@@ -217,7 +232,7 @@ def add_parser(sub) -> None:
     pf = ms.add_parser("prefetch", help="CPU: download pinned weights into the cache Volume")
     pf.add_argument("--speedbench", action="store_true")
     pf.add_argument("--max-usd", type=float, default=0.2)
-    st = ms.add_parser("selftest", help="CPU: run the test-suite on Linux inside Modal (~1 cent)")
+    st = ms.add_parser("selftest", help="CPU: the unit-test suite on Linux inside Modal (~1 cent; at most every 2.5 h)")
     st.add_argument("--max-usd", type=float, default=0.1)
     sc = ms.add_parser("script", help="GPU kernel lab: run a repo script inside the pinned vLLM image")
     sc.add_argument("--path", required=True, help="repo-relative script, e.g. kernels/gemm_bench.py")
@@ -234,5 +249,10 @@ def add_parser(sub) -> None:
     j.add_argument("--profile-seconds", type=float, default=4.0, help="profiler window length (keep short)")
     j.add_argument("--profile-warmup-s", type=float, default=30.0,
                    help="seconds after the client starts before /start_profile")
+    j.add_argument("--no-greedy", action="store_true", help="skip the token-level greedy-equivalence capture")
+    j.add_argument("--correctness-only", action="store_true",
+                   help="start the server for the first selected point, run probes + greedy gate, no benchmark")
+    j.add_argument("--greedy-reference", help="repo-relative reference JSON (default "
+                   "data/greedy_reference/vllm-0.33.0-nospec.json)")
     for x in (pf, st, sc, j):
         x.add_argument("--execute", action="store_true", help="actually launch (default: plan only)")
