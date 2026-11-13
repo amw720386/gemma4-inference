@@ -1,0 +1,384 @@
+{
+ "schema": 1,
+ "pair_id": "20261113T210627Z-pair-vllm-0.33-vs-vllm-0.33-67df",
+ "engines": {
+  "A": "vllm-0.33.0-mtp4",
+  "B": "vllm-0.33.0-best-e8-pfa2-sync"
+ },
+ "engine_configs": {
+  "A": "vllm-0.33.0-mtp4",
+  "B": "vllm-0.33.0-best-e8-pfa2-sync"
+ },
+ "engine_kinds": {
+  "A": "vllm",
+  "B": "vllm"
+ },
+ "run_ids": {
+  "A": "20261113T210627Z-vllm-0.33.0-mtp4-rtx-pro-6000-sex1-daa26a1c-4fb6",
+  "B": "20261113T210627Z-vllm-0.33.0-best-e8-pfa2-sync-rtx-pro-6000-sex1-8229db0c-bed6"
+ },
+ "config_hashes": {
+  "A": "daa26a1c4df5",
+  "B": "8229db0c32b0"
+ },
+ "matrix": "backboard-repro-shared",
+ "order": "ABBA",
+ "repeats": 2,
+ "container": {
+  "modal_task_id": "ta-01M7BBQ8XVV0XMQEBB6JCHT0WR",
+  "hostname": "modal"
+ },
+ "hardware_class": "RTX-PRO-6000-SEx1",
+ "exact_hardware": true,
+ "gpu": {
+  "uuid_start": [
+   "GPU-c0381827-04fc-e61b-a890-a69c394d0099"
+  ],
+  "uuid_end": [
+   "GPU-c0381827-04fc-e61b-a890-a69c394d0099"
+  ],
+  "same_gpu": true,
+  "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+ },
+ "runtime_image": "mtp_draft_prefill_last,splitk_per_group,mtp_draft_head_q,prefill_attn_g4",
+ "ratio_definition": "B/A per metric (throughput > 1 = B faster; latency < 1 = B faster)",
+ "pairs": [
+  {
+   "key": "1024x1",
+   "point_id": "isl1024-osl1024-c1-s0-t0",
+   "trial": 0,
+   "seed": 0,
+   "isl": 1024,
+   "osl": 1024,
+   "conc": 1,
+   "dataset": "random",
+   "sequence": "AB",
+   "valid": true,
+   "gpu_uuid": [
+    "GPU-c0381827-04fc-e61b-a890-a69c394d0099"
+   ],
+   "same_gpu_as_job_start": true,
+   "container": {
+    "modal_task_id": "ta-01M7BBQ8XVV0XMQEBB6JCHT0WR",
+    "hostname": "modal"
+   },
+   "wall_s": 338.0,
+   "segments": [
+    {
+     "slot": "A",
+     "engine": "vllm-0.33.0-mtp4",
+     "run_id": "20261113T210627Z-vllm-0.33.0-mtp4-rtx-pro-6000-sex1-daa26a1c-4fb6",
+     "point_id": "isl1024-osl1024-c1-s0-t0",
+     "started_unix": 1794603987.8266878,
+     "valid": true,
+     "problems": [],
+     "server_start_s": 96.074780237,
+     "wall_s": 178.64,
+     "ended_unix": 1794604166.465461,
+     "metrics": {
+      "output_throughput": 190.2248745706225,
+      "total_token_throughput": 379.58265073317403,
+      "request_throughput": 0.2064520019216654,
+      "mean_ttft_ms": 91.8360161000038,
+      "median_ttft_ms": 94.14755549999398,
+      "p90_ttft_ms": 100.18335820001028,
+      "p99_ttft_ms": 100.62651082002077,
+      "mean_tpot_ms": 5.165046020609193,
+      "median_tpot_ms": 5.155915006622515,
+      "p90_tpot_ms": 5.465275340139768,
+      "p99_tpot_ms": 5.509658486753694,
+      "mean_e2el_ms": 4842.838050600004,
+      "median_e2el_ms": 4799.442486000004,
+      "p90_e2el_ms": 5137.094513100001,
+      "p99_e2el_ms": 5331.2360348100065,
+      "spec_acceptance_length": 4.227586206896552,
+      "duration_s": 48.437408729,
+      "completed": 10,
+      "failed": 0
+     },
+     "gpu": {
+      "n_samples": 65,
+      "sm_clock_mhz_mean": 2412.83,
+      "sm_clock_mhz_min": 2362.0,
+      "sm_clock_mhz_max": 2422.0,
+      "mem_clock_mhz_mean": 12481.0,
+      "mem_clock_mhz_min": 12481.0,
+      "mem_clock_mhz_max": 12481.0,
+      "power_w_mean": 307.89,
+      "power_w_min": 88.71,
+      "power_w_max": 373.2,
+      "temp_c_mean": 50.57,
+      "temp_c_min": 40.0,
+      "temp_c_max": 59.0,
+      "util_pct_mean": 84.37,
+      "util_pct_min": 0.0,
+      "util_pct_max": 100.0
+     },
+     "cublas": {
+      "ok": true,
+      "why": "image cuBLAS only"
+     },
+     "cublas_loaded": [
+      "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+     ]
+    },
+    {
+     "slot": "B",
+     "engine": "vllm-0.33.0-best-e8-pfa2-sync",
+     "run_id": "20261113T210627Z-vllm-0.33.0-best-e8-pfa2-sync-rtx-pro-6000-sex1-8229db0c-bed6",
+     "point_id": "isl1024-osl1024-c1-s0-t0",
+     "started_unix": 1794604166.466325,
+     "valid": true,
+     "problems": [],
+     "server_start_s": 92.05772536200001,
+     "wall_s": 159.31,
+     "ended_unix": 1794604325.7733848,
+     "metrics": {
+      "output_throughput": 236.80476337534074,
+      "total_token_throughput": 472.5301041262226,
+      "request_throughput": 0.25700538677592877,
+      "mean_ttft_ms": 71.37258690000863,
+      "median_ttft_ms": 70.38647699999956,
+      "p90_ttft_ms": 79.00552390004805,
+      "p99_ttft_ms": 79.38092569004993,
+      "mean_tpot_ms": 4.141118289792234,
+      "median_tpot_ms": 4.118772554210103,
+      "p90_tpot_ms": 4.490575482973605,
+      "p99_tpot_ms": 4.719892429306264,
+      "mean_e2el_ms": 3890.1725100000076,
+      "median_e2el_ms": 3871.772490000012,
+      "p90_e2el_ms": 4395.335414200008,
+      "p99_e2el_ms": 4828.410866320046,
+      "spec_acceptance_length": 5.2680019074868865,
+      "duration_s": 38.909690280999996,
+      "completed": 10,
+      "failed": 0
+     },
+     "gpu": {
+      "n_samples": 53,
+      "sm_clock_mhz_mean": 2411.26,
+      "sm_clock_mhz_min": 2362.0,
+      "sm_clock_mhz_max": 2422.0,
+      "mem_clock_mhz_mean": 12481.0,
+      "mem_clock_mhz_min": 12481.0,
+      "mem_clock_mhz_max": 12481.0,
+      "power_w_mean": 268.09,
+      "power_w_min": 88.46,
+      "power_w_max": 332.11,
+      "temp_c_mean": 46.81,
+      "temp_c_min": 41.0,
+      "temp_c_max": 50.0,
+      "util_pct_mean": 81.42,
+      "util_pct_min": 0.0,
+      "util_pct_max": 100.0
+     },
+     "cublas": {
+      "ok": true,
+      "why": "side install /opt/cublas-13.10/ mapped",
+      "also_mapped": [
+       "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+       "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+       "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+      ]
+     },
+     "cublas_loaded": [
+      "/opt/cublas-13.10/nvidia/cu13/lib/libcublas.so.13",
+      "/opt/cublas-13.10/nvidia/cu13/lib/libcublasLt.so.13",
+      "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+     ]
+    }
+   ],
+   "ratios_b_over_a": {
+    "output_throughput": 1.2448674964820392,
+    "total_token_throughput": 1.2448674964820392,
+    "request_throughput": 1.2448674964820392,
+    "mean_ttft_ms": 0.7771742496134441,
+    "median_ttft_ms": 0.7476187419439059,
+    "p90_ttft_ms": 0.7886092592575914,
+    "p99_ttft_ms": 0.7888669202893221,
+    "mean_tpot_ms": 0.8017582560288221,
+    "median_tpot_ms": 0.7988441525742269,
+    "p90_tpot_ms": 0.8216558551025837,
+    "p99_tpot_ms": 0.8566578927993117,
+    "mean_e2el_ms": 0.8032836261204387,
+    "median_e2el_ms": 0.8067129674527803,
+    "p90_e2el_ms": 0.8556072704116212,
+    "p99_e2el_ms": 0.9056831914387599,
+    "spec_acceptance_length": 1.2461015931249568
+   }
+  },
+  {
+   "key": "1024x1",
+   "point_id": "isl1024-osl1024-c1-s0-t1",
+   "trial": 1,
+   "seed": 0,
+   "isl": 1024,
+   "osl": 1024,
+   "conc": 1,
+   "dataset": "random",
+   "sequence": "BA",
+   "valid": true,
+   "gpu_uuid": [
+    "GPU-c0381827-04fc-e61b-a890-a69c394d0099"
+   ],
+   "same_gpu_as_job_start": true,
+   "container": {
+    "modal_task_id": "ta-01M7BBQ8XVV0XMQEBB6JCHT0WR",
+    "hostname": "modal"
+   },
+   "wall_s": 295.37,
+   "segments": [
+    {
+     "slot": "B",
+     "engine": "vllm-0.33.0-best-e8-pfa2-sync",
+     "run_id": "20261113T210627Z-vllm-0.33.0-best-e8-pfa2-sync-rtx-pro-6000-sex1-8229db0c-bed6",
+     "point_id": "isl1024-osl1024-c1-s0-t1",
+     "started_unix": 1794604325.8221724,
+     "valid": true,
+     "problems": [],
+     "server_start_s": 88.05223769600002,
+     "wall_s": 143.8,
+     "ended_unix": 1794604469.6201792,
+     "metrics": {
+      "output_throughput": 236.7458174202062,
+      "total_token_throughput": 472.4124809081736,
+      "request_throughput": 0.25694141243781876,
+      "mean_ttft_ms": 70.92721040000356,
+      "median_ttft_ms": 69.54623699999729,
+      "p90_ttft_ms": 78.11186940000425,
+      "p99_ttft_ms": 78.78545244002453,
+      "mean_tpot_ms": 4.142566299250521,
+      "median_tpot_ms": 4.120198332679716,
+      "p90_tpot_ms": 4.492611923985143,
+      "p99_tpot_ms": 4.721755398333227,
+      "mean_e2el_ms": 3891.063430300005,
+      "median_e2el_ms": 3873.5947215000124,
+      "p90_e2el_ms": 4394.165400799982,
+      "p99_e2el_ms": 4829.134022179995,
+      "spec_acceptance_length": 5.2680019074868865,
+      "duration_s": 38.919378177,
+      "completed": 10,
+      "failed": 0
+     },
+     "gpu": {
+      "n_samples": 53,
+      "sm_clock_mhz_mean": 2412.45,
+      "sm_clock_mhz_min": 2362.0,
+      "sm_clock_mhz_max": 2422.0,
+      "mem_clock_mhz_mean": 12481.0,
+      "mem_clock_mhz_min": 12481.0,
+      "mem_clock_mhz_max": 12481.0,
+      "power_w_mean": 267.36,
+      "power_w_min": 88.95,
+      "power_w_max": 333.49,
+      "temp_c_mean": 46.91,
+      "temp_c_min": 41.0,
+      "temp_c_max": 50.0,
+      "util_pct_mean": 82.91,
+      "util_pct_min": 0.0,
+      "util_pct_max": 100.0
+     },
+     "cublas": {
+      "ok": true,
+      "why": "side install /opt/cublas-13.10/ mapped",
+      "also_mapped": [
+       "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+       "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+       "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+      ]
+     },
+     "cublas_loaded": [
+      "/opt/cublas-13.10/nvidia/cu13/lib/libcublas.so.13",
+      "/opt/cublas-13.10/nvidia/cu13/lib/libcublasLt.so.13",
+      "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+     ]
+    },
+    {
+     "slot": "A",
+     "engine": "vllm-0.33.0-mtp4",
+     "run_id": "20261113T210627Z-vllm-0.33.0-mtp4-rtx-pro-6000-sex1-daa26a1c-4fb6",
+     "point_id": "isl1024-osl1024-c1-s0-t1",
+     "started_unix": 1794604469.6209624,
+     "valid": true,
+     "problems": [],
+     "server_start_s": 84.05110516400003,
+     "wall_s": 151.52,
+     "ended_unix": 1794604621.1426558,
+     "metrics": {
+      "output_throughput": 190.0231410418327,
+      "total_token_throughput": 379.18010323368094,
+      "request_throughput": 0.20623305952011364,
+      "mean_ttft_ms": 94.65873210001519,
+      "median_ttft_ms": 94.03431800001272,
+      "p90_ttft_ms": 104.65745430001333,
+      "p99_ttft_ms": 125.49452853000275,
+      "mean_tpot_ms": 5.167582602244933,
+      "median_tpot_ms": 5.156715390728563,
+      "p90_tpot_ms": 5.469136722304243,
+      "p99_tpot_ms": 5.512614970518088,
+      "mean_e2el_ms": 4847.9929066000295,
+      "median_e2el_ms": 4815.575660000036,
+      "p90_e2el_ms": 5140.7907936999545,
+      "p99_e2el_ms": 5335.156050370055,
+      "spec_acceptance_length": 4.227586206896552,
+      "duration_s": 48.48883114700004,
+      "completed": 10,
+      "failed": 0
+     },
+     "gpu": {
+      "n_samples": 64,
+      "sm_clock_mhz_mean": 2412.19,
+      "sm_clock_mhz_min": 2362.0,
+      "sm_clock_mhz_max": 2422.0,
+      "mem_clock_mhz_mean": 12481.0,
+      "mem_clock_mhz_min": 12481.0,
+      "mem_clock_mhz_max": 12481.0,
+      "power_w_mean": 311.44,
+      "power_w_min": 88.22,
+      "power_w_max": 374.24,
+      "temp_c_mean": 50.05,
+      "temp_c_min": 40.0,
+      "temp_c_max": 55.0,
+      "util_pct_mean": 85.94,
+      "util_pct_min": 0.0,
+      "util_pct_max": 100.0
+     },
+     "cublas": {
+      "ok": true,
+      "why": "image cuBLAS only"
+     },
+     "cublas_loaded": [
+      "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+     ]
+    }
+   ],
+   "ratios_b_over_a": {
+    "output_throughput": 1.245878876236909,
+    "total_token_throughput": 1.245878876236909,
+    "request_throughput": 1.245878876236909,
+    "mean_ttft_ms": 0.7492938984758721,
+    "median_ttft_ms": 0.7395835741584034,
+    "p90_ttft_ms": 0.7463574374366787,
+    "p99_ttft_ms": 0.627799899827416,
+    "mean_tpot_ms": 0.8016449117718759,
+    "median_tpot_ms": 0.7989966520331068,
+    "p90_tpot_ms": 0.8214480917369217,
+    "p99_tpot_ms": 0.8565364030656154,
+    "mean_e2el_ms": 0.8026132680604243,
+    "median_e2el_ms": 0.8043887159069126,
+    "p90_e2el_ms": 0.8547644860757683,
+    "p99_e2el_ms": 0.9051532844751633,
+    "spec_acceptance_length": 1.2461015931249568
+   }
+  }
+ ],
+ "notes": ""
+}
