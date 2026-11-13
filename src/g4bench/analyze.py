@@ -37,7 +37,8 @@ def _adm_from_config(name: str | None) -> str:
 
 def run_context(run_dir: Path) -> dict[str, Any]:
     """Run-level facts every row inherits: model pins (manifest) and correctness gate (correctness.json)."""
-    ctx: dict[str, Any] = {"pins_target": None, "pins_draft": None, "correctness_pass": None}
+    ctx: dict[str, Any] = {"pins_target": None, "pins_draft": None, "correctness_pass": None,
+                           "greedy_equivalent": None}
     man = run_dir / "manifest.json"
     if man.exists():
         try:
@@ -49,7 +50,11 @@ def run_context(run_dir: Path) -> dict[str, Any]:
     corr = run_dir / "correctness.json"
     if corr.exists():
         try:
-            ctx["correctness_pass"] = bool((json.loads(corr.read_text()).get("probes") or {}).get("pass"))
+            cj = json.loads(corr.read_text())
+            ctx["correctness_pass"] = bool((cj.get("probes") or {}).get("pass"))
+            # Token-level greedy gate vs the BF16 no-spec reference: True/False, None = not measured.
+            gc = cj.get("greedy_compare") or {}
+            ctx["greedy_equivalent"] = gc.get("pass") if isinstance(gc.get("pass"), bool) else None
         except json.JSONDecodeError:
             ctx["correctness_pass"] = False
     return ctx

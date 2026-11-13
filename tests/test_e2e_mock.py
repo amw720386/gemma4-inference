@@ -25,7 +25,7 @@ def test_mock_end_to_end(tmp_path, tokenizer_dir):
     assert meta["hardware_class"] == "cpu" and meta["exact_hardware"] is False
     corr = json.loads((d / "correctness.json").read_text())
     assert corr["probes"]["pass"] and corr["probes"]["n_ok"] == 8
-    assert len(corr["greedy_outputs"]) == 8
+    assert len(corr["greedy"]["items"]) == 8 and all(it.get("token_ids") for it in corr["greedy"]["items"])
     out = analyze.run(root=tmp_path, out=tmp_path / "summary", include_mock=True)
     assert out["rows"] == 4 and out["aggregates"] == 2
     assert (tmp_path / "summary" / "SUMMARY.md").exists()

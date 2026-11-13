@@ -50,6 +50,9 @@ class RunOptions:
     extra_server_args: list[str] | None = None
     dry_run: bool = False
     correctness: bool = True
+    greedy: bool = True                   # token-level greedy-equivalence capture (correctness.greedy_run)
+    greedy_reference: str | None = None   # reference JSON; default data/greedy_reference/vllm-0.33.0-nospec.json
+    correctness_only: bool = False        # start the server for the first point, run the gates, no benchmark
     notes: str = ""
     profile: dict[str, Any] | None = None  # E5g: {"key": "8192x4", "warmup_s": 30, "duration_s": 4}
 
@@ -134,6 +137,9 @@ def run(opts: RunOptions) -> Path:
                     _record_skip(run_dir, p, f"server failed: {e}")
                     server = None
                     continue
+            if opts.correctness_only:
+                _correctness(run_dir, base_url, model_name, greedy=opts.greedy, reference=opts.greedy_reference)
+                break
             _run_point(run_dir, pdir, p, eng=eng, base_url=base_url, model=model_name, tokenizer=tokenizer,
                        chash=chash, run_id=run_id, meta=meta, start_s=start_s, server=server,
                        timeout_s=_bounded(opts.client_timeout_s, opts.max_wall_s, t_start), notes=opts.notes,
@@ -141,7 +147,7 @@ def run(opts: RunOptions) -> Path:
                        profile=prof if prof and p.point_id == prof["point_id"] else None, profiled=bool(prof))
             if i == 0 and opts.correctness:
                 # After the first measured point, so the gate never perturbs a measurement.
-                _correctness(run_dir, base_url, model_name)
+                _correctness(run_dir, base_url, model_name, greedy=opts.greedy, reference=opts.greedy_reference)
             print(f"[g4bench] {i+1}/{len(points)} done {p.point_id} ({time.monotonic()-t_start:.0f}s elapsed)", flush=True)
     finally:
         if server is not None:
@@ -292,18 +298,30 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
     return rec
 
 
-def _correctness(run_dir: Path, base_url: str, model: str) -> None:
+def _correctness(run_dir: Path, base_url: str, model: str, *, greedy: bool = True,
+                 reference: str | None = None) -> None:
+    """Probes + token-level greedy capture; compared in-job with the reference file when one is present."""
     from . import correctness
 
     out: dict[str, Any] = {}
     try:
         out["probes"] = correctness.probes(base_url, model)
-        out["greedy_outputs"] = correctness.greedy_outputs(base_url, model)
+        if greedy:
+            out["greedy"] = correctness.greedy_run(base_url, model)
+            ref = correctness.load_reference(reference)
+            if ref is not None:
+                out["greedy_compare"] = {"reference": ref.get("reference"),
+                                         **correctness.compare_greedy(ref, out["greedy"])}
+            else:
+                out["greedy_compare"] = {"pass": None, "error": f"no reference at "
+                                         f"{reference or correctness.reference_path()}"}
     except Exception as e:  # noqa: BLE001 - recorded, and the run is flagged by analysis
         out["error"] = repr(e)[:2000]
-    (run_dir / "correctness.json").write_text(json.dumps(out, indent=2))
-    print(f"[g4bench] correctness: {out.get('probes', {}).get('n_ok')}/{len(correctness.PROBES)} probes ok"
-          + (f" ERROR {out['error'][:200]}" if "error" in out else ""), flush=True)
+    (run_dir / "correctness.json").write_text(json.dumps(out, indent=1))
+    msg = f"[g4bench] correctness: {out.get('probes', {}).get('n_ok')}/{len(correctness.PROBES)} probes ok"
+    if "greedy_compare" in out:
+        msg += "; " + correctness.summary_line(out["greedy_compare"])
+    print(msg + (f" ERROR {out['error'][:200]}" if "error" in out else ""), flush=True)
 
 
 def _record_skip(run_dir: Path, p: Point, why: str) -> None:

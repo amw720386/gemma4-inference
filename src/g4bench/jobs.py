@@ -51,8 +51,17 @@ def guarded(fn: Callable[[dict[str, Any]], dict[str, Any]], spec: dict[str, Any]
 def run_job(spec: dict[str, Any], results_root: Path, clock: Callable[[], float] = time.time,
             **runner_overrides: Any) -> dict[str, Any]:
     """Map a job spec onto RunOptions and run it. Soft wall budget never exceeds the deadline."""
+    import os
+
     from .runner import RunOptions, run
 
+    if spec.get("code_sha"):
+        # metadata.git_info falls back to G4_CODE_SHA (no .git inside Modal); the spec value cannot be lost to
+        # image-env import order the way the image's ENV can (modal_run.main).
+        os.environ["G4_CODE_SHA"] = str(spec["code_sha"])
+    for k in ("greedy", "greedy_reference", "correctness_only"):
+        if k in spec and spec[k] is not None:
+            runner_overrides.setdefault(k, spec[k])
     remaining = float(spec["deadline_unix"]) - clock() - DEADLINE_HEADROOM_S
     profile = spec.get("profile")  # E5g: profile one point; its rows are flagged ``profiled``
     only = spec.get("only") or ([profile["key"]] if profile else None)
