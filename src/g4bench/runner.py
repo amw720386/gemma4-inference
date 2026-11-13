@@ -67,7 +67,35 @@ def resolve_tokenizer(pins: dict[str, Any]) -> str:
                                              "generation_config.json", "processor_config.json"])
 
 
-def run(opts: RunOptions) -> Path:
+@dataclass
+class Prepared:
+    """Everything a run needs once its run dir exists (shared by ``run`` and paired runs, paired.py)."""
+    opts: RunOptions
+    pins: dict[str, Any]
+    eng: EngineConfig
+    mat: dict[str, Any]
+    points: list[Point]
+    meta: dict[str, Any]
+    chash: str
+    run_id: str
+    run_dir: Path
+    fresh: bool
+    base_url: str
+    server_argv: list[str]
+    model_name: str
+    prof: dict[str, Any] | None
+    ds_files: dict[str, tuple[Path, dict[str, Any]]]
+    env: dict[str, str]
+    cublas: dict[str, Any]
+    tokenizer: str | None = None
+    cublas_recorded: bool = False
+
+
+def prepare(opts: RunOptions, *, manifest_extra: dict[str, Any] | None = None,
+            fresh_override: bool | None = None) -> Prepared:
+    """Validate, create the run dir, write manifest + metadata. Raises before any server/GPU time on a bad config."""
+    from . import cublas, images
+
     pins = load_pins()
     eng = EngineConfig.load(opts.engine)
     mat = load_matrix(opts.matrix)
@@ -75,10 +103,13 @@ def run(opts: RunOptions) -> Path:
     if not points:
         raise SystemExit("no points selected")
     meta = md.capture()
-    chash = config_hash(eng, mat, pins)
+    # A config on an image other than its home image (paired runs) gets its own hash; never set for a home-image run.
+    foreign = images.foreign_image_tag(eng.engine, eng.raw.get("image_patches"), os.environ) \
+        if eng.engine in ("vllm", "sglang") else None
+    chash = config_hash(eng, mat, pins, foreign_image=foreign)
     run_id = new_run_id(eng.name, meta["hardware_class"], chash)
     run_dir = opts.results_root / run_id
-    fresh = bool(mat.get("fresh_server_per_point", True))
+    fresh = bool(mat.get("fresh_server_per_point", True)) if fresh_override is None else fresh_override
     est = estimate(points, fresh_server_per_point=fresh, tok_s_ref="sglang" if eng.engine == "sglang" else "vllm")
     port = eng.port
     base_url = f"http://127.0.0.1:{port}"
@@ -90,9 +121,10 @@ def run(opts: RunOptions) -> Path:
         server_argv += prof["server_argv"]
 
     # Fail fast (before any run dir, server or GPU time): flags must exist in the pinned engine source,
-    # and every real-prompt set must exist and re-verify.
+    # every real-prompt set must exist and re-verify, and a requested cuBLAS must be available (D-061).
     check_flags(eng, server_argv[len(eng.launcher()):])
     ds_files = check_datasets(points)
+    cub = cublas.resolve(eng.env.get(cublas.ENV_REQUEST), os.environ, strict=not opts.dry_run)
     run_dir.mkdir(parents=True, exist_ok=False)
     manifest = {
         "datasets": {k: v[1] for k, v in ds_files.items()},
@@ -101,22 +133,94 @@ def run(opts: RunOptions) -> Path:
         "cost_estimate": {"usd": est.usd, "gpu_seconds": est.gpu_seconds, "summary": est.summary()},
         "options": {k: (str(v) if isinstance(v, Path) else v) for k, v in opts.__dict__.items()},
         "profile": prof,
+        "runtime_image": images.runtime_image(os.environ), "foreign_image": foreign,
+        "cublas_request": {k: v for k, v in cub.items() if k != "env"},
         "argv": sys.argv,
+        **(manifest_extra or {}),
     }
     (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
     (run_dir / "metadata.json").write_text(json.dumps(meta, indent=2, default=str))
     print(f"[g4bench] run {run_id}: {len(points)} points; {est.summary()}", flush=True)
-    if opts.dry_run:
-        print("[g4bench] dry run: server argv =", " ".join(server_argv))
-        return run_dir
-
-    tokenizer = opts.tokenizer or resolve_tokenizer(pins)
     env = dict(os.environ)
     env.update(eng.env)
+    env.update(cub["env"])
     if prof:
         env.update(prof["server_env"])
+    return Prepared(opts=opts, pins=pins, eng=eng, mat=mat, points=points, meta=meta, chash=chash, run_id=run_id,
+                    run_dir=run_dir, fresh=fresh, base_url=base_url, server_argv=server_argv, model_name=model_name,
+                    prof=prof, ds_files=ds_files, env=env, cublas=cub)
+
+
+def start_server(prep: Prepared, pdir: Path, timeout_s: float) -> tuple[Server, float, list[str]]:
+    """Start a fresh server (log in ``pdir``); record which cuBLAS its process tree mapped.
+
+    Returns (server, start seconds, problems); problems are attached to every point measured on this server.
+    Raises ServerError (the server is stopped) if it never gets healthy."""
+    from . import cublas
+
+    server = Server(prep.server_argv, env=prep.env, log_path=pdir / "server.log", base_url=prep.base_url,
+                    health_path=prep.eng.health_path)
+    start_s = server.start(timeout_s=timeout_s)
+    problems: list[str] = []
+    try:
+        probe = cublas.mapped_libs(server.proc.pid) if server.proc else {"available": False, "paths": []}
+        check = cublas.verify(prep.cublas, probe)
+    except Exception as e:  # noqa: BLE001 - evidence collection must never kill a run
+        probe, check = {"available": False, "error": repr(e)[:500], "paths": []}, {"ok": None, "why": "probe failed"}
+    rec = {"request": {k: v for k, v in prep.cublas.items() if k != "env"}, "server_env_added": prep.cublas["env"],
+           "probe": probe, "check": check}
+    (pdir / "cublas.json").write_text(json.dumps(rec, indent=1))
+    if check.get("ok") is False:
+        problems.append(f"cuBLAS request not honoured: {check.get('why')}")
+    if not prep.cublas_recorded:  # first server of the run: into the run metadata
+        try:
+            meta_path = prep.run_dir / "metadata.json"
+            meta = json.loads(meta_path.read_text())
+            meta["cublas"] = {"request": rec["request"], "loaded": probe.get("realpaths") or probe.get("paths"),
+                              "check": check}
+            meta_path.write_text(json.dumps(meta, indent=2, default=str))
+            prep.cublas_recorded = True
+        except (OSError, ValueError):
+            pass
+    return server, start_s, problems
+
+
+def run_point(prep: Prepared, pdir: Path, p: Point, *, server: Server, start_s: float | None, timeout_s: float,
+              problems: list[str] | None = None) -> dict[str, Any]:
+    prof = prep.prof
+    return _run_point(prep.run_dir, pdir, p, eng=prep.eng, base_url=prep.base_url, model=prep.model_name,
+                      tokenizer=prep.tokenizer, chash=prep.chash, run_id=prep.run_id, meta=prep.meta, start_s=start_s,
+                      server=server, timeout_s=timeout_s, notes=prep.opts.notes,
+                      dataset_file=prep.ds_files.get(p.dataset, (None,))[0],
+                      profile=prof if prof and p.point_id == prof["point_id"] else None, profiled=bool(prof),
+                      extra_problems=problems)
+
+
+def correctness_gate(prep: Prepared) -> None:
+    _correctness(prep.run_dir, prep.base_url, prep.model_name, greedy=prep.opts.greedy,
+                 reference=prep.opts.greedy_reference)
+
+
+def finish(prep: Prepared) -> None:
+    try:
+        from . import report
+
+        report.write(prep.run_dir)
+    except Exception as e:  # noqa: BLE001 - a report bug must never lose results
+        print(f"[g4bench] report generation failed: {e!r}", flush=True)
+
+
+def run(opts: RunOptions) -> Path:
+    prep = prepare(opts)
+    run_dir, points = prep.run_dir, prep.points
+    if opts.dry_run:
+        print("[g4bench] dry run: server argv =", " ".join(prep.server_argv))
+        return run_dir
+
+    prep.tokenizer = opts.tokenizer or resolve_tokenizer(prep.pins)
     t_start = time.monotonic()
     server: Server | None = None
+    server_problems: list[str] = []
     try:
         for i, p in enumerate(points):
             if time.monotonic() - t_start > opts.max_wall_s:
@@ -126,38 +230,30 @@ def run(opts: RunOptions) -> Path:
             pdir = run_dir / "points" / p.point_id
             pdir.mkdir(parents=True, exist_ok=True)
             start_s = None
-            if server is None or fresh:
+            if server is None or prep.fresh:
                 if server is not None:
                     server.stop()
-                server = Server(server_argv, env=env, log_path=pdir / "server.log", base_url=base_url,
-                                health_path=eng.health_path)
+                    server = None
                 try:
-                    start_s = server.start(timeout_s=_bounded(opts.server_timeout_s, opts.max_wall_s, t_start))
+                    server, start_s, server_problems = start_server(
+                        prep, pdir, _bounded(opts.server_timeout_s, opts.max_wall_s, t_start))
                 except ServerError as e:
                     _record_skip(run_dir, p, f"server failed: {e}")
                     server = None
                     continue
             if opts.correctness_only:
-                _correctness(run_dir, base_url, model_name, greedy=opts.greedy, reference=opts.greedy_reference)
+                correctness_gate(prep)
                 break
-            _run_point(run_dir, pdir, p, eng=eng, base_url=base_url, model=model_name, tokenizer=tokenizer,
-                       chash=chash, run_id=run_id, meta=meta, start_s=start_s, server=server,
-                       timeout_s=_bounded(opts.client_timeout_s, opts.max_wall_s, t_start), notes=opts.notes,
-                       dataset_file=ds_files.get(p.dataset, (None,))[0],
-                       profile=prof if prof and p.point_id == prof["point_id"] else None, profiled=bool(prof))
+            run_point(prep, pdir, p, server=server, start_s=start_s,
+                      timeout_s=_bounded(opts.client_timeout_s, opts.max_wall_s, t_start), problems=server_problems)
             if i == 0 and opts.correctness:
                 # After the first measured point, so the gate never perturbs a measurement.
-                _correctness(run_dir, base_url, model_name, greedy=opts.greedy, reference=opts.greedy_reference)
+                correctness_gate(prep)
             print(f"[g4bench] {i+1}/{len(points)} done {p.point_id} ({time.monotonic()-t_start:.0f}s elapsed)", flush=True)
     finally:
         if server is not None:
             server.stop()
-        try:
-            from . import report
-
-            report.write(run_dir)
-        except Exception as e:  # noqa: BLE001 - a report bug must never lose results
-            print(f"[g4bench] report generation failed: {e!r}", flush=True)
+        finish(prep)
     return run_dir
 
 
@@ -219,7 +315,8 @@ def check_datasets(points: list[Point]) -> dict[str, tuple[Path, dict[str, Any]]
 def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_url: str, model: str,
                tokenizer: str, chash: str, run_id: str, meta: dict, start_s: float | None,
                server: Server, timeout_s: float, notes: str, dataset_file: Path | None = None,
-               profile: dict[str, Any] | None = None, profiled: bool = False) -> dict[str, Any]:
+               profile: dict[str, Any] | None = None, profiled: bool = False,
+               extra_problems: list[str] | None = None) -> dict[str, Any]:
     result_path = pdir / "inferencex_result.json"
     argv = client_argv(p, base_url=base_url, model=model, backend=eng.client_backend, result=result_path,
                        tokenizer=tokenizer, endpoint=eng.endpoint, dataset_file=dataset_file)
@@ -289,6 +386,7 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
         problems = [f"client rc={rc}, no result file"]
     if rc != 0:
         problems.append(f"client exit code {rc}")
+    problems.extend(extra_problems or [])
     rec["valid"] = not problems
     rec["problems"] = problems
     if profiled:

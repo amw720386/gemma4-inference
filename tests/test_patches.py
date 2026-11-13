@@ -251,6 +251,14 @@ def test_patched_image_build_steps(monkeypatch):
     calls.clear()
     M._engine_image(M.VLLM_IMAGE, "vllm")
     assert [c[0] for c in calls] == ["env", "dir"] and calls[0][1] is None  # unpatched image: no patch steps
+    # Experimental image (D-061): no in-place upgrade; cuBLAS 13.10 side-installed with pip --target.
+    calls.clear()
+    M._engine_image(M.VLLM_IMAGE, "vllm", M.VLLM_PATCHES_EXP, pip=(), side=M.CUBLAS_SIDE)
+    runs = [c[1][0] for c in calls if c[0] == "run"]
+    assert not any("--upgrade" in r for r in runs)
+    req, target = M.CUBLAS_SIDE["13.10"]
+    assert runs[-1] == f"python -m pip install --no-deps --target {target} {req}" and target == "/opt/cublas-13.10"
+    assert ("env", ",".join(M.VLLM_PATCHES_EXP)) in calls
 
 
 def test_modal_run_routes_patched_configs():
@@ -263,6 +271,7 @@ def test_modal_run_routes_patched_configs():
         gpu_kind(TILES, "vllm")
     assert gpu_kind("vllm-0.33.0-mtp6-splitk-chunk3072", "vllm") == "gpu:vllm"
     assert gpu_kind("sglang-0.5.23-nextn", "sglang") == "gpu:sglang"
+    assert gpu_kind("vllm-0.33.0-best-e8-pfa-c8k", "vllm") == "gpu:vllm-patched-exp"
 
 
 def test_worker_refuses_mismatched_image(monkeypatch):
@@ -272,8 +281,17 @@ def test_worker_refuses_mismatched_image(monkeypatch):
         M._check_image_patches({"engine": TILES})
     M._check_image_patches({"engine": "vllm-0.33.0-mtp6-splitk-chunk3072"})  # unpatched image, unpatched config
     monkeypatch.setenv("G4_IMAGE_PATCHES", ",".join(M.VLLM_PATCHES))
-    M._check_image_patches({"engine": ACTIVE})  # subset incl. the always-on patch: accepted
+    monkeypatch.setenv("G4_IMAGE_PIP", ",".join(M.VLLM_PATCH_PIP))  # production patched image
+    M._check_image_patches({"engine": ACTIVE})  # subset: accepted
     with pytest.raises(RuntimeError):  # TILES is not in the current image
         M._check_image_patches({"engine": TILES})
-    with pytest.raises(RuntimeError):  # unpatched config on a patched image would silently get always-on patches
+    with pytest.raises(RuntimeError):  # unpatched config on the production image would silently get cuBLAS 13.10
         M._check_image_patches({"engine": "vllm-0.33.0-mtp6-splitk-chunk3072"})
+    # Experimental image (D-061): every patch env-gated, image cuBLAS = stock -> the stock recipe runs unchanged.
+    monkeypatch.setenv("G4_IMAGE_PATCHES", ",".join(M.VLLM_PATCHES_EXP))
+    monkeypatch.setenv("G4_IMAGE_PIP", "")
+    M._check_image_patches({"engine": "vllm-0.33.0-mtp4"})
+    M._check_image_patches({"paired": {"engines": ["vllm-0.33.0-mtp4", ACTIVE]}, "engine": None})
+    monkeypatch.delenv("G4_CUBLAS_SIDE", raising=False)
+    with pytest.raises(Exception, match="G4_CUBLAS"):  # pfa asks for cuBLAS 13.10, not side-installed here
+        M._check_image_patches({"paired": {"engines": ["vllm-0.33.0-mtp4", "vllm-0.33.0-best-e8-pfa-c8k"]}})

@@ -46,6 +46,7 @@ args:
   - [--host, 0.0.0.0]
   - [--port, "{port}"]
 env:
+  G4_DRAFT_PREFILL_LAST: "1"    # mtp_draft_prefill_last gate (D-061): on; unset = upstream draft prefill
   G4_DRAFT_HEAD_Q: fp8     # fp8 | int4 (anything else: patch inactive -> upstream assert in get_top_tokens)
   G4_DRAFT_HEAD_K: "32"    # candidates rescored exactly in BF16 per draft token (1..64)
 unknowns:

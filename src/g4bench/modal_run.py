@@ -6,6 +6,7 @@
     g4bench modal job --engine E --matrix M [--only K] [--seeds 0] [--max-usd 2] --execute
     g4bench modal job --engine E --matrix M --profile-key 8192x4 [--profile-seconds 4]   E5g torch profile
     g4bench modal job --engine E --matrix M --only 1024x1 --seeds 0 --correctness-only --execute   gates only
+    g4bench modal pair --a A --b B --matrix M --only 8192x4 --repeats 2 --order ABBA [--execute]   same-GPU pairs
 
 Without ``--execute`` nothing is launched: the command prints the reservation it would make. Every launch:
 reconcile with Modal billing -> refuse unless worst case fits the per-job and remaining project budget ->
@@ -58,7 +59,7 @@ def gpu_kind(engine_name: str, engine: str) -> str:
     patches = tuple(EngineConfig.load(engine_name).raw.get("image_patches") or ())
     if not patches:
         return f"gpu:{engine}"
-    from .modal_app import ALWAYS_ON_PATCHES, VLLM_PATCHES, VLLM_PATCHES_EXP
+    from .images import ALWAYS_ON_PATCHES, VLLM_PATCHES, VLLM_PATCHES_EXP
 
     if engine == "vllm" and not set(patches) <= set(VLLM_PATCHES) and set(patches) <= set(VLLM_PATCHES_EXP) \
             and ALWAYS_ON_PATCHES <= set(patches):
@@ -67,6 +68,35 @@ def gpu_kind(engine_name: str, engine: str) -> str:
         raise SystemExit(f"{engine_name}: image_patches {list(patches)} unsupported; the patched image is "
                          f"vllm + {list(VLLM_PATCHES)} (configs must include {sorted(ALWAYS_ON_PATCHES)})")
     return "gpu:vllm-patched"
+
+
+def pair_kind(a: str, b: str) -> tuple[str, list[str]]:
+    """One image for both engines of a paired job, plus warnings about what that image changes for either config.
+
+    Same home image -> that image. A stock config (no image_patches) with a patched one -> the experimental image:
+    every patch there is env-gated and its default cuBLAS is the stock image's, so the stock recipe runs unchanged;
+    the production patched image cannot host it (cuBLAS 13.10 upgraded in place)."""
+    from .config import EngineConfig
+    from .images import CUBLAS_SIDE, VLLM_PATCH_PIP
+
+    eng = allowed_engines()
+    for n in (a, b):
+        if n not in eng:
+            raise SystemExit(f"unknown/non-GPU engine config {n!r}")
+    ka, kb = gpu_kind(a, eng[a]), gpu_kind(b, eng[b])
+    if ka == kb:
+        return ka, []
+    if "gpu:sglang" in (ka, kb):
+        raise SystemExit(f"cannot pair {a} ({ka}) with {b} ({kb}): different engine images")
+    kind, warn = "gpu:vllm-patched-exp", []
+    for n, k in ((a, ka), (b, kb)):
+        if k == "gpu:vllm-patched":
+            cfg = EngineConfig.load(n)
+            if not cfg.env.get("G4_CUBLAS"):
+                warn.append(f"{n} normally runs on the production patched image with {list(VLLM_PATCH_PIP)} upgraded "
+                            f"in place; on the experimental image it gets that image's default cuBLAS (13.1) unless "
+                            f"its config sets G4_CUBLAS (available: {sorted(CUBLAS_SIDE)})")
+    return kind, warn
 
 
 def _code_sha() -> str:
@@ -149,6 +179,7 @@ def launch(kind: str, spec: dict[str, Any], max_usd: float, *, ledger: Path = S.
     # Settle from wall time since reservation (covers container start); ephemeral app is stopped by now.
     settled = round(p["rate_usd_s"] * (end - now + S.SCALEDOWN_MARGIN_S), 4)
     files = (result or {}).pop("files", {}) if isinstance(result, dict) else {}
+    multi = (result or {}).pop("files_multi", None) if isinstance(result, dict) else None
     S.append({"launch_id": lid, "status": "settled", "settled_usd": settled, "end_unix": end,
               "outcome": "error" if err or (result or {}).get("error") or (result or {}).get("aborted") else "ok",
               "error": repr(err)[:500] if err else (result or {}).get("error") or (result or {}).get("aborted"),
@@ -160,11 +191,61 @@ def launch(kind: str, spec: dict[str, Any], max_usd: float, *, ledger: Path = S.
         from .jobs import write_run_files
 
         out["run_dir"] = str(write_run_files(dest, out["run_id"], files))
+    if multi:  # paired job: {"runs": {run_id: files}, "pairs": {pair_id: files}} -> results/<sub>/<id>
+        out["run_dirs"] = write_multi(dest.parent, multi)
     if kind == "prefetch" and out.get("volume_gib") is not None:
         S.append({"kind": "storage", "gib": out["volume_gib"], "unix": time.time(),
                   "volume": "g4repro-hf-cache"}, ledger)
     out.pop("rows", None)
     return out
+
+
+def write_multi(results_root: Path, multi: dict[str, dict[str, dict[str, bytes]]]) -> list[str]:
+    """Write a paired job's returned files: only the ``runs`` and ``pairs`` subtrees are accepted."""
+    from .jobs import write_run_files
+
+    written = []
+    for sub, by_id in multi.items():
+        if sub not in ("runs", "pairs"):
+            raise ValueError(f"unexpected result subtree {sub!r}")
+        for rid, files in (by_id or {}).items():
+            if files:
+                written.append(str(write_run_files(results_root / sub, rid, files)))
+    return written
+
+
+def pair_spec(args, code_sha: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """(kind, spec, sizing) for ``g4bench modal pair``; sizing says whether the sequence fits the reservation."""
+    from .matrix import expand, load_matrix
+    from .paired import ORDERS, plan_sequence
+
+    if args.order not in ORDERS:
+        raise SystemExit(f"--order must be one of {sorted(ORDERS)}")
+    if args.repeats < 1:
+        raise SystemExit("--repeats must be >= 1")
+    kind, warnings = pair_kind(args.a, args.b)
+    seeds = [int(x) for x in args.seeds.split(",")] if args.seeds else None
+    only = args.only.split(",") if args.only else None
+    pts = expand(load_matrix(args.matrix), seeds=seeds, trials=args.repeats, only_keys=only)
+    if not pts:
+        raise SystemExit("no points selected")
+    p = plan(kind, args.max_usd)
+    sizing = plan_sequence(pts, max_wall_s=max(p["timeout_s"] - SOFT_WALL_HEADROOM_S, 0),
+                           correctness=not args.no_correctness, rate_usd_s=p["rate_usd_s"])
+    sizing["warnings"] = warnings
+    sizing["sequence"] = [f"{q.point_id}:{''.join(_seq(args.order, q.trial))}" for q in pts]
+    spec = {"paired": {"engines": [args.a, args.b], "order": args.order, "repeats": args.repeats},
+            "engine": None, "matrix": args.matrix, "notes": args.notes, "seeds": seeds, "only": only,
+            "code_sha": code_sha, "greedy": not args.no_greedy}
+    if args.no_correctness:
+        spec["correctness"] = False
+    return kind, spec, sizing
+
+
+def _seq(order: str, trial: int) -> str:
+    from .paired import segment_order
+
+    return segment_order(order, trial)
 
 
 def main(args) -> int:
@@ -189,6 +270,18 @@ def main(args) -> int:
         except TestGateError as e:
             raise SystemExit(f"selftest refused: {e}") from None
         kind, spec = "selftest", {}
+    elif args.modal_cmd == "pair":
+        kind, spec, sizing = pair_spec(args, code_sha)
+        p = plan(kind, args.max_usd)
+        if not args.execute:
+            print(json.dumps({"plan_only": True, **p, "spec": spec, "sizing": sizing, "budget": preflight(p)},
+                             indent=2))
+            return 0
+        if not sizing["fits"]:
+            raise SystemExit("paired sequence does not fit this reservation: " + sizing.get("suggestion", ""))
+        out = launch(kind, spec, args.max_usd, dest=RESULTS / "runs")
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if not out.get("error") and not out.get("aborted") else 1
     elif args.modal_cmd == "script":
         if not (REPO / args.path).is_file():
             raise SystemExit(f"no such script {args.path}")
@@ -254,5 +347,17 @@ def add_parser(sub) -> None:
                    help="start the server for the first selected point, run probes + greedy gate, no benchmark")
     j.add_argument("--greedy-reference", help="repo-relative reference JSON (default "
                    "data/greedy_reference/vllm-0.33.0-nospec.json)")
-    for x in (pf, st, sc, j):
+    pr = ms.add_parser("pair", help="GPU: engines A and B interleaved on ONE GPU in one container (D-061)")
+    pr.add_argument("--a", required=True, help="reference engine config, e.g. vllm-0.33.0-mtp4 (article recipe)")
+    pr.add_argument("--b", required=True, help="candidate engine config")
+    pr.add_argument("--matrix", required=True)
+    pr.add_argument("--only")
+    pr.add_argument("--seeds")
+    pr.add_argument("--repeats", type=int, default=2, help="pairs per point (each repeat = one A and one B segment)")
+    pr.add_argument("--order", default="ABBA", help="ABBA (AB, BA, ...), ABAB, or the mirrors BAAB / BABA")
+    pr.add_argument("--notes", default="")
+    pr.add_argument("--max-usd", type=float, default=3.0)
+    pr.add_argument("--no-greedy", action="store_true", help="probes only in the correctness gate")
+    pr.add_argument("--no-correctness", action="store_true", help="skip the correctness gate entirely")
+    for x in (pf, st, sc, j, pr):
         x.add_argument("--execute", action="store_true", help="actually launch (default: plan only)")

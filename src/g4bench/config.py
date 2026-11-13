@@ -126,13 +126,40 @@ def stable_hash(obj: Any, n: int = 12) -> str:
     return hashlib.sha256(blob).hexdigest()[:n]
 
 
-def config_hash(engine: EngineConfig, matrix: dict[str, Any], pins: dict[str, Any]) -> str:
+# Env gates added after runs of these configs existed (D-061): image patch -> (variable, legacy value). The legacy
+# value reproduces what the image did before the gate existed, so a config listing the patch with exactly that value
+# hashes as before (its old and new runs keep pooling); any other value, or none, is hashed explicitly.
+LEGACY_ENV: dict[str, tuple[str, str]] = {
+    "mtp_draft_prefill_last": ("G4_DRAFT_PREFILL_LAST", "1"),  # was always on once applied (until D-061)
+    "prefill_attn_g4": ("G4_CUBLAS", "13.10"),  # experimental image had cuBLAS 13.10 upgraded in place (until D-061)
+}
+UNSET = "<unset>"
+
+
+def hashed_env(engine: EngineConfig) -> dict[str, str]:
+    env = dict(engine.env)
+    patches = set(engine.raw.get("image_patches") or ())
+    for patch, (var, legacy) in LEGACY_ENV.items():
+        if patch in patches:
+            if env.get(var) == legacy:
+                env.pop(var)
+            else:
+                env[var] = env.get(var, UNSET)
+    return env
+
+
+def config_hash(engine: EngineConfig, matrix: dict[str, Any], pins: dict[str, Any],
+                foreign_image: str | None = None) -> str:
+    """``foreign_image``: the runtime image when it is not the config's home image (images.foreign_image_tag)."""
     client_policy = {k: matrix.get(k) for k in (
         "random_range_ratio", "use_chat_template", "num_prompts_per_conc", "num_warmups_per_conc",
         "max_model_len", "dataset", "dataset_by_isl", "ignore_eos",
     )}
-    return stable_hash({
-        "engine": {"name": engine.name, "args": engine.args, "env": engine.env, "version": engine.version},
+    obj: dict[str, Any] = {
+        "engine": {"name": engine.name, "args": engine.args, "env": hashed_env(engine), "version": engine.version},
         "client_policy": client_policy,
         "pins": pins,
-    })
+    }
+    if foreign_image:
+        obj["runtime_image"] = foreign_image
+    return stable_hash(obj)
