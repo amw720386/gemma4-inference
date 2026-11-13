@@ -21,7 +21,7 @@ def test_rates_match_modal_billing_rates():
 def test_env_only_tightens(monkeypatch):
     monkeypatch.setenv("G4_PROJECT_CAP_USD", "50")
     monkeypatch.setenv("G4_PER_JOB_CAP_USD", "5")
-    assert S.Caps.from_env() == S.Caps(50.0, 4.0)
+    assert S.Caps.from_env() == S.Caps(50.0, 4.0)  # env 50 tightens the $100 cap
     monkeypatch.setenv("G4_PROJECT_CAP_USD", "4")
     monkeypatch.setenv("G4_PER_JOB_CAP_USD", "1.5")
     assert S.Caps.from_env() == S.Caps(4.0, 1.5)
