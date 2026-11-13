@@ -77,11 +77,31 @@ Triton/CUDA the same plan runs ``prefill_torch`` (dense gather + softmax per req
 Variants: ``G4_PREFILL_ATTN_GLOBAL`` / ``G4_PREFILL_ATTN_SLIDING`` name a variant (tables below, copied from
 kernels/prefill_attn.py); the defaults are placeholders until the bench picks the winners.
 
+v2 (names ``v2:gl_*``, from kernels/prefill_attn_v2.py): the Gluon mma_v2 FA2 kernel (``_g4_pfa_gl_fwd``) on the
+same plan / work table / grid ``(n_work, num_kv)`` (no dv split: the warp grid [WM, WN] splits head_dim). Q tile ->
+shared memory once (cp.async); K/V tiles of BLOCK_N tokens by cp.async with the paged gather in the address math:
+each copied row loads its ``block_table[req, j // BLOCK_SIZE]`` entry (int64 row offset = page * stride_block +
+(j % BLOCK_SIZE) * stride_slot), rows past the causal end are zero-filled and never dereference the table, so a
+tile may span cache blocks and any BLOCK_SIZE works (vLLM picks it per KV-cache group; the Triton backend needs a
+multiple of 16, e.g. 64 in our runs). Masks: causal + window on every tile, as the lab kernel. Not ported: split-KV
+(``_sk2``), the ``tl_*`` TMA variants (TMA descriptors need contiguous K/V), ``gl_m64_n16_w4x2_kw8`` (failed the
+bench numerics) and ``gl_m128_n32_w8x1_kw8`` (over shared memory); naming them raises. Load-time check (per
+process and layer shape: variant, head_dim, group, KV heads, window, block size, dtype, device; outside stream
+capture): the kernel runs a small paged mixed batch (a decode prefix, a fresh chunk, a chunk with context past
+the window, shuffled cache blocks) and must match ``paged_attention_torch`` (fp32) within atol 3e-2 + rtol 2e-2
+without touching rows outside its requests. Any failure - Gluon missing, compile error, mismatch, a later launch
+error - is logged once and that layer shape falls back to the v1 bench winner (``V1_FALLBACK``), or to upstream if
+that does not fit.
+
 Risks / unverified (CPU-only authoring; nothing here ran on a GPU): kernel correctness on sm_120 (the bench checks
 the contiguous-KV kernel; the paged gather is new), speed of the per-token block-table gather vs contiguous loads,
 register pressure of the chosen variants, Triton JIT on first prefill per (variant, block size) (no warm-up; the
 PIECEWISE capture's eager attention usually triggers it), and the decode prefix newly taking the 3D split-K path in
-mixed batches (same math, different reduction order).
+mixed batches (same math, different reduction order). v2 (authored without a GPU): Gluon API drift (written
+against the lab kernel's Triton 3.8 calls; a compile error only disables v2), cp.async vectorisation of the
+gathered rows (needs the compiler to prove 16 B alignment of page * stride_block; else slower, still correct), the
+synchronous block-table load in front of each tile's cp.async, and an asynchronous device fault (not an exception)
+in the check would not be recoverable.
 """
 
 from __future__ import annotations
@@ -229,6 +249,8 @@ def patch_text(src: str, runtime_path: str = RUNTIME_PATH) -> tuple[str, bool]:
 # apply.py loads this file as ``g4patch_<NAME>`` during the image build and only needs patch_text: skip the
 # torch/triton imports there. Everywhere else they are optional (CPU tests without torch/triton).
 torch = triton = tl = None
+gluon = gl = cp = mma_v2 = None
+GLUON_ERROR = "not imported"
 if __name__ != "g4patch_" + NAME:
     try:
         import torch
@@ -239,6 +261,16 @@ if __name__ != "g4patch_" + NAME:
         import triton.language as tl
     except Exception:  # noqa: BLE001
         triton = tl = None
+    if triton is not None:
+        try:  # Gluon (Triton >= 3.5); v2 variants fall back to v1 without it
+            from triton.experimental import gluon
+            from triton.experimental.gluon import language as gl
+            from triton.experimental.gluon.language.nvidia.ampere import async_copy as cp
+            from triton.experimental.gluon.language.nvidia.ampere import mma_v2
+            GLUON_ERROR = None
+        except Exception as e:  # noqa: BLE001
+            gluon = gl = cp = mma_v2 = None
+            GLUON_ERROR = repr(e)[:300]
 
 logger = logging.getLogger("vllm.g4patch." + NAME)
 _LOGGED: set = set()
@@ -289,26 +321,103 @@ SLIDING_VARIANTS = {v.name: v for v in [
 ]}
 DEFAULT_GLOBAL = "m64_dv256_n32_q"      # placeholder until the bench
 DEFAULT_SLIDING = "m64_dv256_n32_q_s2"  # placeholder until the bench
+# v1 bench winners (kernels/prefill_attn_bench.py): where a v2 variant falls back to when it cannot run.
+V1_FALLBACK = {"global": "m64_dv512_n32_d64", "sliding": "m64_dv256_n64_d64"}
+
+V2_PREFIX = "v2:"
+SMEM_LIMIT = 101376  # sm_120 max dynamic shared memory per block (99 KB)
+
+
+class V2Variant(NamedTuple):
+    name: str        # "v2:" + the kernel lab name
+    block_m: int     # (token, head) rows per program == 16 * wm
+    block_n: int     # KV tokens per tile
+    block_d: int     # Q/K/V shared-memory slice width (cp.async / ldmatrix)
+    wm: int          # warp grid rows
+    wn: int          # warp grid columns (split of the KV tile in S and of head_dim in O)
+    kv_shared: bool  # K and V share one tile buffer
+    kw_qk: int       # DotOperand k_width for Q/K
+    kw_pv: int       # DotOperand k_width for P/V
+
+
+def _gl(name, bm, bn, bd, wm, wn, kvs=False, kw_qk=8, kw_pv=2):
+    return V2Variant(V2_PREFIX + name, bm, bn, bd, wm, wn, kvs, kw_qk, kw_pv)
+
+
+# Same _gl(...) literals as kernels/prefill_attn_v2.py (keep in sync), minus V2_EXCLUDED.
+V2_GLOBAL_VARIANTS = {v.name: v for v in [
+    _gl("gl_m64_n16_w4x2", 64, 16, 128, 4, 2),
+    _gl("gl_m64_n16_w4x2_kvs", 64, 16, 128, 4, 2, kvs=True),
+    _gl("gl_m32_n32_w2x4", 32, 32, 64, 2, 4),
+    _gl("gl_m32_n32_w2x2", 32, 32, 64, 2, 2),                # bench winner: 190.8 TFLOPS (8K chunk)
+]}
+V2_SLIDING_VARIANTS = {v.name: v for v in [
+    _gl("gl_m128_n32_w8x1", 128, 32, 64, 8, 1),
+    _gl("gl_m128_n64_w8x1_kvs", 128, 64, 64, 8, 1, kvs=True),
+    _gl("gl_m64_n64_w4x1", 64, 64, 64, 4, 1),
+    _gl("gl_m64_n32_w4x1", 64, 32, 64, 4, 1),                # bench winner: 190.9 TFLOPS (8K chunk)
+]}
+V2_EXCLUDED = {
+    "gl_m64_n16_w4x2_kw8": "failed the v2 bench numerics (max_abs 8.4)",
+    "gl_m128_n32_w8x1_kw8": "exceeds sm_120 shared memory",
+    "gl_m64_n16_w4x2_sk2": "split-KV is not ported to the paged path",
+    "gl_m128_n32_w8x1_sk2": "split-KV is not ported to the paged path",
+}
+
+
+def is_v2(v) -> bool:
+    return v.name.startswith(V2_PREFIX)
 
 
 def requested(environ=None) -> bool:
     return (os.environ if environ is None else environ).get(ENV, "").strip() == "1"
 
 
-def variant_for(window: int, environ=None) -> Variant:
-    """The configured variant for a global (window 0) or sliding layer; unknown names raise."""
+def variant_for(window: int, environ=None):
+    """The configured variant (v1 ``Variant`` or ``V2Variant``) for a global (window 0) or sliding layer; unknown or
+    excluded names raise."""
     env = os.environ if environ is None else environ
-    table, key, default = ((SLIDING_VARIANTS, ENV_SLIDING, DEFAULT_SLIDING) if window > 0
-                           else (GLOBAL_VARIANTS, ENV_GLOBAL, DEFAULT_GLOBAL))
-    name = env.get(key, "").strip() or default
+    sliding = window > 0
+    key = ENV_SLIDING if sliding else ENV_GLOBAL
+    name = env.get(key, "").strip() or (DEFAULT_SLIDING if sliding else DEFAULT_GLOBAL)
+    if name.startswith(V2_PREFIX):
+        table = V2_SLIDING_VARIANTS if sliding else V2_GLOBAL_VARIANTS
+        base = name[len(V2_PREFIX):]
+        if base in V2_EXCLUDED:
+            raise ValueError(f"{NAME}: {key}={name!r} is not selectable: {V2_EXCLUDED[base]}")
+        if base.startswith("tl_"):
+            raise ValueError(f"{NAME}: {key}={name!r}: v2 tl_* variants use TMA descriptors over contiguous K/V and "
+                             "are not available on vLLM's paged cache; use a v2:gl_* or a v1 variant")
+    else:
+        table = SLIDING_VARIANTS if sliding else GLOBAL_VARIANTS
     if name not in table:
-        raise ValueError(f"{NAME}: {key}={name!r} is not a variant; known: {', '.join(table)}")
+        known = list(SLIDING_VARIANTS if sliding else GLOBAL_VARIANTS) + list(
+            V2_SLIDING_VARIANTS if sliding else V2_GLOBAL_VARIANTS)
+        raise ValueError(f"{NAME}: {key}={name!r} is not a variant; known: {', '.join(known)}")
     return table[name]
 
 
-def variant_fits(v: Variant, head_dim: int, group: int) -> bool:
-    return (head_dim & (head_dim - 1)) == 0 and head_dim % v.block_dv == 0 and head_dim % v.block_d == 0 \
-        and ((not v.q_in_regs) or v.block_d == head_dim) and v.block_m % group == 0
+def fallback_for(window: int) -> Variant:
+    """The v1 variant a v2 variant falls back to."""
+    return SLIDING_VARIANTS[V1_FALLBACK["sliding"]] if window > 0 else GLOBAL_VARIANTS[V1_FALLBACK["global"]]
+
+
+def v2_smem_bytes(v: V2Variant, head_dim: int, elt: int = 2) -> int:
+    """Explicit shared-memory buffers of a v2 variant (Q + K + V, + the P exchange tile when wn > 1)."""
+    kv = v.block_n * head_dim * elt * (1 if v.kv_shared else 2)
+    p_x = v.block_m * v.block_n * elt if v.wn > 1 else 0
+    return v.block_m * head_dim * elt + kv + p_x
+
+
+def variant_fits(v, head_dim: int, group: int) -> bool:
+    if (head_dim & (head_dim - 1)) != 0 or v.block_m % group != 0 or head_dim % v.block_d != 0:
+        return False
+    if is_v2(v):
+        tpc = min(32, v.block_d // 8)
+        return (v.block_m == 16 * v.wm and v.block_n % (8 * v.wn) == 0 and head_dim % (8 * v.wn) == 0
+                and v.block_d % 16 == 0 and v.block_n % 16 == 0 and (32 // tpc) * v.wm * v.wn <= v.block_n
+                and v2_smem_bytes(v, head_dim) <= SMEM_LIMIT)
+    return head_dim % v.block_dv == 0 and ((not v.q_in_regs) or v.block_d == head_dim)
 
 
 # ----------------------------------------------------------------------------------------------------- the plan
@@ -412,6 +521,11 @@ def _window(impl) -> int:
     return int(sw[0]) + 1 if sw[0] >= 0 else 0
 
 
+def _gpu_path(query) -> bool:
+    """Triton/Gluon kernels (else the torch reference path; CPU tests)."""
+    return query.is_cuda and triton is not None
+
+
 def run_prefill(impl, query, key_cache, value_cache, output, attn_metadata, output_scale=None) -> Rest | None:
     """Patched-forward hook: write the plan's prefill rows of ``output`` and return the leading requests vLLM's kernel
     still has to run, or None (upstream for this layer and batch; nothing written)."""
@@ -436,19 +550,126 @@ def run_prefill(impl, query, key_cache, value_cache, output, attn_metadata, outp
     num_heads, num_kv = query.shape[1], key_cache.shape[2]
     group = num_heads // num_kv
     v = variant_for(window)
+    on_gpu = _gpu_path(query)
+    if num_heads % num_kv == 0 and is_v2(v) and on_gpu:
+        key = v2_key(v, head_dim, group, num_kv, window, int(value_cache.shape[1]), query)
+        fits = variant_fits(v, head_dim, group)
+        if not fits:
+            _v2_fail(key, "does not fit this layer shape")
+        if not fits or not v2_usable(key, lambda: v2_self_check(v, num_heads, num_kv, head_dim, window,
+                                                                  int(value_cache.shape[1]), query.dtype,
+                                                                  query.device, impl.scale)):
+            v = fallback_for(window)
     if num_heads % num_kv or not variant_fits(v, head_dim, group):
         _once(logging.WARNING, ("fit", head_dim, group, v.name), "%s: variant %s does not fit head_dim %d, %d q heads "
               "per KV head; upstream for this layer shape", NAME, v.name, head_dim, group)
         return None
     _once(logging.INFO, ("on", head_dim, group, window, v.name), "%s: prefill rows -> packed kernel %s (head_dim %d, "
           "%d q heads per KV head, window %d)", NAME, v.name, head_dim, group, window)
-    if query.is_cuda and triton is not None:
-        prefill_triton(p, query, key_cache, value_cache, output, attn_metadata.block_table,
-                       attn_metadata.query_start_loc, attn_metadata.seq_lens, impl.scale, window, v)
+    args = (p, query, key_cache, value_cache, output, attn_metadata.block_table, attn_metadata.query_start_loc,
+            attn_metadata.seq_lens, impl.scale, window)
+    if on_gpu:
+        if is_v2(v):
+            try:
+                prefill_gluon(*args, v)
+                return p.rest
+            except Exception as e:  # noqa: BLE001 - e.g. a recompile for other strides failing; nothing was written
+                _v2_fail(key, f"launch failed: {type(e).__name__}: {e}"[:300])
+                v = fallback_for(window)
+                if not variant_fits(v, head_dim, group):
+                    return None
+        prefill_triton(*args, v)
     else:
         prefill_torch(p, query, key_cache, value_cache, output, attn_metadata.block_table,
                       attn_metadata.seq_lens, impl.scale, window)
     return p.rest
+
+
+# ------------------------------------------------------------------------------------------- v2 enable / fallback
+_V2_STATE: dict = {}  # v2_key -> True (verified) | str (why not: falls back to v1 for that layer shape)
+
+
+def v2_key(v, head_dim, group, num_kv, window, block_size, query) -> tuple:
+    return (v.name, head_dim, group, num_kv, window, block_size, str(query.dtype), str(query.device))
+
+
+def _v2_fail(key, why: str) -> None:
+    if isinstance(_V2_STATE.get(key), str):
+        return  # already failed and logged
+    _V2_STATE[key] = why
+    _once(logging.WARNING, ("v2fail",) + tuple(key), "%s: v2 variant %s disabled for %s (%s); falling back to v1 %s",
+          NAME, key[0], key[1:], why, V1_FALLBACK["sliding" if key[4] > 0 else "global"])
+
+
+def v2_usable(key, check) -> bool:
+    """Run ``check()`` (None = pass, str = why not; exceptions count as failure) once per key; cache the verdict."""
+    st = _V2_STATE.get(key)
+    if st is None:
+        try:
+            err = check()
+        except Exception as e:  # noqa: BLE001 - Gluon compile errors, OOM, ...
+            err = f"{type(e).__name__}: {e}"[:300]
+        if err is None:
+            _V2_STATE[key] = True
+            _once(logging.INFO, ("v2ok",) + tuple(key), "%s: v2 variant %s passed its load-time paged check for %s",
+                  NAME, key[0], key[1:])
+        else:
+            _v2_fail(key, f"load-time check: {err}")
+        st = _V2_STATE[key]
+    return st is True
+
+
+def v2_check_case(window: int, block_size: int) -> list:
+    """(context_len, q_len) per request of the load-time check batch: a decode/verify prefix (must stay untouched),
+    a fresh chunk, and a chunk whose context reaches past the window (or 150 tokens for global layers)."""
+    return [(5, 3), (0, 37), ((window + 29) if window > 0 else 150, 70)]
+
+
+def v2_self_check(v, num_heads, num_kv, head_dim, window, block_size, dtype, device, scale,
+                  atol: float = 3e-2, rtol: float = 2e-2) -> str | None:
+    """Run v2 variant ``v`` on a small paged batch shaped like the layer and compare with the fp32 torch reference.
+    Returns None on a match, else the reason. Same constexprs as the real launches (the compile is reused)."""
+    if GLUON_ERROR is not None:
+        return f"gluon unavailable: {GLUON_ERROR}"
+    if dtype not in (torch.bfloat16, torch.float16):
+        return f"dtype {dtype} (v2 needs bf16/fp16)"
+    ctx_q = v2_check_case(window, block_size)
+    g = torch.Generator().manual_seed(20261113)
+    seq = [c + q for c, q in ctx_q]
+    nblk = [-(-s // block_size) for s in seq]
+    num_blocks = sum(nblk) + 3
+    perm = torch.randperm(num_blocks, generator=g)
+    bt = torch.zeros(len(seq), max(nblk) + 2, dtype=torch.int32)
+    used = 0
+    for i, nb in enumerate(nblk):
+        bt[i, :nb] = perm[used:used + nb].int()
+        used += nb
+    kv = torch.randn(num_blocks, num_kv, block_size, 2 * head_dim, generator=g).to(dtype).to(device)
+    key_cache, value_cache = kv.transpose(1, 2).split(head_dim, dim=-1)  # vLLM's strided K/V views
+    qlens = [q for _, q in ctx_q]
+    qsl_l = [0]
+    for n in qlens:
+        qsl_l.append(qsl_l[-1] + n)
+    T = qsl_l[-1]
+    query = torch.randn(T + 2, num_heads, head_dim, generator=g).to(dtype).to(device)
+    qsl = torch.tensor(qsl_l, dtype=torch.int32, device=device)
+    seq_lens = torch.tensor(seq, dtype=torch.int32, device=device)
+    bt = bt.to(device)
+    p = plan_from_query_start_loc(qsl_l, len(seq), T, max(qlens))
+    out = torch.full_like(query, float("nan"))
+    prefill_gluon(p, query, key_cache, value_cache, out, bt, qsl, seq_lens, scale, window, v)
+    ref = torch.full(query.shape, float("nan"), dtype=torch.float32, device=device)
+    paged_attention_torch(query, key_cache, value_cache, ref, bt, qsl, seq_lens, p.pf_reqs, scale, window)
+    r0 = p.rest.num_tokens
+    if not bool(torch.isnan(out[:r0]).all()) or not bool(torch.isnan(out[T:]).all()):
+        return "wrote rows outside its requests"
+    o, r = out[r0:T].float(), ref[r0:T]
+    if not bool(torch.isfinite(o).all()):
+        return "non-finite output"
+    err = (o - r).abs()
+    if bool((err > atol + rtol * r.abs()).any()):
+        return f"mismatch vs torch reference: max_abs {float(err.max()):.4g} (atol {atol}, rtol {rtol})"
+    return None
 
 
 # ------------------------------------------------------------------------------------------------------ kernels
@@ -653,4 +874,180 @@ def prefill_triton(p: Plan, query, key_cache, value_cache, output, block_table, 
         BLOCK_M=v.block_m, BLOCK_N=v.block_n, BLOCK_D=v.block_d, BLOCK_DV=v.block_dv,
         NUM_DV_BLOCKS=n_dv, Q_IN_REGS=v.q_in_regs,
         num_warps=v.num_warps, num_stages=v.num_stages,
+    )
+
+
+# --------------------------------------------------------------------------------------------- v2 (Gluon, paged)
+if gluon is not None:
+    @gluon.jit
+    def _g4_gl_issue_tile(smem, base, bt_row, n0, n_hi, stride_b, stride_s,
+                          ROWS: gl.constexpr, HEAD_DIM: gl.constexpr, BLOCK_D: gl.constexpr,
+                          BLOCK_SIZE: gl.constexpr, blk: gl.constexpr):
+        """cp.async KV rows [n0, n0 + ROWS) of one request (rows >= n_hi zero-filled, their block-table entries never
+        read) from the paged cache into smem: row j lives at page block_table[j // BLOCK_SIZE], slot
+        j % BLOCK_SIZE (int64 offsets). BLOCK_D-wide column slices, one commit group."""
+        offs_n = n0 + gl.arange(0, ROWS, layout=gl.SliceLayout(1, blk))
+        n_ok = offs_n < n_hi
+        page = gl.load(bt_row + offs_n // BLOCK_SIZE, mask=n_ok, other=0).to(gl.int64)
+        row = page * stride_b + (offs_n % BLOCK_SIZE).to(gl.int64) * stride_s
+        offs_d = gl.arange(0, BLOCK_D, layout=gl.SliceLayout(0, blk))
+        msk = gl.expand_dims(n_ok, 1) & gl.expand_dims(offs_d < BLOCK_D, 0)
+        rows = base + gl.expand_dims(row, 1)
+        for i in gl.static_range(HEAD_DIM // BLOCK_D):
+            cp.async_load(smem.slice(i * BLOCK_D, BLOCK_D, dim=1), rows + gl.expand_dims(i * BLOCK_D + offs_d, 0),
+                          mask=msk)
+        cp.commit_group()
+
+    @gluon.jit
+    def _g4_pfa_gl_fwd(
+        Q, KC, VC, Out, BT, CU, SEQ, WORK, qk_scale,
+        stride_qt, stride_qh, stride_kb, stride_ks, stride_kh, stride_vb, stride_vs, stride_vh,
+        stride_ot, stride_oh, stride_bt,
+        G: gl.constexpr, HEAD_DIM: gl.constexpr, WINDOW: gl.constexpr, BLOCK_SIZE: gl.constexpr,
+        BLOCK_M: gl.constexpr, BLOCK_N: gl.constexpr, BLOCK_D: gl.constexpr,
+        WM: gl.constexpr, WN: gl.constexpr, NW: gl.constexpr, TPR: gl.constexpr, TPC: gl.constexpr,
+        KW_QK: gl.constexpr, KW_PV: gl.constexpr, KV_SHARED: gl.constexpr,
+    ):
+        """kernels/prefill_attn_v2.py ``_fwd_gl`` (SPLITS 1) on a varlen batch: the program's (request, row block)
+        comes from the work table, q offsets / context lengths from the device metadata, K/V from the paged cache."""
+        mma: gl.constexpr = gl.NVMMADistributedLayout(version=[2, 0], warps_per_cta=[WM, WN], instr_shape=[16, 8])
+        dot_a_qk: gl.constexpr = gl.DotOperandLayout(operand_index=0, parent=mma, k_width=KW_QK)
+        dot_b_qk: gl.constexpr = gl.DotOperandLayout(operand_index=1, parent=mma, k_width=KW_QK)
+        dot_a_pv: gl.constexpr = gl.DotOperandLayout(operand_index=0, parent=mma, k_width=KW_PV)
+        dot_b_pv: gl.constexpr = gl.DotOperandLayout(operand_index=1, parent=mma, k_width=KW_PV)
+        blk: gl.constexpr = gl.BlockedLayout(size_per_thread=[1, 8], threads_per_warp=[TPR, TPC],
+                                             warps_per_cta=[NW, 1], order=[1, 0])
+        smem_l: gl.constexpr = gl.SwizzledSharedLayout(vec=8, per_phase=1, max_phase=8, order=[1, 0])
+        row_l: gl.constexpr = gl.SliceLayout(1, mma)
+        col_l: gl.constexpr = gl.SliceLayout(0, mma)
+
+        w = gl.program_id(0)
+        kvh = gl.program_id(1)
+        req = gl.load(WORK + 2 * w)
+        mb = gl.load(WORK + 2 * w + 1)
+        q0 = gl.load(CU + req)
+        T = gl.load(CU + req + 1) - q0
+        start = gl.load(SEQ + req) - T          # context length (tokens before this chunk)
+
+        t_lo = (mb * BLOCK_M) // G
+        t_hi = gl.minimum((mb * BLOCK_M + BLOCK_M - 1) // G, T - 1)
+        hi = start + t_hi + 1
+        if WINDOW > 0:
+            j_lo = (gl.maximum(start + t_lo - WINDOW + 1, 0) // BLOCK_N) * BLOCK_N
+        else:
+            j_lo = start * 0
+        j_hi = hi
+
+        q_smem = gl.allocate_shared_memory(Q.dtype.element_ty, [BLOCK_M, HEAD_DIM], smem_l)
+        k_smem = gl.allocate_shared_memory(KC.dtype.element_ty, [BLOCK_N, HEAD_DIM], smem_l)
+        if KV_SHARED:
+            v_smem = k_smem
+        else:
+            v_smem = gl.allocate_shared_memory(VC.dtype.element_ty, [BLOCK_N, HEAD_DIM], smem_l)
+
+        # Q tile -> smem once (rows past T * G zero-filled, never stored)
+        offs_qr = mb * BLOCK_M + gl.arange(0, BLOCK_M, layout=gl.SliceLayout(1, blk))
+        q_row = (q0 + offs_qr // G) * stride_qt + (kvh * G + offs_qr % G) * stride_qh
+        offs_qd = gl.arange(0, BLOCK_D, layout=gl.SliceLayout(0, blk))
+        q_msk = gl.expand_dims(offs_qr < T * G, 1) & gl.expand_dims(offs_qd < BLOCK_D, 0)
+        for i in gl.static_range(HEAD_DIM // BLOCK_D):
+            cp.async_load(q_smem.slice(i * BLOCK_D, BLOCK_D, dim=1),
+                          Q + gl.expand_dims(q_row, 1) + gl.expand_dims(i * BLOCK_D + offs_qd, 0), mask=q_msk)
+        cp.commit_group()
+
+        bt_row = BT + req.to(gl.int64) * stride_bt
+        k_base = KC + kvh * stride_kh
+        v_base = VC + kvh * stride_vh
+        _g4_gl_issue_tile(k_smem, k_base, bt_row, j_lo, j_hi, stride_kb, stride_ks, BLOCK_N, HEAD_DIM, BLOCK_D,
+                          BLOCK_SIZE, blk)
+
+        offs_m = mb * BLOCK_M + gl.arange(0, BLOCK_M, layout=row_l)
+        qpos = start + gl.minimum(offs_m // G, T - 1)
+        m_i = gl.full([BLOCK_M], float("-inf"), gl.float32, row_l)
+        l_i = gl.zeros([BLOCK_M], gl.float32, row_l)
+        acc = gl.zeros([BLOCK_M, HEAD_DIM], gl.float32, mma)
+
+        for n0 in range(j_lo, j_hi, BLOCK_N):
+            if KV_SHARED:
+                cp.wait_group(0)
+            else:
+                _g4_gl_issue_tile(v_smem, v_base, bt_row, n0, j_hi, stride_vb, stride_vs, BLOCK_N, HEAD_DIM,
+                                  BLOCK_D, BLOCK_SIZE, blk)                                     # V(j) in flight
+                cp.wait_group(1)                                                                # Q, K(j) landed
+            gl.barrier()
+            s = gl.zeros([BLOCK_M, BLOCK_N], gl.float32, mma)
+            for i in gl.static_range(HEAD_DIM // BLOCK_D):
+                qa = q_smem.slice(i * BLOCK_D, BLOCK_D, dim=1).load(dot_a_qk)
+                kb = k_smem.slice(i * BLOCK_D, BLOCK_D, dim=1).permute((1, 0)).load(dot_b_qk)
+                s = mma_v2(qa, kb, s)
+            gl.barrier()                                                                        # k_smem free
+            if KV_SHARED:
+                _g4_gl_issue_tile(v_smem, v_base, bt_row, n0, j_hi, stride_vb, stride_vs, BLOCK_N, HEAD_DIM,
+                                  BLOCK_D, BLOCK_SIZE, blk)
+            else:
+                _g4_gl_issue_tile(k_smem, k_base, bt_row, n0 + BLOCK_N, j_hi, stride_kb, stride_ks, BLOCK_N,
+                                  HEAD_DIM, BLOCK_D, BLOCK_SIZE, blk)
+
+            offs_n = n0 + gl.arange(0, BLOCK_N, layout=col_l)
+            valid = gl.expand_dims(offs_n, 0) <= gl.expand_dims(qpos, 1)
+            if WINDOW > 0:
+                valid = valid & ((gl.expand_dims(qpos, 1) - gl.expand_dims(offs_n, 0)) < WINDOW)
+            s = gl.where(valid, s, float("-inf"))
+            m_new = gl.maximum(m_i, gl.max(s, axis=1) * qk_scale)
+            m_use = gl.where(m_new == float("-inf"), 0.0, m_new)
+            alpha = gl.exp2(m_i - m_use)
+            p = gl.exp2(s * qk_scale - gl.expand_dims(m_use, 1))
+            l_i = l_i * alpha + gl.sum(p, axis=1)
+            acc = acc * gl.expand_dims(alpha, 1)
+            pa = gl.convert_layout(p.to(VC.dtype.element_ty), dot_a_pv)
+            m_i = m_new
+
+            if KV_SHARED:
+                cp.wait_group(0)
+            else:
+                cp.wait_group(1)                                                                # V(j) landed
+            gl.barrier()
+            vb = v_smem.load(dot_b_pv)
+            acc = mma_v2(pa, vb, acc)
+            gl.barrier()                                                                        # v_smem free
+            if KV_SHARED:
+                _g4_gl_issue_tile(k_smem, k_base, bt_row, n0 + BLOCK_N, j_hi, stride_kb, stride_ks, BLOCK_N,
+                                  HEAD_DIM, BLOCK_D, BLOCK_SIZE, blk)
+        cp.wait_group(0)
+
+        offs_d = gl.arange(0, HEAD_DIM, layout=col_l)
+        t = gl.minimum(offs_m // G, T - 1)
+        head = kvh * G + offs_m % G
+        st_msk = gl.expand_dims(offs_m < T * G, 1) & gl.expand_dims(offs_d < HEAD_DIM, 0)
+        out = acc / gl.expand_dims(gl.where(l_i > 0.0, l_i, 1.0), 1)
+        o_ptrs = Out + gl.expand_dims((q0 + t) * stride_ot + head * stride_oh, 1) + gl.expand_dims(offs_d, 0)
+        gl.store(o_ptrs, out.to(Out.dtype.element_ty), mask=st_msk)
+
+
+def prefill_gluon(p: Plan, query, key_cache, value_cache, output, block_table, query_start_loc, seq_lens, scale,
+                  window: int, v: V2Variant) -> None:
+    """Launch the paged v2 Gluon kernel for the plan's prefill requests (raises if Gluon is unavailable)."""
+    if gluon is None:
+        raise RuntimeError(f"gluon unavailable: {GLUON_ERROR}")
+    T, H, D = query.shape
+    num_kv = key_cache.shape[2]
+    G = H // num_kv
+    assert query.stride(2) == 1 and output.stride(2) == 1 and key_cache.stride(3) == 1 and value_cache.stride(3) == 1
+    assert key_cache.dtype == value_cache.dtype == query.dtype and query.dtype in (torch.bfloat16, torch.float16)
+    assert max(T * query.stride(0), T * output.stride(0)) < 2 ** 31  # 32-bit q/out address math
+    work, n_work = p.work(G, v.block_m, query.device)
+    if n_work == 0:
+        return
+    tpc = min(32, v.block_d // 8)
+    _g4_pfa_gl_fwd[(n_work, num_kv)](
+        query, key_cache, value_cache, output, block_table, query_start_loc, seq_lens, work,
+        float(scale) * LOG2E,
+        query.stride(0), query.stride(1),
+        key_cache.stride(0), key_cache.stride(1), key_cache.stride(2),
+        value_cache.stride(0), value_cache.stride(1), value_cache.stride(2),
+        output.stride(0), output.stride(1), block_table.stride(0),
+        G=G, HEAD_DIM=D, WINDOW=int(window), BLOCK_SIZE=int(value_cache.shape[1]),
+        BLOCK_M=v.block_m, BLOCK_N=v.block_n, BLOCK_D=v.block_d,
+        WM=v.wm, WN=v.wn, NW=v.wm * v.wn, TPR=32 // tpc, TPC=tpc, KW_QK=v.kw_qk, KW_PV=v.kw_pv,
+        KV_SHARED=v.kv_shared, num_warps=v.wm * v.wn,
     )
