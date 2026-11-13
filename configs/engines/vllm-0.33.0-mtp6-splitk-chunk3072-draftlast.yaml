@@ -34,7 +34,8 @@ args:
   # Those live in the vllm-0.33.0-mtp4-textonly variant (DECISIONS D-007).
   - [--host, 0.0.0.0]
   - [--port, "{port}"]
-env: {}
+env:
+  G4_DRAFT_PREFILL_LAST: "1"    # mtp_draft_prefill_last gate (D-061): on; unset = upstream draft prefill
 unknowns:
   - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
   - "Article does not state whether speculative 'revision' was pinned (pinning has no perf effect)."

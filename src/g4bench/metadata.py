@@ -23,6 +23,7 @@ ENV_ALLOWLIST = (
     "SGLANG_VERSION", "HF_HUB_OFFLINE", "MODAL_REGION", "MODAL_CLOUD_PROVIDER", "MODAL_TASK_ID",
     "G4_IMAGE_PATCHES", "G4_IMAGE_PIP", "G4_SPLITK_T_FULL", "G4_SPLITK_T_SLIDING", "G4_DRAFT_HEAD_Q",
     "G4_DRAFT_HEAD_K",  # build-time engine patches baked into the image (src/g4bench/patches)
+    "G4_DRAFT_PREFILL_LAST", "G4_PREFILL_ATTN", "G4_CUBLAS", "G4_CUBLAS_SIDE",  # D-061 gates / side cuBLAS
 )
 
 NVSMI_FIELDS = (
@@ -83,7 +84,11 @@ def git_info() -> dict[str, Any]:
         # Inside Modal the repo is uploaded without .git; the launcher passes "<sha>[-dirty]" instead.
         env_sha = os.environ["G4_CODE_SHA"]
         return {"sha": env_sha.removesuffix("-dirty"), "dirty": env_sha.endswith("-dirty"), "source": "G4_CODE_SHA"}
-    return {"sha": sha.strip() if rc == 0 else None, "dirty": bool(st.strip()) if rc2 == 0 else None}
+    if rc == 0:
+        return {"sha": sha.strip(), "dirty": bool(st.strip()) if rc2 == 0 else None, "source": "git"}
+    # Never silent: say why there is no sha (G4_CODE_SHA unset/unknown means the launcher did not pass it).
+    return {"sha": None, "dirty": None, "source": None,
+            "error": f"git rev-parse failed ({sha.strip()[:200]}); G4_CODE_SHA={os.environ.get('G4_CODE_SHA')!r}"}
 
 
 def pip_versions(pkgs: tuple[str, ...] = ("vllm", "sglang", "torch", "transformers", "flashinfer-python",

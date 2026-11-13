@@ -33,6 +33,11 @@ Why this is lossless for Gemma 4 MTP (vllm/model_executor/models/gemma4_mtp.py a
   * ``num_speculative_tokens == 0`` (dynamic SD): upstream runs the full pass with ``skip_sample`` "only to keep the
     drafter KV in sync" (line 472); Gemma 4 has no drafter KV, so the patched path returns without a forward.
 
+Env gate (D-061): the patched path runs only when ``G4_DRAFT_PREFILL_LAST=1`` is set in the server environment (read
+once per speculator instance); unset, the guard is False and ``propose`` takes the upstream branches unchanged, so an
+image carrying this patch also serves the stock recipe. Before D-061 the patch was always on once applied; every
+config that lists it sets the gate, and ``config.LEGACY_ENV`` keeps those configs' hashes unchanged.
+
 Scope / guards (otherwise upstream code runs unchanged): only ``type(self).__name__ == "Gemma4Speculator"`` with
 ``advance_draft_positions`` False; not dummy/profile runs; the target-shaped prefill descriptor is not FULL (FULL
 is only uniform decode batches); no PCP, DCP, DP (>1), or multimodal draft inputs; and the batch contains a request
@@ -69,6 +74,7 @@ NAME = "mtp_draft_prefill_last"
 MODULE = "vllm"
 RELPATH = "v1/worker/gpu/spec_decode/target_dependent_ar/speculator.py"  # relative to the vllm package directory
 MARKER = "# g4bench:mtp_draft_prefill_last"
+ENV = "G4_DRAFT_PREFILL_LAST"  # "1" = patched path; unset/anything else = upstream (D-061)
 
 PROPOSE_ANCHOR = """\
         self.on_prefill_begin(num_reqs)
@@ -96,8 +102,15 @@ METHODS = f"""\
     def _g4_use_last_token_prefill(
         self, prefill_batch_desc, max_query_len, dummy_run, is_profile
     ) -> bool:
+        on = getattr(self, "_g4_prefill_last_on", None)
+        if on is None:  # env gate, read once per speculator: unset/other = upstream
+            import os
+
+            on = os.environ.get("{ENV}", "").strip() == "1"
+            self._g4_prefill_last_on = on
         return (
-            type(self).__name__ == "Gemma4Speculator"
+            on
+            and type(self).__name__ == "Gemma4Speculator"
             and not self.advance_draft_positions
             and not dummy_run
             and not is_profile

@@ -87,8 +87,29 @@ def make_app(model: str, step_ms: float, tokens_per_step: int, prefill_ms_per_1k
         # Canned answers so the correctness probes can be exercised end-to-end on CPU.
         canned = {"17 + 25": "42", "capital of France": "Paris", "backwards": "tac", "9 times 8": "72",
                   "blue and yellow": "Green", "leap year": "366", "gold": "Au", "thank you": "Gracias"}
-        ans = next((v for k, v in canned.items() if k in q), "mock answer " * 8)
-        return web.json_response({"choices": [{"index": 0, "message": {"role": "assistant", "content": ans}}]})
+        ans = next((v for k, v in canned.items() if k in q), None)
+        if ans is not None:
+            return web.json_response({"choices": [{"index": 0, "message": {"role": "assistant", "content": ans}}]})
+        # Greedy-gate path: deterministic fake token ids derived from the prompt (NOT a model), with the vLLM
+        # extensions the harness requests (return_token_ids, return_tokens_as_token_ids, top_logprobs).
+        import hashlib
+
+        n = int(body.get("max_tokens", 16))
+        ids = [int.from_bytes(hashlib.sha256(f"{q}|{i}".encode()).digest()[:3], "big") % 250000 for i in range(n)]
+        choice: dict = {"index": 0, "finish_reason": "length",
+                        "message": {"role": "assistant", "content": " ".join(f"w{t}" for t in ids)}}
+        if body.get("return_token_ids"):
+            choice["token_ids"] = ids
+        if body.get("logprobs"):
+            k = int(body.get("top_logprobs") or 0)
+            tok = (lambda t: f"token_id:{t}") if body.get("return_tokens_as_token_ids") else (lambda t: f"w{t}")
+            choice["logprobs"] = {"content": [
+                {"token": tok(t), "logprob": -0.1,
+                 "top_logprobs": [{"token": tok(t), "logprob": -0.1}, {"token": tok(t + 1), "logprob": -2.5}][:k]}
+                for t in ids]}
+        return web.json_response({"choices": [choice], "usage": {"prompt_tokens": len(q) // 4,
+                                                                  "completion_tokens": n,
+                                                                  "total_tokens": len(q) // 4 + n}})
 
     async def start_profile(_: web.Request) -> web.Response:
         STATE["profile_start"] = time.time()

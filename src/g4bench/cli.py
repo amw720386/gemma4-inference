@@ -47,6 +47,19 @@ def main(argv: list[str] | None = None) -> int:
                    help="append one raw server argv token (repeatable); changes config hash via notes only, "
                         "so ALSO set --notes")
 
+    r.add_argument("--no-greedy", action="store_true", help="skip the token-level greedy-equivalence capture")
+    r.add_argument("--correctness-only", action="store_true", help="server + probes + greedy gate, no benchmark")
+    r.add_argument("--greedy-reference", help="reference JSON (default data/greedy_reference/vllm-0.33.0-nospec.json)")
+
+    g = sub.add_parser("greedy", help="greedy-equivalence gate: promote a reference run / compare a run (CPU)")
+    gs = g.add_subparsers(dest="greedy_cmd", required=True)
+    gp = gs.add_parser("promote", help="write data/greedy_reference/<engine>.json from a reference-config run")
+    gp.add_argument("run_dir", type=Path)
+    gp.add_argument("--out", type=Path)
+    gc = gs.add_parser("compare", help="compare a run's greedy tokens with the reference; writes greedy_compare.json")
+    gc.add_argument("run_dir", type=Path)
+    gc.add_argument("--reference", type=Path)
+
     fcp = sub.add_parser("flagcheck", help="check engine configs' flags against pinned engine sources (static)")
     fcp.add_argument("--refresh", action="store_true", help="re-fetch sources at the pinned tags (HTTPS)")
 
@@ -130,9 +143,25 @@ def main(argv: list[str] | None = None) -> int:
         d = run(RunOptions(engine=args.engine, matrix=args.matrix, seeds=_csv_ints(args.seeds),
                            trials=args.trials, only_keys=args.only.split(",") if args.only else None,
                            max_wall_s=args.max_wall_s, tokenizer=args.tokenizer, model_name=args.model_name,
-                           extra_server_args=args.extra_server_arg, dry_run=args.dry_run, notes=args.notes, **kw))
+                           extra_server_args=args.extra_server_arg, dry_run=args.dry_run, notes=args.notes,
+                           greedy=not args.no_greedy, correctness_only=args.correctness_only,
+                           greedy_reference=args.greedy_reference, **kw))
         print(str(d))
         return 0
+
+    if args.cmd == "greedy":
+        from . import correctness
+
+        if args.greedy_cmd == "promote":
+            print(correctness.promote(args.run_dir, args.out))
+            return 0
+        res = correctness.compare_run(args.run_dir, args.reference)
+        print(correctness.summary_line(res))
+        for it in res.get("items") or []:
+            print(f"  {it['id']:<10} {it['status']:<10} first_div={it.get('first_divergence')} "
+                  f"prefix={it.get('prefix_fraction')} pos_match={it.get('positional_match_fraction')} "
+                  f"gap={it.get('logprob_gap')} near_tie={it.get('near_tie')}")
+        return 0 if res.get("pass") else 1
 
     if args.cmd == "flagcheck":
         from . import flagcheck

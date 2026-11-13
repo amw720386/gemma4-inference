@@ -372,7 +372,8 @@ def test_registered_and_config():
     assert P.NAME in A.KNOWN
     e, base = EngineConfig.load(CONFIG), EngineConfig.load(BASE)
     assert e.raw["image_patches"] == ["mtp_draft_prefill_last", P.NAME]
-    assert e.env == {P.ENV_FULL: "112", P.ENV_SLIDING: "8"} and base.env == {}
+    gate = {"G4_DRAFT_PREFILL_LAST": "1"}  # mtp_draft_prefill_last env gate (D-061)
+    assert e.env == {**gate, P.ENV_FULL: "112", P.ENV_SLIDING: "8"} and base.env == gate
     assert e.raw["role"] == "variant" and e.raw["admissibility"] == "a"
     # Same args as E6b except the D-044 capture-size trim, reverted to vLLM's default list.
     assert [a for a in base.args if a[0] != "--cudagraph-capture-sizes"] == list(e.args)

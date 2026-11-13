@@ -115,7 +115,41 @@ def test_refuses_missing_or_duplicated_anchor():
         P.patch_text(out.replace("int(max_query_len) > self.num_speculative_steps + 1", "True"))
 
 
-def test_guard_selects_only_gemma4_prefill_batches():
+def test_env_gate_off_means_upstream(monkeypatch):
+    """D-061: without G4_DRAFT_PREFILL_LAST=1 the guard is False and propose takes the upstream branches."""
+    ns = _classes(P.patch_text(EXCERPT)[0])
+    g4 = ns["Gemma4Speculator"]
+    pw = _desc(CUDAGraphMode.PIECEWISE)
+    g4._g4_prefill_last_tokens = lambda self, *a: (_ for _ in ()).throw(AssertionError("patched path taken"))
+    for val in (None, "0", "", "true", "yes"):
+        if val is None:
+            monkeypatch.delenv(P.ENV, raising=False)
+        else:
+            monkeypatch.setenv(P.ENV, val)
+        s = _spec(g4)
+        assert not s._g4_use_last_token_prefill(pw, 3072, False, False), val
+        assert _spec(g4).propose("ib", "rej", pw, 3072) == [("upstream_prefill", False)], val
+    monkeypatch.setenv(P.ENV, "1")
+    s = _spec(g4)
+    assert s._g4_use_last_token_prefill(pw, 3072, False, False)
+    monkeypatch.setenv(P.ENV, "0")  # read once per speculator instance (constructed at server start)
+    assert s._g4_use_last_token_prefill(pw, 3072, False, False)
+    assert P.ENV in P.METHODS
+
+
+def test_every_config_listing_the_patch_turns_it_on():
+    from g4bench.config import EngineConfig
+    from g4bench.paths import CONFIGS
+
+    listed = [EngineConfig.load(str(f)) for f in sorted((CONFIGS / "engines").glob("*.yaml"))]
+    listed = [e for e in listed if P.NAME in (e.raw.get("image_patches") or [])]
+    assert len(listed) >= 8
+    for e in listed:
+        assert e.env.get(P.ENV) == "1", e.name
+
+
+def test_guard_selects_only_gemma4_prefill_batches(monkeypatch):
+    monkeypatch.setenv(P.ENV, "1")
     ns = _classes(P.patch_text(EXCERPT)[0])
     g4, eagle = ns["Gemma4Speculator"], ns["EagleSpeculator"]
     pw, full = _desc(CUDAGraphMode.PIECEWISE), _desc(CUDAGraphMode.FULL)
@@ -131,7 +165,8 @@ def test_guard_selects_only_gemma4_prefill_batches():
         assert not use(_spec(g4, **over)), over
 
 
-def test_propose_routes_to_last_token_path_and_keeps_upstream_branches():
+def test_propose_routes_to_last_token_path_and_keeps_upstream_branches(monkeypatch):
+    monkeypatch.setenv(P.ENV, "1")
     ns = _classes(P.patch_text(EXCERPT)[0])
     g4, eagle = ns["Gemma4Speculator"], ns["EagleSpeculator"]
     seen = []
