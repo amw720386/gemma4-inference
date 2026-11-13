@@ -589,9 +589,29 @@ fp32 reference and falls back to v1, then to upstream, with a log line. Config `
 
 **D-065 (2026-11-13) Same-GPU paired verdict: one frozen config vs the article recipe at all eight workloads.**
 `g4bench modal pair --a vllm-0.33.0-mtp4 --b vllm-0.33.0-best-e8-pfa2-c8k` (D-061), 2 pairs per workload (1 at 8K×64,
-which needs the $4 cap, D-062), ABBA except one BAAB at 1K×64. B/A output throughput: 1K×1 1.239, 1K×4 1.267,
+which needs the $4 cap, D-062), ABBA, except that 8K×16 and 1K×64 each ran as two one-pair jobs (one AB, one BA). B/A output throughput: 1K×1 1.239, 1K×4 1.267,
 1K×16 1.182, 1K×64 1.074, 8K×1 1.272, 8K×4 1.326, 8K×16 1.257, 8K×64 1.162; the two pairs per point agree within
 0.1–0.8 %. Scaled by article-vLLM / Backboard: 1.14 / 1.05 / 1.06 / 1.02 / 1.13 / 0.99 / 1.04 / 1.00, geometric mean
 1.053. Reading: ahead of Backboard at 6/8 workloads by this estimator, parity at 8K×4 and 8K×64. The estimator's error
 is dominated by the single published figures, not by our measurement. Greedy gate inside the pair jobs: candidate
 3/8 identical, every divergence a near-tie (D-063). Spend after this series ≈ $36 of the $50 cap.
+
+**D-066 (2026-11-13) Project cap raised from $50 to $100 (owner approval) for TTFT work.**
+An independent critic (2026-11-13) accepted the paired arithmetic but flagged one GPU per point, seed-0-only tuning
+and evaluation, and worse p90 TTFT than Backboard at 5/8 points. The owner asked to push TTFT and approved $100;
+per-job $4 and 2 concurrent launches unchanged. Spend after D-067 ≈ $50.
+
+**D-067 (2026-11-13) TTFT: async scheduling costs one engine step of admission; config `best-e8-pfa2-sync`.**
+Per-request data showed the TTFT gap was queueing, not prefill speed: against the article recipe on the same GPU our
+median TTFT was already lower; p90 depends on prefill collisions. vLLM 0.33 with `--async-scheduling` runs two batches
+in flight, so a request arriving while the engine waits on batch N enters batch N+2 (engine/core.py
+`step_with_batch_queue`). Screens on one GPU each vs `best-e8-pfa2-c8k` (E9, `results/pairs/`):
+`--no-async-scheduling` p90 TTFT 302 → 219 ms (1K×16) and 600 → 448 ms (1K×64) at unchanged throughput;
+`--api-server-count 2` −5 to −7 % p90 TTFT, −0.5 % throughput (not adopted); `--max-num-batched-tokens 16384`
+−2 % TTFT, −1 % throughput at 8K×4 (not adopted); `--max-cudagraph-capture-size 1280` no effect. An early-token-copy
+patch was not written: the V2 model runner (used by our servers) already copies sampled tokens before drafting.
+Config `vllm-0.33.0-best-e8-pfa2-sync` = `best-e8-pfa2-c8k` + `--no-async-scheduling`, paired vs `mtp4` at all 8
+workloads (1–2 pairs each): throughput B/A 1.08–1.32 (estimate vs Backboard 0.99–1.14, geomean 1.053, same as
+before); p90 TTFT 15–46 % below the article recipe and below Backboard's at 6/8 (behind at 8K×1 +3 %, 8K×4 +14 %).
+Held-out seeds 1/2 at 8K×4 (previous config) gave B/A 1.320 / 1.335 vs 1.326 on seed 0; 8K×64 on a second GPU with B
+first gave 1.165 vs 1.162. Remaining 8K TTFT is prefill compute (≈ 530 ms per 8K prompt) and collisions.

@@ -21,14 +21,14 @@ chat template), 1024 output tokens, input length 1K / 8K × concurrency 1 / 4 / 
 | | Result |
 |---|---|
 | **Article baselines reproduced** | vLLM 0.33.0 within **+0.9 … +3.1 %** of the article at **8/8** workloads; SGLang 0.5.23 runs **7–17 % faster** than the article's |
-| **Same GPU, one config, all 8 workloads** (`vllm-0.33.0-best-e8-pfa2-c8k` vs the article recipe, interleaved) | **1.07–1.33× the article's vLLM recipe** at every workload; scaled to Backboard: **≈ 105 % geometric mean, 99–114 % per workload** (8K × 4 ≈ 99 %, 8K × 64 ≈ 100 %) |
+| **Throughput, same GPU, one frozen config** (`vllm-0.33.0-best-e8-pfa2-sync` vs the article recipe, interleaved) | **1.08–1.32× the article's vLLM recipe** at every workload. Scaled to Backboard: **ahead at concurrency 1 (+13–14 %)**, ahead by +3–5 % at 1K × 4/16/64 and 8K × 16, **level at 8K × 4 and 8K × 64** (geometric mean 1.05) |
+| **Latency, same runs** | p90 TTFT 15–46 % below the article recipe everywhere and **below Backboard's at 6/8 workloads** (1K × 1: 79 vs 85 ms; 8K × 64: 2984 vs 3102 ms); behind at 8K × 1 (+3 %) and 8K × 4 (+14 %). p99 TPOT and p99 E2EL better than Backboard's at 5/8; behind at 1K × 16 (TPOT +5 %), 8K × 4 (+10 %) and 8K × 16 (+1 %) |
 | **Earlier, across GPUs** (`vllm-0.33.0-best-e8-all`, n = 3) | **102.1 %** of Backboard's published throughput (geometric mean): 102–115 % at 1K, 89–108 % at 8K; **8K × 64 is a significant shortfall (89 %, CI 80–98 %)** |
 | **Outputs** | greedy equivalence vs a BF16 no-speculation reference (8 prompts up to 7.9K tokens): every divergence of every config, the article's own recipe included, is a near-tie (top-2 within 0.25 nats); bitwise identity is impossible with speculative decoding in vLLM (D-063) |
-| **Not verified** | latency: p90 TTFT is worse than Backboard's at several points |
 | **Configuration only** (`vllm-0.33.0-best-e6b`, no engine patches) | ≥ 95 % of Backboard at 5/8, geometric mean 97.7 % |
-| **Biggest wins** | split-K attention for Gemma 4's head-dim-512 layers (+8 % at 8K/c4); FP8 draft-head scan with exact BF16 rescoring (Backboard's disclosed idea); per-layer-group split-K thresholds; a custom prefill-attention kernel (−40 % prefill attention, +5 % at 8K × 64) |
-| **What is left** | more same-GPU pairs (1–2 per workload so far) rotated across GPUs; latency; BF16 GEMMs on this GPU already run at its practical limit |
-| **Cost** | ≈ **$36** of Modal compute in total (every launch in [`results/budget_ledger.jsonl`](results/budget_ledger.jsonl)) |
+| **Biggest wins** | for TTFT, turning off async scheduling (−25 % p90 at 1K × 16/64, throughput unchanged); split-K attention for Gemma 4's head-dim-512 layers (+8 % at 8K/c4); FP8 draft-head scan with exact BF16 rescoring (Backboard's disclosed idea); per-layer-group split-K thresholds; a custom prefill-attention kernel (−40 % prefill attention, +5 % at 8K × 64) |
+| **What is left** | 8K TTFT at low concurrency (prefill is near this GPU's BF16 limit); more pairs per workload rotated across GPUs; real-text prompts |
+| **Cost** | ≈ **$50** of Modal compute in total (every launch in [`results/budget_ledger.jsonl`](results/budget_ledger.jsonl)) |
 
 ### 1. Reproducing the article's open-engine baselines
 
@@ -53,24 +53,29 @@ is prepared but not run.
 
 What we did and did not establish:
 
-- **Same-GPU paired throughput** (D-061, D-065, `results/pairs/`): in one container on one GPU, a fresh server for the
-  article's recipe (`vllm-0.33.0-mtp4`, A) and one for ours (`vllm-0.33.0-best-e8-pfa2-c8k`, B), interleaved ABBA /
-  BAAB. Backboard estimate = (B / A) × (article vLLM / Backboard). One frozen configuration for all eight workloads:
+- **Same-GPU paired runs** (D-061, D-067, `results/pairs/`): in one container on one GPU, a fresh server for the
+  article's recipe (`vllm-0.33.0-mtp4`, A) and one for ours (`vllm-0.33.0-best-e8-pfa2-sync`, B), interleaved.
+  Backboard estimate = (B / A) × (article vLLM / Backboard). One frozen configuration for all eight workloads, seed 0
+  (8K × 4 also checked on held-out seeds 1 and 2: B / A 1.320 and 1.335 for the previous config):
 
-| Workload | Pairs | A (article recipe) | B (ours) | B / A | Est. vs Backboard | B vs Backboard, absolute |
-|---|---:|---:|---:|---:|---:|---:|
-| 1K × 1 | 2 | 189.6 | 234.8 | 1.239 | **1.14** | 115 % |
-| 1K × 4 | 2 | 654.2 | 828.8 | 1.267 | **1.05** | 106 % |
-| 1K × 16 | 2 | 1890 | 2234 | 1.182 | **1.06** | 107 % |
-| 1K × 64 | 2 | 3660 | 3932 | 1.074 | **1.02** | 103 % |
-| 8K × 1 | 2 | 162.2 | 206.2 | 1.272 | **1.13** | 115 % |
-| 8K × 4 | 2 | 400.6 | 531.1 | 1.326 | **0.99** | 100 % |
-| 8K × 16 | 2 | 805.8 | 1013 | 1.257 | **1.04** | 105 % |
-| 8K × 64 | 1 | 1092 | 1268 | 1.162 | **1.00** | 101 % |
+| Workload | Pairs | A tok/s | B tok/s | B / A | **Est. vs Backboard** | p90 TTFT ms: B / A / Backboard | p99 TPOT ms: B / Backboard |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1K × 1 | 2 | 190.1 | 236.8 | 1.245 | **1.14** | **79** / 102 / 85 | **4.72** / 5.0 |
+| 1K × 4 | 2 | 651.9 | 824.1 | 1.264 | **1.05** | **151** / 190 / 176 | **5.63** / 6.1 |
+| 1K × 16 | 2 | 1893 | 2215 | 1.170 | **1.05** | **215** / 278 / 245 | 9.12 / 8.7 |
+| 1K × 64 | 1 | 3655 | 3949 | 1.080 | **1.03** | **512** / 681 / 547 | **18.2** / 19.4 |
+| 8K × 1 | 2 | 161.8 | 205.2 | 1.268 | **1.13** | 566 / 668 / 549 | **5.56** / 6.0 |
+| 8K × 4 | 2 | 402.3 | 532.2 | 1.323 | **0.99** | 823 / 1054 / 724 | 11.3 / 10.3 |
+| 8K × 16 | 1 | 803.3 | 1014 | 1.262 | **1.04** | **1262** / 1892 / 1537 | 23.9 / 23.6 |
+| 8K × 64 | 1 | 1092 | 1271 | 1.164 | **1.00** | **2984** / 5526 / 3102 | **72.6** / 73.8 |
 
-  Geometric mean of the estimates **1.053**. The two pairs at each point agree within 0.1–0.8 %, so the remaining
-  uncertainty is not measurement noise but the estimator itself: it trusts the article's single vLLM figure per point
-  and Backboard's single figure. At 8K × 4 and 8K × 64 the honest reading is **parity**, not a win.
+  Geometric mean of the throughput estimates **1.053**; the earlier `best-e8-pfa2-c8k` series (async scheduling on)
+  gave the same throughput (1.07–1.33×, 8K × 64 on two GPUs 1.162 / 1.165) with 15–30 % higher p90 TTFT at 1K × 16/64.
+  Pairs at one point agree within 0.1–1.4 %; most points ran on one GPU, so this shows repeatability, not
+  robustness across GPUs. The estimator trusts the article's single vLLM and Backboard figures per point; ±2–3 % in
+  those would erase the smaller margins. Read the 1.03–1.05 points as small wins at best and 8K × 4 / 8K × 64 as
+  **parity**. TTFT at p90 over 40 requests (8K × 4) depends on how many prefills collide and varies by 30 % between
+  repeats on one GPU; the article's own vLLM run measured 1262 ms there.
 
 - **Earlier, across GPUs** (`vllm-0.33.0-best-e8-all`, n = 3 runs on different Modal GPUs,
   Student-t 95 % CI of *our* run-to-run spread — Backboard's own variance and hardware are unknown):
@@ -91,12 +96,13 @@ What we did and did not establish:
 - **Custom prefill attention** (`best-e8-pfa-c8k`, added later and chosen per workload): 8K × 4 98.5 % (n = 2,
   CI 66–131 %), 8K × 16 103 % (n = 2, CI 87–119 %), 8K × 64 95.8 % (n = 3, CI 85–106 %; 94.1 % without the seed-0
   run used to select it). Not run at 1K or 8K × 1.
-- **Latency is not better everywhere.** At 8K × 1 (108 % throughput) our p99 TPOT, p99 E2EL and p90 TTFT are all
-  worse than Backboard's (e.g. p90 TTFT 667–703 ms vs 549); p90 TTFT is also worse at several 1K points. Backboard
-  reports 13 metrics per point; this repo compares output throughput only.
+- **Latency** (in the table above): with async scheduling off, p90 TTFT is below Backboard's at 6/8 workloads and
+  p99 TPOT at 5/8; we remain behind on p90 TTFT at 8K × 1 (+3 %) and 8K × 4 (+14 %), and on p99 TPOT at 1K × 16, 8K × 16 and
+  8K × 4. Backboard reports more metrics than these three.
 - **Output equivalence: near-ties only** (D-063). Against a BF16 no-speculation greedy reference (8 prompts, 4 of them
-  3K–8K tokens, 256 output tokens), the article's own recipe matches 4/8 and ours 3–4/8; every first divergence, for
-  every config, is at a position where the reference's top-2 tokens are within 0.25 nats. The custom kernels, cuBLAS
+  3K–8K tokens, 256 output tokens, concurrency 1), the article's own recipe matches 4/8 and ours 3–4/8; every first
+  divergence, for every config, is at a position where the reference's top-2 tokens are within 0.25 nats. This is a
+  weaker guarantee than Backboard's stated "identical to BF16" output. The custom kernels, cuBLAS
   13.10 and chunk size change the target's arithmetic only at that level. The draft head runs as an FP8 scan with
   BF16 rescoring (class b, D-011), the same category as Backboard's disclosed "4-bit shortlist".
 
@@ -206,8 +212,11 @@ From an independent adversarial review of the comparison (2026-11-13):
 - **Output equivalence is weaker than pre-registered.** The greedy gate now runs (D-063), but exact token identity is
   impossible for any speculative config, the article's included; the amended near-tie criterion was set after seeing
   that, and 8 prompts is a small set.
-- **Selection after the fact.** About 18 engine configurations were tried; the paired table uses one frozen
-  configuration for all eight workloads, but that configuration was itself chosen on earlier 8K runs.
+- **Selection after the fact.** About 20 engine configurations were tuned on seed-0 prompts, the same seed the paired
+  table uses. Held-out seeds 1 and 2 at 8K × 4 reproduce the seed-0 speed-up (1.320 / 1.335 vs 1.326), but other
+  points were not re-checked on held-out seeds.
+- **Synthetic prompts.** Most of the low-concurrency gain comes from deeper speculation (acceptance length ≈ 5.1 vs
+  4.1 for the article recipe), which random-token prompts may favour; the article does not state its prompt method.
 - **Hardware not matched.** The article does not state its GPU edition, power limit or driver. Modal GPUs vary by
   7–15 % at 8K (runs at ~2,200 MHz / ~520 W vs ~2,370 MHz / ~570 W); the confidence intervals mix GPUs and cover only
   our spread, not Backboard's. The paired runs cancel this for ours vs the article recipe, but the step to Backboard
