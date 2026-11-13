@@ -1,18 +1,19 @@
 # gemma4-inference-repro
 
 An independent, open-source attempt to **reproduce** the Gemma 4 12B serving benchmark that Backboard published on
-2026-11-09 ([article](https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference)), and then to **match and beat**
-Backboard's proprietary engine with an open engine (vLLM 0.33.0 plus small, documented patches) without changing the
-target model's outputs.
+2026-11-09 ([article](https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference)), and then to get as close as
+possible to Backboard's proprietary engine with an open engine (vLLM 0.33.0 plus small, documented patches).
 
 Setup throughout: 1× NVIDIA RTX PRO 6000 Blackwell Server Edition (96 GB, 600 W) on Modal, `google/gemma-4-12B-it`
 BF16 with the `google/gemma-4-12B-it-assistant` MTP draft, random-token prompts (InferenceX client, range ratio 0.8,
 chat template), 1024 output tokens, input length 1K / 8K × concurrency 1 / 4 / 16 / 64.
 
-> The headline table uses **n = 3 runs per point** (seeds 0/1/2) with Student-t 95 % confidence intervals, as the
-> pre-registered criteria in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) require. Other tables are single runs and are
-> descriptive only. Modal assigns a different physical GPU per run; at 8K inputs that machine-to-machine spread is
-> ~5–7 % (one run throttled at 83 °C), larger than seed noise.
+> **Read this first.** None of the numbers below meet the pre-registered bar for "matches" or "beats" Backboard in
+> [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md): the greedy output-equivalence gate against a BF16 reference has not been
+> run yet (only 8 short known-answer probes have), Backboard's figures are single published values from unstated
+> hardware, and our own environment runs the article's vLLM recipe 1–3 % faster than the article. Treat every
+> comparison with Backboard as **descriptive**. An independent adversarial review of these claims is summarised in
+> [Caveats](#caveats).
 
 ## Results at a glance
 
@@ -21,12 +22,12 @@ chat template), 1024 output tokens, input length 1K / 8K × concurrency 1 / 4 / 
 | | Result |
 |---|---|
 | **Article baselines reproduced** | vLLM 0.33.0 within **+0.9 … +3.1 %** of the article at **8/8** workloads; SGLang 0.5.23 runs **7–17 % faster** than the article's |
-| **Beats Backboard (n = 3)** | at **all four 1K workloads**, with every 95 % CI above 100 % (102–115 %) |
-| **Ties Backboard (n = 2–3)** | at 8K: 96–108 % of Backboard; confidence intervals span 100 %, dominated by GPU-to-GPU variance |
-| **Best configs** | `vllm-0.33.0-best-e8-all` (1K) and `vllm-0.33.0-best-e8-pfa-c8k` (8K: + custom prefill attention, 8192-token chunks) |
+| **One config, all 8 workloads** (`vllm-0.33.0-best-e8-all`, n = 3) | **102.1 %** of Backboard's published throughput (geometric mean): 102–115 % at 1K, 89–108 % at 8K; **8K × 64 is a significant shortfall (89 %, CI 80–98 %)** |
+| **Best config per workload** | 8K improves to 96–103 % with the custom prefill kernel (`best-e8-pfa-c8k`), but that is a per-workload pick made after seeing results, and n = 2 at two points |
+| **Not verified** | that target outputs are unchanged (greedy equivalence vs BF16, pre-registered, not yet run); latency: p90 TTFT is worse than Backboard's at several points |
 | **Configuration only** (`vllm-0.33.0-best-e6b`, no engine patches) | ≥ 95 % of Backboard at 5/8, geometric mean 97.7 % |
 | **Biggest wins** | split-K attention for Gemma 4's head-dim-512 layers (+8 % at 8K/c4); FP8 draft-head scan with exact BF16 rescoring (Backboard's disclosed idea); per-layer-group split-K thresholds; a custom prefill-attention kernel (−40 % prefill attention, +5 % at 8K × 64) |
-| **What is left** | statistical separation at 8K (more runs, or pinned hardware); BF16 GEMMs on this GPU already run at its practical limit |
+| **What is left** | the greedy-equivalence gate; one frozen config with more runs on matched hardware; latency; BF16 GEMMs on this GPU already run at its practical limit |
 | **Cost** | ≈ **$24.1** of Modal compute in total (every launch in [`results/budget_ledger.jsonl`](results/budget_ledger.jsonl)) |
 
 ### 1. Reproducing the article's open-engine baselines
@@ -48,27 +49,36 @@ vLLM's latencies (p99 TPOT, p99 E2EL, p90 TTFT) land at 0.82–1.11× the articl
 at 48 running requests, so its c64 points queue (TTFT 5–20 s); a like-for-like config (`sglang-0.5.23-nextn-fair64`)
 is prepared but not run.
 
-### 2. Beating Backboard
+### 2. Comparison with Backboard's published numbers
 
-Every change keeps the target model's outputs unchanged: the BF16 target verifies every drafted token. The draft head
-runs as an FP8 scan with exact BF16 rescoring, which lowers *draft* precision (class b, D-011) — the same category as
-Backboard's own disclosed "4-bit shortlist".
+What we did and did not establish:
 
-**Headline (repeated runs):**
+- **Throughput, one configuration for all workloads** (`vllm-0.33.0-best-e8-all`, n = 3 runs on different Modal GPUs,
+  Student-t 95 % CI of *our* run-to-run spread — Backboard's own variance and hardware are unknown):
 
-| Workload | Backboard | Ours, mean of n runs | n | % of Backboard | 95 % CI | Config |
-|---|---:|---:|---:|---:|---|---|
-| 1K × 1 | 203.6 | **234.8** | 3 | **115 %** | 112–119 % | best-e8-all |
-| 1K × 4 | 779.4 | **815.2** | 3 | **105 %** | 104–106 % | best-e8-all |
-| 1K × 16 | 2082 | **2207** | 3 | **106 %** | 103–109 % | best-e8-all |
-| 1K × 64 | 3822 | **3917** | 3 | **102 %** | 102–103 % | best-e8-all |
-| 8K × 1 | 179.1 | **193.5** | 3 | 108 % | 97–119 % | best-e8-all |
-| 8K × 4 | 529.6 | 521.6 | 2 | 98.5 % | wide (n = 2) | best-e8-pfa-c8k |
-| 8K × 16 | 961.8 | **987.9** | 2 | 103 % | wide (n = 2) | best-e8-pfa-c8k |
-| 8K × 64 | 1254 | 1201 | 3 | 95.8 % | 85–106 % | best-e8-pfa-c8k |
+| Workload | Backboard | Ours (mean, n = 3) | % of Backboard | 95 % CI (ours) |
+|---|---:|---:|---:|---|
+| 1K × 1 | 203.6 | 234.8 | 115 % | 112–119 % |
+| 1K × 4 | 779.4 | 815.2 | 105 % | 104–106 % |
+| 1K × 16 | 2082 | 2207 | 106 % | 103–109 % |
+| 1K × 64 | 3822 | 3917 | 102 % | 102–103 % |
+| 8K × 1 | 179.1 | 193.5 | 108 % | 97–119 % |
+| 8K × 4 | 529.6 | 507.9 | 96 % | 87–105 % |
+| 8K × 16 | 961.8 | 941.0 | 98 % | 95–101 % |
+| 8K × 64 | 1254 | 1115.6 | **89 %** | **80–98 %** |
 
-The 8K rows use the configuration with the custom prefill-attention kernel; it was not run at 1K (it should help
-there slightly too). Per-seed values and run IDs are in [docs/DECISIONS.md](docs/DECISIONS.md) (D-059, D-060).
+  Geometric mean **102.1 %**. The 1K margins (+2.5 … +15 %) are of the same order as our environment's offset on the
+  article's own vLLM recipe (+0.9 … +3.1 %), so the smallest of them may not survive a hardware-matched comparison.
+- **Custom prefill attention** (`best-e8-pfa-c8k`, added later and chosen per workload): 8K × 4 98.5 % (n = 2,
+  CI 66–131 %), 8K × 16 103 % (n = 2, CI 87–119 %), 8K × 64 95.8 % (n = 3, CI 85–106 %; 94.1 % without the seed-0
+  run used to select it). Not run at 1K or 8K × 1.
+- **Latency is not better everywhere.** At 8K × 1 (108 % throughput) our p99 TPOT, p99 E2EL and p90 TTFT are all
+  worse than Backboard's (e.g. p90 TTFT 667–703 ms vs 549); p90 TTFT is also worse at several 1K points. Backboard
+  reports 13 metrics per point; this repo compares output throughput only.
+- **Output equivalence is asserted, not shown.** The BF16 target verifies every drafted token, but several changes
+  alter the target's own arithmetic (custom prefill kernel, cuBLAS 13.10, split-K kernel choice, chunk size). The
+  draft head runs as an FP8 scan with BF16 rescoring (class b, D-011), the same category as Backboard's disclosed
+  "4-bit shortlist".
 
 **Single-run progression** (seed 0, one config across all eight workloads, tok/s):
 
@@ -170,12 +180,20 @@ third_party/inferencex/ vendored InferenceX bench_serving @ 0b991451 (Apache-2.0
 
 ## Caveats
 
-- Backboard's engine is proprietary; we reproduce its *numbers* as targets, not its engine.
-- The headline uses n = 3 at seven points and n = 2 at two 8K points; the other tables are single runs. GPU-to-GPU
-  variance on Modal (~5–7 % at 8K) dominates the 8K intervals.
-- Points in one job share a server start (`backboard-repro-shared`), unlike the article's fresh server per point.
-- Random-token prompts only; real-prompt arms (SPEED-Bench) are prepared but not measured. Acceptance, and therefore
-  the speculative-decoding gains, depends on prompt content.
-- `best-e8-all` lowers draft-head precision (FP8 scan, class b); target outputs are unchanged.
+From an independent adversarial review of the comparison (2026-11-13):
+
+- **No output-equivalence evidence.** The pre-registered greedy-equivalence gate vs a BF16 no-speculation reference
+  was never run; only 8 one-word probes ran, which do not exercise long prefill or the custom kernels.
+- **Selection after the fact.** 17 engine configurations were tried; "best per workload" numbers are optimistic. The
+  one-configuration table above is the fair comparison.
+- **Hardware not matched.** The article does not state its GPU edition, power limit or driver. Modal GPUs vary by
+  7–15 % at 8K (runs at ~2,200 MHz / ~520 W vs ~2,370 MHz / ~570 W); the confidence intervals mix GPUs and cover only
+  our spread, not Backboard's. Our environment also runs the article's SGLang recipe 7–17 % faster than published.
+- **Workload assumptions the article does not state:** random-token prompts, range ratio 0.8, ignore-EOS, 10 requests
+  per unit of concurrency (only 10 measured requests at c1), 8 warm-ups. Random tokens may inflate draft acceptance.
+  Points in one job share a server start, whereas the article uses a fresh server per point.
+- **Provenance:** about half the run metadata files lack the code SHA.
+- **To settle it:** run the greedy-equivalence gate; freeze one configuration; ≥ 5 runs with fresh servers;
+  interleave the article's recipe and ours on the same GPU and rotate across GPUs; report latency alongside throughput.
 
 Licence: not yet chosen. `third_party/inferencex` keeps its upstream Apache-2.0 licence and notice.
