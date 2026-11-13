@@ -47,7 +47,23 @@ def scrape(base_url: str, timeout: float = 10.0) -> dict[str, float] | None:
 def delta(before: dict[str, float] | None, after: dict[str, float] | None) -> dict[str, float]:
     if not before or not after:
         return {}
-    return {k: after[k] - before.get(k, 0.0) for k in after if ("spec" in k or "accept" in k or "draft" in k)}
+    return {k: after[k] - before.get(k, 0.0) for k in after
+            if ("spec" in k or "accept" in k or "draft" in k) or (k.startswith(TIMING_PREFIXES) and k.endswith(("_sum", "_count")))}
+
+
+# vLLM v1 request-timing histograms (vllm/v1/metrics/loggers.py): server-side split of TTFT into queueing and prefill.
+TIMING_PREFIXES = ("vllm:time_to_first_token_seconds", "vllm:request_queue_time_seconds",
+                   "vllm:request_prefill_time_seconds", "vllm:request_decode_time_seconds",
+                   "vllm:request_inference_time_seconds", "vllm:e2e_request_latency_seconds")
+
+
+def timing(d: dict[str, float]) -> dict[str, float | None]:
+    """Mean seconds per request for each vLLM timing histogram in a delta (warm-ups included; diagnostic)."""
+    out: dict[str, float | None] = {}
+    for name in TIMING_PREFIXES:
+        n = d.get(name + "_count")
+        out[name.split(":", 1)[1].removesuffix("_seconds") + "_mean_ms"] = (1000 * d[name + "_sum"] / n) if n else None
+    return out
 
 
 def acceptance(d: dict[str, float]) -> dict[str, Any]:

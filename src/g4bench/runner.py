@@ -354,7 +354,8 @@ def _run_point(run_dir: Path, pdir: Path, p: Point, *, eng: EngineConfig, base_u
     acc = promscrape.acceptance(d)
     log_text = server.log_path.read_text(encoding="utf-8", errors="replace") if server.log_path.exists() else ""
     acc_log = promscrape.acceptance_from_log(log_text)
-    (pdir / "spec_metrics.json").write_text(json.dumps({"delta": d, "acceptance": acc, "log": acc_log}, indent=2))
+    (pdir / "spec_metrics.json").write_text(json.dumps({"delta": d, "acceptance": acc, "log": acc_log,
+                                                         "timing": promscrape.timing(d)}, indent=2))
     from . import serverlog
 
     eff = serverlog.parse(log_text, eng.engine if eng.engine in ("vllm", "sglang") else None)
