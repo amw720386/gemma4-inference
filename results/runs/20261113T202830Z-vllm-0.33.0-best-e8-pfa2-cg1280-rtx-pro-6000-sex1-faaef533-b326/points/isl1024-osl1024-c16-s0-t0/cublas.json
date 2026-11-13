@@ -1,0 +1,65 @@
+{
+ "request": {
+  "requested": "13.10",
+  "mode": "side",
+  "dir": "/opt/cublas-13.10",
+  "libs": {
+   "libcublasLt.so.13": "/opt/cublas-13.10/nvidia/cu13/lib/libcublasLt.so.13",
+   "libcublas.so.13": "/opt/cublas-13.10/nvidia/cu13/lib/libcublas.so.13"
+  }
+ },
+ "server_env_added": {
+  "LD_PRELOAD": "/opt/cublas-13.10/nvidia/cu13/lib/libcublasLt.so.13:/opt/cublas-13.10/nvidia/cu13/lib/libcublas.so.13",
+  "LD_LIBRARY_PATH": "/opt/cublas-13.10/nvidia/cu13/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64"
+ },
+ "probe": {
+  "available": true,
+  "pids": [
+   957,
+   985,
+   986
+  ],
+  "paths": [
+   "/opt/cublas-13.10/nvidia/cu13/lib/libcublas.so.13",
+   "/opt/cublas-13.10/nvidia/cu13/lib/libcublasLt.so.13",
+   "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+   "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+   "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+  ],
+  "by_pid": {
+   "957": [
+    "/opt/cublas-13.10/nvidia/cu13/lib/libcublas.so.13",
+    "/opt/cublas-13.10/nvidia/cu13/lib/libcublasLt.so.13",
+    "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+    "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+   ],
+   "985": [
+    "/opt/cublas-13.10/nvidia/cu13/lib/libcublas.so.13",
+    "/opt/cublas-13.10/nvidia/cu13/lib/libcublasLt.so.13"
+   ],
+   "986": [
+    "/opt/cublas-13.10/nvidia/cu13/lib/libcublas.so.13",
+    "/opt/cublas-13.10/nvidia/cu13/lib/libcublasLt.so.13",
+    "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+    "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+    "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+   ]
+  },
+  "realpaths": [
+   "/opt/cublas-13.10/nvidia/cu13/lib/libcublas.so.13",
+   "/opt/cublas-13.10/nvidia/cu13/lib/libcublasLt.so.13",
+   "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+   "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+   "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+  ]
+ },
+ "check": {
+  "ok": true,
+  "why": "side install /opt/cublas-13.10/ mapped",
+  "also_mapped": [
+   "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+   "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+   "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+  ]
+ }
+}
