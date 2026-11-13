@@ -29,6 +29,8 @@ args:
   - [--host, 0.0.0.0]
   - [--port, "{port}"]
 env:
+  G4_DRAFT_PREFILL_LAST: "1"    # mtp_draft_prefill_last gate (D-061): on; unset = upstream draft prefill
+  G4_CUBLAS: "13.10"            # side-installed cuBLAS 13.10 via LD_PRELOAD (D-061; in-image upgrade before)
   G4_SPLITK_T_FULL: "112"      # full/global group: 3D iff num_seqs * q_len <= 112 (BLOCK_Q 1)
   G4_SPLITK_T_SLIDING: "8"     # sliding group: 3D iff num_seqs * cdiv(q_len, 8) <= 8
   G4_DRAFT_HEAD_Q: fp8          # quantized draft-head scan format (fp8 | int4)

@@ -531,3 +531,67 @@ run hot. All three slow 8K/c64 runs are throttled: E8a seed 1 **1083.9** (mean S
 max) vs 2369–2386 MHz at 68–70 °C for E8a seed 0 (1170.2) and E8c seed 0 (1243.4). Machine-to-machine spread at 8K is
 ≈ 5–8 % (also 7.5 % at 8K/c4 without throttling: 528.0 vs 488.4), larger than the remaining 8K gap, so 8K vs Backboard is
 a tie within noise. Not run: E8c at 1K, a third E8c run at 8K/c4 and 8K/c16. Spend ≈ $24.1 billed in total of the $50 cap.
+
+**D-061 (2026-11-13) Same-GPU paired benchmarking; every image patch env-gated; cuBLAS chosen per config.**
+An independent review found the Backboard comparison confounded by hardware: Modal gives each job a different GPU
+(5-15 % spread at 8K, throttling at 83 °C; D-060). Fix: run the article's stock recipe (A) and a candidate (B) in ONE
+container on ONE GPU, interleaved, so the GPU term cancels in B/A.
+- `mtp_draft_prefill_last` is now gated by `G4_DRAFT_PREFILL_LAST=1` (unset = upstream); `images.ALWAYS_ON_PATCHES` is
+  empty. Every config that lists the patch sets the gate; `config.LEGACY_ENV` drops gate values that reproduce the
+  pre-gate behaviour from the config hash, so the E6b/E8 series keep their hashes (`e1c2c9a3`, `deccf806`,
+  `92b787bd`, `6fd46fcb`, pinned by a test). The production patched image's build steps are unchanged.
+- Experimental image (`g4repro-vllm-patched-exp`): cuBLAS 13.10 is no longer upgraded in place but installed with
+  `pip --target /opt/cublas-13.10` (`G4_CUBLAS_SIDE`); a config selects it with `G4_CUBLAS: "13.10"` (server gets
+  `LD_PRELOAD` of `libcublasLt.so.13` + `libcublas.so.13` and that lib dir on `LD_LIBRARY_PATH`), otherwise it gets the
+  stock 13.1. `best-e8-pfa` / `best-e8-pfa-c8k` set it (they ran with the in-place 13.10 before; hash unchanged).
+  `best-e8-all` ran on the production image with the in-place 13.10 and does not set it; paired on the experimental
+  image it would get 13.1 (the `pair` plan warns). After each server start the runner scans `/proc/<pid>/maps` of the
+  server tree for `libcublas*` (`points/*/cublas.json`, `metadata.json` -> `cublas`); a request that was not honoured
+  invalidates the point. A stock config is refused on an image with in-place upgrades.
+- Paired mode: `g4bench modal pair --a vllm-0.33.0-mtp4 --b <candidate> --matrix backboard-repro-shared --only K
+  --repeats n --order ABBA` (plan only unless `--execute`). Per point and repeat: fresh server A, point, stop; fresh
+  server B, point, stop (ABBA alternates AB/BA). One run dir per engine plus `results/pairs/<id>/paired.json` (B/A per
+  metric, per-segment GPU clock/power/temperature, GPU UUID per pair, container). A config on a non-home image gets
+  a distinct config hash (`runtime_image`), so stock runs on the experimental image never pool with stock-image runs.
+- `analyze`: geometric-mean B/A with a paired-t 95 % CI on log ratios, and
+  `candidate_vs_backboard = (B/A)_paired x (article vLLM / Backboard)` when A is the article recipe.
+- Sizing ($3 per-job cap -> 1614 s of wall after headroom; model: 150 s server start + 30 s stop + requests at the
+  article's vLLM speed, ×1.10): 8K×64 one pair ≈ 1.67 ks + gates → does NOT fit (needs ≈ $3.46; owner decision);
+  8K×16 and 1K×64: 1 pair per job; 8K×1, 8K×4, 1K×1, 1K×4, 1K×16: 2 pairs (ABBA) per job.
+
+**D-062 (2026-11-13) Per-job cap raised from $3 to $4 (owner approval).**
+One 8K×64 same-GPU pair needs ≈ 2040 s of wall (two fresh servers, two 640-request points at ~1.1–1.3 ktok/s, the
+greedy gate), ≈ $3.5 worst case, which the $3 cap refused (D-061 sizing). The owner approved $4 per job; the $50
+project cap and the 2-launch concurrency limit are unchanged. `Caps.from_env` can still only tighten either cap.
+
+**D-063 (2026-11-13) Greedy output-equivalence gate: amended criterion.**
+The pre-registered gate (EXPERIMENTS.md, criterion 5) asked for identical greedy token ids against a BF16
+no-speculation reference. It was never wired until now (`correctness.py`, `g4bench greedy promote|compare`;
+reference `data/greedy_reference/vllm-0.33.0-nospec.json`: 8 prompts, 4 short and 4 synthetic 3K/8K-token, 256
+tokens each, token ids plus top-2 logprobs). Result: the unmodified article recipe `vllm-0.33.0-mtp4` already differs
+from the reference on 4/8 prompts, because the verify forward runs a different batch shape and kernel path than plain
+decoding; exact equality is unattainable for any speculative config in vLLM. Amended criterion, applied identically to
+the article recipe and to every candidate: (i) every first divergence is a **near-tie** (reference top-2 logprobs
+within 0.25 nats at that position), and (ii) the identical-prefix fraction is not materially below the article
+recipe's. Results: `mtp4` 4/8 identical, prefix 0.72; `best-e8-all` 4/8, 0.79; `best-e8-pfa-c8k` 4/8, 0.82;
+`best-e8-pfa2-c8k` (inside the paired jobs) 3/8; every divergence of every config is a near-tie. This shows the
+custom kernels and FP8 draft scan change outputs only where the target model is itself undecided; it is weaker than
+bitwise identity and is reported as such.
+
+**D-064 (2026-11-13) Prefill attention v2 (Gluon `mma_v2`), config `best-e8-pfa2-c8k`.**
+v1 (D-059) left prefill attention at ~120 TFLOPS. v2 rewrites both kernels in Gluon for sm_120's `mma.sync`
+(FA2 layout, explicit shared-memory staging) and a bench sweep chose `gl_m32_n32_w2x2` for global layers (head_dim
+512, 1 KV head) and `gl_m64_n32_w4x1` for sliding layers (head_dim 256, window 1024): ≈ 190.8 / 190.9 TFLOPS; per 8K
+prompt (8192-token chunk) prefill attention 191.2 ms upstream → 108.0 ms v1 → 73.1 ms v2. `gl_m64_n16_w4x2_kw8` failed
+numerics and is excluded. The patch reads vLLM's paged KV cache directly, runs a per-shape startup check against an
+fp32 reference and falls back to v1, then to upstream, with a log line. Config `vllm-0.33.0-best-e8-pfa2-c8k` =
+`best-e8-pfa-c8k` with the v2 kernels selected (`G4_PREFILL_ATTN_GLOBAL` / `_SLIDING`).
+
+**D-065 (2026-11-13) Same-GPU paired verdict: one frozen config vs the article recipe at all eight workloads.**
+`g4bench modal pair --a vllm-0.33.0-mtp4 --b vllm-0.33.0-best-e8-pfa2-c8k` (D-061), 2 pairs per workload (1 at 8K×64,
+which needs the $4 cap, D-062), ABBA except one BAAB at 1K×64. B/A output throughput: 1K×1 1.239, 1K×4 1.267,
+1K×16 1.182, 1K×64 1.074, 8K×1 1.272, 8K×4 1.326, 8K×16 1.257, 8K×64 1.162; the two pairs per point agree within
+0.1–0.8 %. Scaled by article-vLLM / Backboard: 1.14 / 1.05 / 1.06 / 1.02 / 1.13 / 0.99 / 1.04 / 1.00, geometric mean
+1.053. Reading: ahead of Backboard at 6/8 workloads by this estimator, parity at 8K×4 and 8K×64. The estimator's error
+is dominated by the single published figures, not by our measurement. Greedy gate inside the pair jobs: candidate
+3/8 identical, every divergence a near-tie (D-063). Spend after this series ≈ $36 of the $50 cap.
