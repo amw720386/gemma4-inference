@@ -304,8 +304,19 @@ def build(run_dir: Path) -> tuple[str, str]:
         lines.append(f"ERROR: `{corr['error'][:300]}`")
     else:
         pr = corr.get("probes", {})
-        lines.append(f"Known-answer probes: {pr.get('n_ok')}/{pr.get('n')} — {'PASS' if pr.get('pass') else 'FAIL'}; "
-                     f"greedy outputs captured: {len(corr.get('greedy_outputs') or [])}")
+        lines.append(f"Known-answer probes: {pr.get('n_ok')}/{pr.get('n')} — {'PASS' if pr.get('pass') else 'FAIL'}")
+        g = corr.get("greedy")
+        if g:
+            lines.append(f"Greedy capture: {len(g.get('items') or [])} prompts (set {g.get('prompt_set_sha256', '')[:12]}, "
+                         f"{g.get('max_tokens')} max tokens, {g.get('elapsed_s')} s)")
+        elif corr.get("greedy_outputs"):
+            lines.append(f"Greedy outputs (legacy text-only, never compared): {len(corr['greedy_outputs'])}")
+        else:
+            lines.append(f"Greedy equivalence: {NM}")
+        if corr.get("greedy_compare"):
+            from .correctness import summary_line
+
+            lines.append(summary_line(corr["greedy_compare"]))
 
     bad = [r for r in rows if not r.get("valid")]
     lines += ["", "## Invalid / skipped point-runs", ""]

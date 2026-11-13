@@ -83,7 +83,11 @@ def git_info() -> dict[str, Any]:
         # Inside Modal the repo is uploaded without .git; the launcher passes "<sha>[-dirty]" instead.
         env_sha = os.environ["G4_CODE_SHA"]
         return {"sha": env_sha.removesuffix("-dirty"), "dirty": env_sha.endswith("-dirty"), "source": "G4_CODE_SHA"}
-    return {"sha": sha.strip() if rc == 0 else None, "dirty": bool(st.strip()) if rc2 == 0 else None}
+    if rc == 0:
+        return {"sha": sha.strip(), "dirty": bool(st.strip()) if rc2 == 0 else None, "source": "git"}
+    # Never silent: say why there is no sha (G4_CODE_SHA unset/unknown means the launcher did not pass it).
+    return {"sha": None, "dirty": None, "source": None,
+            "error": f"git rev-parse failed ({sha.strip()[:200]}); G4_CODE_SHA={os.environ.get('G4_CODE_SHA')!r}"}
 
 
 def pip_versions(pkgs: tuple[str, ...] = ("vllm", "sglang", "torch", "transformers", "flashinfer-python",
