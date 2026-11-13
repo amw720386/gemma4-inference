@@ -558,3 +558,40 @@ container on ONE GPU, interleaved, so the GPU term cancels in B/A.
 - Sizing ($3 per-job cap -> 1614 s of wall after headroom; model: 150 s server start + 30 s stop + requests at the
   article's vLLM speed, ×1.10): 8K×64 one pair ≈ 1.67 ks + gates → does NOT fit (needs ≈ $3.46; owner decision);
   8K×16 and 1K×64: 1 pair per job; 8K×1, 8K×4, 1K×1, 1K×4, 1K×16: 2 pairs (ABBA) per job.
+
+**D-062 (2026-11-13) Per-job cap raised from $3 to $4 (owner approval).**
+One 8K×64 same-GPU pair needs ≈ 2040 s of wall (two fresh servers, two 640-request points at ~1.1–1.3 ktok/s, the
+greedy gate), ≈ $3.5 worst case, which the $3 cap refused (D-061 sizing). The owner approved $4 per job; the $50
+project cap and the 2-launch concurrency limit are unchanged. `Caps.from_env` can still only tighten either cap.
+
+**D-063 (2026-11-13) Greedy output-equivalence gate: amended criterion.**
+The pre-registered gate (EXPERIMENTS.md, criterion 5) asked for identical greedy token ids against a BF16
+no-speculation reference. It was never wired until now (`correctness.py`, `g4bench greedy promote|compare`;
+reference `data/greedy_reference/vllm-0.33.0-nospec.json`: 8 prompts, 4 short and 4 synthetic 3K/8K-token, 256
+tokens each, token ids plus top-2 logprobs). Result: the unmodified article recipe `vllm-0.33.0-mtp4` already differs
+from the reference on 4/8 prompts, because the verify forward runs a different batch shape and kernel path than plain
+decoding; exact equality is unattainable for any speculative config in vLLM. Amended criterion, applied identically to
+the article recipe and to every candidate: (i) every first divergence is a **near-tie** (reference top-2 logprobs
+within 0.25 nats at that position), and (ii) the identical-prefix fraction is not materially below the article
+recipe's. Results: `mtp4` 4/8 identical, prefix 0.72; `best-e8-all` 4/8, 0.79; `best-e8-pfa-c8k` 4/8, 0.82;
+`best-e8-pfa2-c8k` (inside the paired jobs) 3/8; every divergence of every config is a near-tie. This shows the
+custom kernels and FP8 draft scan change outputs only where the target model is itself undecided; it is weaker than
+bitwise identity and is reported as such.
+
+**D-064 (2026-11-13) Prefill attention v2 (Gluon `mma_v2`), config `best-e8-pfa2-c8k`.**
+v1 (D-059) left prefill attention at ~120 TFLOPS. v2 rewrites both kernels in Gluon for sm_120's `mma.sync`
+(FA2 layout, explicit shared-memory staging) and a bench sweep chose `gl_m32_n32_w2x2` for global layers (head_dim
+512, 1 KV head) and `gl_m64_n32_w4x1` for sliding layers (head_dim 256, window 1024): ≈ 190.8 / 190.9 TFLOPS; per 8K
+prompt (8192-token chunk) prefill attention 191.2 ms upstream → 108.0 ms v1 → 73.1 ms v2. `gl_m64_n16_w4x2_kw8` failed
+numerics and is excluded. The patch reads vLLM's paged KV cache directly, runs a per-shape startup check against an
+fp32 reference and falls back to v1, then to upstream, with a log line. Config `vllm-0.33.0-best-e8-pfa2-c8k` =
+`best-e8-pfa-c8k` with the v2 kernels selected (`G4_PREFILL_ATTN_GLOBAL` / `_SLIDING`).
+
+**D-065 (2026-11-13) Same-GPU paired verdict: one frozen config vs the article recipe at all eight workloads.**
+`g4bench modal pair --a vllm-0.33.0-mtp4 --b vllm-0.33.0-best-e8-pfa2-c8k` (D-061), 2 pairs per workload (1 at 8K×64,
+which needs the $4 cap, D-062), ABBA except one BAAB at 1K×64. B/A output throughput: 1K×1 1.239, 1K×4 1.267,
+1K×16 1.182, 1K×64 1.074, 8K×1 1.272, 8K×4 1.326, 8K×16 1.257, 8K×64 1.162; the two pairs per point agree within
+0.1–0.8 %. Scaled by article-vLLM / Backboard: 1.14 / 1.05 / 1.06 / 1.02 / 1.13 / 0.99 / 1.04 / 1.00, geometric mean
+1.053. Reading: ahead of Backboard at 6/8 workloads by this estimator, parity at 8K×4 and 8K×64. The estimator's error
+is dominated by the single published figures, not by our measurement. Greedy gate inside the pair jobs: candidate
+3/8 identical, every divergence a near-tie (D-063). Spend after this series ≈ $36 of the $50 cap.

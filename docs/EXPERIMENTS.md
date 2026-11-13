@@ -123,6 +123,17 @@ model numerically and are reported only in a "not BF16 – not comparable" table
 - c. 🟨 `vllm-0.33.0-best-e8-pfa-c8k` (E8b + 8192-token chunks, D-059): 8K/c64 n=3 mean 1201.0 (0.958); 8K/c4 / c16
   n=2 means 521.6 / 987.9 (0.985 / 1.027). Not run: 1K workloads, third seed at 8K/c4 and 8K/c16.
 
+- d. ✅ prefill attention v2 (D-064): Gluon `mma_v2` kernels ≈ 190 TFLOPS; per 8K prompt 108.0 → 73.1 ms; config
+  `vllm-0.33.0-best-e8-pfa2-c8k`.
+- e. ✅ same-GPU paired series (D-061, D-065): `best-e8-pfa2-c8k` vs `mtp4` on one GPU per job, all 8 workloads,
+  B/A 1.07–1.33; scaled estimate vs Backboard 0.99–1.14, geometric mean 1.053.
+
+**Amendment (2026-11-13) to criterion 5, output preservation (D-063).** Exact greedy token identity against the BF16
+no-speculation reference is unattainable for any speculative config in vLLM, the article's unmodified recipe included
+(4/8 identical). The criterion applied from now on, identically to the article recipe and every candidate: every first
+divergence is a near-tie (reference top-2 within 0.25 nats) and the identical-prefix fraction is not materially below
+the article recipe's. This amendment was made after seeing the data and is weaker than the original criterion.
+
 ### E7 – Hardware necessity check (⬜, optional, ≤ $10)
 Only if E6 finds something hardware-specific. The roofline says H100/H200/B200 would be faster but are
 **not** needed for a valid reproduction; L40S cannot hold 64×8K KV at BF16 within 48 GB. RTX PRO 6000
