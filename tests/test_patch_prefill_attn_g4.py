@@ -240,7 +240,9 @@ def test_registered_and_config():
     assert list(e.args) == list(base.args)
     extra = {k: v for k, v in e.env.items() if k not in base.env}
     assert {k: e.env[k] for k in base.env} == dict(base.env)
-    assert extra == {P.ENV: "1", P.ENV_GLOBAL: e.env[P.ENV_GLOBAL], P.ENV_SLIDING: e.env[P.ENV_SLIDING]}
+    # + side-installed cuBLAS 13.10 (D-061): the experimental image no longer upgrades cuBLAS in place
+    assert extra == {P.ENV: "1", P.ENV_GLOBAL: e.env[P.ENV_GLOBAL], P.ENV_SLIDING: e.env[P.ENV_SLIDING],
+                     "G4_CUBLAS": "13.10"}
     assert P.variant_for(0, e.env).name == e.env[P.ENV_GLOBAL]
     assert P.variant_for(1024, e.env).name == e.env[P.ENV_SLIDING]
     assert P.variant_fits(P.variant_for(0, e.env), 512, 16) and P.variant_fits(P.variant_for(1024, e.env), 256, 2)
@@ -525,3 +527,186 @@ def test_gather_follows_block_table():
     for j in (0, 15, 16, 48):
         blk = int(cm.block_table_tensor[0, j // 16])
         assert torch.equal(k[j], kc[blk, j % 16])
+
+
+# --- v2 (paged Gluon kernels): selection, load-time check / fallback, config ---------------------------------------
+CONFIG_V2 = "vllm-0.33.0-best-e8-pfa2-c8k"
+BASE_V2 = "vllm-0.33.0-best-e8-pfa-c8k"
+
+
+def _gl_calls(path, table):
+    """{name: (args, kwargs)} of the _gl(...) literals assigned to ``table`` in ``path`` (no import: triton)."""
+    tree = ast.parse(pathlib.Path(path).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == table for t in node.targets):
+            out = {}
+            for c in ast.walk(node.value):
+                if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "_gl":
+                    args = tuple(ast.literal_eval(a) for a in c.args)
+                    out[args[0]] = (args[1:], {k.arg: ast.literal_eval(k.value) for k in c.keywords})
+            return out
+    raise AssertionError(table)
+
+
+@pytest.mark.parametrize("lab_table, table", [("GLOBAL_VARIANTS", "V2_GLOBAL_VARIANTS"),
+                                              ("SLIDING_VARIANTS", "V2_SLIDING_VARIANTS")])
+def test_v2_tables_match_the_kernel_lab(lab_table, table):
+    lab = _gl_calls(REPO / "kernels" / "prefill_attn_v2.py", lab_table)
+    ours = _gl_calls(PATCH_DIR / "prefill_attn_g4.py", table)
+    assert ours and all(lab[n] == ours[n] for n in ours)                  # same literals
+    assert set(lab) == set(ours) | (set(lab) & set(P.V2_EXCLUDED))         # every lab gl variant ported or excluded
+    assert not set(ours) & set(P.V2_EXCLUDED)
+    assert set(getattr(P, table)) == {P.V2_PREFIX + n for n in ours}
+
+
+def test_v2_variant_selection_and_fit():
+    assert P.variant_for(0, {P.ENV_GLOBAL: "v2:gl_m32_n32_w2x2"}) is P.V2_GLOBAL_VARIANTS["v2:gl_m32_n32_w2x2"]
+    assert P.variant_for(1024, {P.ENV_SLIDING: "v2:gl_m64_n32_w4x1"}).name == "v2:gl_m64_n32_w4x1"
+    for name, msg in (("v2:gl_m64_n16_w4x2_kw8", "numerics"), ("v2:tl_m64_dv512_n32_d64_tma_s2", "TMA"),
+                      ("v2:gl_m64_n16_w4x2_sk2", "split-KV"), ("v2:gl_m64_n32_w4x1", "not a variant")):
+        with pytest.raises(ValueError, match=msg):
+            P.variant_for(0, {P.ENV_GLOBAL: name})                         # (a sliding name on a global layer)
+    with pytest.raises(ValueError, match="not selectable"):
+        P.variant_for(1024, {P.ENV_SLIDING: "v2:gl_m128_n32_w8x1_kw8"})
+    for v in P.V2_GLOBAL_VARIANTS.values():
+        assert P.is_v2(v) and P.variant_fits(v, 512, 16) and P.v2_smem_bytes(v, 512) <= P.SMEM_LIMIT
+    for v in P.V2_SLIDING_VARIANTS.values():
+        assert P.is_v2(v) and P.variant_fits(v, 256, 2) and P.v2_smem_bytes(v, 256) <= P.SMEM_LIMIT
+    assert not P.variant_fits(P.V2_SLIDING_VARIANTS["v2:gl_m128_n32_w8x1"], 512, 2)   # smem at head_dim 512
+    assert not P.variant_fits(P.V2_GLOBAL_VARIANTS["v2:gl_m32_n32_w2x2"], 512, 64)    # block_m < group
+    assert not P.is_v2(P.fallback_for(0)) and P.variant_fits(P.fallback_for(0), 512, 16)
+    assert not P.is_v2(P.fallback_for(1024)) and P.variant_fits(P.fallback_for(1024), 256, 2)
+    assert P.variant_for(0, {}).name == P.DEFAULT_GLOBAL                 # v1 stays the default, unchanged
+
+
+def test_v2_config():
+    e, base = EngineConfig.load(CONFIG_V2), EngineConfig.load(BASE_V2)
+    assert e.raw["image_patches"] == base.raw["image_patches"] and list(e.args) == list(base.args)
+    diff = {k for k in set(e.env) | set(base.env) if e.env.get(k) != base.env.get(k)}
+    assert diff == {P.ENV_GLOBAL, P.ENV_SLIDING} and e.env[P.ENV] == "1"
+    vg, vs = P.variant_for(0, e.env), P.variant_for(1024, e.env)
+    assert (vg.name, vs.name) == ("v2:gl_m32_n32_w2x2", "v2:gl_m64_n32_w4x1")
+    assert P.variant_fits(vg, 512, 16) and P.variant_fits(vs, 256, 2)
+
+
+def test_v2_usable_checks_once_and_caches_the_verdict(monkeypatch):
+    monkeypatch.setattr(P, "_V2_STATE", {})
+    seen = []
+    k_ok, k_bad, k_exc = ("v2:a", 512, 16, 1, 0, 64), ("v2:b", 256, 2, 8, 1024, 64), ("v2:c", 256, 2, 8, 1024, 16)
+    assert P.v2_usable(k_ok, lambda: seen.append("ok")) and P.v2_usable(k_ok, lambda: seen.append("again"))
+    assert not P.v2_usable(k_bad, lambda: seen.append("bad") or "mismatch")
+    assert not P.v2_usable(k_bad, lambda: seen.append("bad again"))
+    assert not P.v2_usable(k_exc, lambda: 1 / 0)
+    assert seen == ["ok", "bad"] and "ZeroDivisionError" in P._V2_STATE[k_exc]
+
+
+def _gpu_fakes(monkeypatch, verdict="pass", launch_error=False):
+    """Run the GPU branch of run_prefill on CPU: the v1/v2 launchers become recorders that compute the rows with the
+    torch reference."""
+    monkeypatch.setattr(P, "_V2_STATE", {})
+    monkeypatch.setattr(P, "_gpu_path", lambda q: True)
+    log = []
+
+    def v1(p, query, kc, vc, out, bt, qsl, seq, scale, window, v):
+        log.append(("v1", v.name))
+        P.prefill_torch(p, query, kc, vc, out, bt, seq, scale, window)
+
+    def v2(p, query, kc, vc, out, bt, qsl, seq, scale, window, v):
+        if launch_error:
+            raise RuntimeError("compile failed")
+        log.append(("v2", v.name))
+        P.prefill_torch(p, query, kc, vc, out, bt, seq, scale, window)
+
+    def check(*a, **k):
+        log.append(("check",))
+        return None if verdict == "pass" else verdict
+
+    monkeypatch.setattr(P, "prefill_triton", v1)
+    monkeypatch.setattr(P, "prefill_gluon", v2)
+    monkeypatch.setattr(P, "v2_self_check", check)
+    return log
+
+
+@pytest.mark.parametrize("check, launch_error, used", [
+    ("pass", False, "v2"), ("mismatch vs torch reference", False, "v1"), ("pass", True, "v1")])
+@pytest.mark.parametrize("shape", [GLOBAL, SLIDING], ids=["global", "sliding"])
+def test_v2_dispatch_and_fallback(monkeypatch, shape, check, launch_error, used):
+    torch = _torch()
+    win = shape["window"]
+    name = "v2:gl_m32_n32_w2x2" if win == 0 else "v2:gl_m64_n32_w4x1"
+    monkeypatch.setenv(P.ENV, "1")
+    monkeypatch.setenv(P.ENV_SLIDING if win else P.ENV_GLOBAL, name)
+    log = _gpu_fakes(monkeypatch, check, launch_error)
+    cm, query, kc, vc = _batch(shape, MIXED, block_size=16)
+    calls = []
+    ns = _load(PATCHED, calls)
+    for _ in range(2):  # second step: verdict cached, no second check
+        _, out = _run(ns, shape, cm, query, kc, vc)
+        T = cm.num_actual_tokens
+        torch.testing.assert_close(out[:T], _expected(shape, cm, query, kc, vc)[:T], rtol=1e-5, atol=1e-5)
+    fb = P.fallback_for(win).name
+    want = {"v2": [("check",), ("v2", name), ("v2", name)],
+            "v1": [("check",), ("v1", fb), ("v1", fb)]}[used]
+    if launch_error:
+        want = [("check",), ("v1", fb), ("v1", fb)]  # the failed launch wrote nothing; v1 ran instead, then sticks
+    assert log == want
+    assert calls == [dict(num_seqs=3, tokens=15, max_q=7)] * 2
+
+
+def test_v2_env_on_cpu_path_matches_reference(monkeypatch):
+    torch = _torch()
+    monkeypatch.setenv(P.ENV, "1")
+    monkeypatch.setenv(P.ENV_GLOBAL, "v2:gl_m32_n32_w2x2")
+    cm, query, kc, vc = _batch(GLOBAL, MIXED)
+    _, out = _run(_load(PATCHED, []), GLOBAL, cm, query, kc, vc)
+    T = cm.num_actual_tokens
+    torch.testing.assert_close(out[:T], _expected(GLOBAL, cm, query, kc, vc)[:T], rtol=1e-5, atol=1e-5)
+
+
+def test_v2_check_case_exercises_window_and_prefix():
+    for window, bs in ((0, 64), (1024, 16), (1024, 64)):
+        ctx_q = P.v2_check_case(window, bs)
+        assert ctx_q[0][1] <= P.MIN_Q and all(q > P.MIN_Q for _, q in ctx_q[1:])   # decode prefix, then prefills
+        c, q = ctx_q[-1]
+        assert (c > window if window else True) and (c + q) // bs >= 2 and (c + q) % bs  # spans pages, ragged tail
+
+
+def _cuda_gluon():
+    torch = _torch()
+    if not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 0):
+        pytest.skip("needs an sm_80+ CUDA GPU")
+    if P.GLUON_ERROR is not None:
+        pytest.skip(f"gluon unavailable: {P.GLUON_ERROR}")
+    return torch
+
+
+@pytest.mark.parametrize("block_size", [16, 64])
+@pytest.mark.parametrize("name", sorted(P.V2_GLOBAL_VARIANTS) + sorted(P.V2_SLIDING_VARIANTS))
+def test_v2_gluon_paged_kernel_matches_reference_gpu(name, block_size):
+    torch = _cuda_gluon()
+    glob = name in P.V2_GLOBAL_VARIANTS
+    v = (P.V2_GLOBAL_VARIANTS if glob else P.V2_SLIDING_VARIANTS)[name]
+    H, KVH, D, window = (16, 1, 512, 0) if glob else (16, 8, 256, 1024)
+    err = P.v2_self_check(v, H, KVH, D, window, block_size, torch.bfloat16, torch.device("cuda"), D ** -0.5)
+    assert err is None, err
+
+
+@pytest.mark.parametrize("shape", [dict(H=16, KVH=1, D=512, window=0), dict(H=16, KVH=8, D=256, window=40)],
+                         ids=["global", "sliding"])
+def test_v2_patched_forward_on_gpu_mixed_batch(monkeypatch, shape):
+    torch = _cuda_gluon()
+    monkeypatch.setattr(P, "_V2_STATE", {})
+    monkeypatch.setenv(P.ENV, "1")
+    monkeypatch.setenv(P.ENV_GLOBAL, "v2:gl_m32_n32_w2x2")
+    monkeypatch.setenv(P.ENV_SLIDING, "v2:gl_m64_n32_w4x1")
+    cm, query, kc, vc = _batch(shape, MIXED + [(130, 200)], block_size=64, dtype=torch.bfloat16)
+    dev = torch.device("cuda")
+    kc, vc, query = kc.to(dev), vc.to(dev), query.to(dev)
+    cm.query_start_loc, cm.seq_lens = cm.query_start_loc.to(dev), cm.seq_lens.to(dev)
+    cm.block_table_tensor = cm.block_table_tensor.clamp(max=kc.shape[0] - 1).to(dev)
+    calls = []
+    _, out = _run(_load(PATCHED, calls), shape, cm, query, kc, vc)
+    T = cm.num_actual_tokens
+    ref = _expected(shape, cm, query.float(), kc.float(), vc.float())
+    assert all(v is True for v in P._V2_STATE.values()) and P._V2_STATE
+    torch.testing.assert_close(out[:T].float(), ref[:T], rtol=2e-2, atol=3e-2)
