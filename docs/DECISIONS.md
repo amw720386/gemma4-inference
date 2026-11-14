@@ -646,3 +646,13 @@ prompts prefill in parallel at 2048 tokens per step) and median TTFT +45–55 ms
 At 8K×4 these scheduler options trade one metric against the other; the frozen config takes the TTFT side (p90 TTFT
 610–677 ms over 4 pairs on 2 GPUs). The owner left a further spend increase to the agent; the cap is $120 for the
 confirmation pairs (spend ≈ $85 after D-069).
+
+**D-070 (2026-11-14) Repository cleanup: raw dumps out of the tree, workspace name redacted.** The tracked tree held
+456 MB of results, 394 MB of it per-request InferenceX dumps (`inferencex_result.json`, 241 files) that no analysis
+reads (`analyze`, `report`, `claims` and the greedy gate use `results.jsonl`, `manifest.json`, `metadata.json`,
+`correctness.json`). Those dumps, two profiler traces and the tokenizer-probe id/prompt dumps are removed from the
+tree and ignored from now on; they remain in history at `fd29e73`. Server and client logs stay (≈ 19 MB; the logs are
+the evidence for active kernels and patches). The Modal workspace name in D-010/D-033 is replaced by `<workspace>`.
+History is not rewritten (`main` is shared), so the name and the dumps are still in older commits. No secrets,
+tokens, personal paths or e-mail addresses were found in tracked files; Modal resource ids (`vo-…`, `ap-…`) in run
+metadata are ephemeral and kept.
