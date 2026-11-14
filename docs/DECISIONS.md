@@ -44,7 +44,7 @@ Acceptance length under greedy + random-token prompts is the dominant performanc
 **D-010 (2026-11-10) Modal only through a deployed HTTPS bridge with proxy auth.** This environment's
 egress cannot use Modal's gRPC control plane; we do not retry the CLI or use undocumented APIs. A human
 deploys `modal_bridge/app.py` once (BOOTSTRAP.md). Bridge enforces allowlists, cost estimate vs cap,
-single active GPU job, soft wall budget + hard timeout. Verified 2026-11-10: `https://arnold-17059--g4repro-bridge.modal.run`
+single active GPU job, soft wall budget + hard timeout. Verified 2026-11-10: `https://<workspace>--g4repro-bridge.modal.run`
 is reachable over HTTPS and returns `modal-http: invalid function call` (= not deployed yet).
 
 **D-011 (2026-11-10) Admissibility categories.** (a) like-for-like: BF16 target, shipped-precision draft;
@@ -214,7 +214,7 @@ against the same engine's article numbers and Backboard's. Purpose: decide after
 belongs in drafting/acceptance or in kernels/scheduling. Diagnostic only; assumptions printed with every table.
 
 **D-033 (2026-11-10) Bridge URL and approval variables aligned with the configured environment.** The cloud
-environment's network secret is bound to `arnold-17059--g4repro-bridge.us-east.modal.run` (regional host), not the
+environment's network secret is bound to `<workspace>--g4repro-bridge.us-east.modal.run` (regional host), not the
 unregional host the client defaulted to; both return 404 today (not deployed). The client now defaults to the
 regional host (`G4_BRIDGE_URL` still wins once visible after a session restart). The environment also defines
 `G4_PROJECT_BUDGET_USD` and `G4_JOB_CAP_USD`: the campaign uses them to *tighten* (never relax) the limits it requires
@@ -646,3 +646,13 @@ prompts prefill in parallel at 2048 tokens per step) and median TTFT +45–55 ms
 At 8K×4 these scheduler options trade one metric against the other; the frozen config takes the TTFT side (p90 TTFT
 610–677 ms over 4 pairs on 2 GPUs). The owner left a further spend increase to the agent; the cap is $120 for the
 confirmation pairs (spend ≈ $85 after D-069).
+
+**D-070 (2026-11-14) Repository cleanup: raw dumps out of the tree, workspace name redacted.** The tracked tree held
+456 MB of results, 394 MB of it per-request InferenceX dumps (`inferencex_result.json`, 241 files) that no analysis
+reads (`analyze`, `report`, `claims` and the greedy gate use `results.jsonl`, `manifest.json`, `metadata.json`,
+`correctness.json`). Those dumps, two profiler traces and the tokenizer-probe id/prompt dumps are removed from the
+tree and ignored from now on; they remain in history at `fd29e73`. Server and client logs stay (≈ 19 MB; the logs are
+the evidence for active kernels and patches). The Modal workspace name in D-010/D-033 is replaced by `<workspace>`.
+History is not rewritten (`main` is shared), so the name and the dumps are still in older commits. No secrets,
+tokens, personal paths or e-mail addresses were found in tracked files; Modal resource ids (`vo-…`, `ap-…`) in run
+metadata are ephemeral and kept.
