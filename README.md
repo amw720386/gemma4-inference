@@ -1,4 +1,4 @@
-# gemma4-inference-repro
+# gemma4-inference
 
 **Stock vLLM 0.33.0, a tuned config and five patches on one GPU: faster than or on par with Backboard's proprietary
 engine on Gemma 4 12B, on almost every number across the board.**
@@ -150,11 +150,11 @@ publishing detailed numbers to compare against.
 ## Citation
 
 ```bibtex
-@misc{gemma4-inference-repro,
-  title  = {gemma4-inference-repro: Open-source vLLM beyond Backboard's published Gemma 4 12B serving numbers},
+@misc{gemma4-inference,
+  title  = {gemma4-inference: Open-source vLLM beyond Backboard's published Gemma 4 12B serving numbers},
   author = {Wajibu, Ahamed Mohamed},
   year   = {2026},
-  url    = {https://github.com/amw720386/gemma4-inference-repro}
+  url    = {https://github.com/amw720386/gemma4-inference}
 }
 ```
 
