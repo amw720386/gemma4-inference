@@ -1,0 +1,42 @@
+{
+  "delta": {
+    "vllm:spec_decode_num_drafts_total": 2097.0,
+    "vllm:spec_decode_num_drafts_created": 0.0,
+    "vllm:spec_decode_num_draft_tokens_total": 12582.0,
+    "vllm:spec_decode_num_draft_tokens_created": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_total": 8950.0,
+    "vllm:spec_decode_num_accepted_tokens_created": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_per_pos_total": 8950.0,
+    "vllm:spec_decode_num_accepted_tokens_per_pos_created": 0.0,
+    "vllm:time_to_first_token_seconds_count": 12.0,
+    "vllm:time_to_first_token_seconds_sum": 0.973536491394043,
+    "vllm:e2e_request_latency_seconds_count": 12.0,
+    "vllm:e2e_request_latency_seconds_sum": 46.43655967712402,
+    "vllm:request_queue_time_seconds_count": 12.0,
+    "vllm:request_queue_time_seconds_sum": 0.0002304790000380308,
+    "vllm:request_inference_time_seconds_count": 12.0,
+    "vllm:request_inference_time_seconds_sum": 46.398104710000325,
+    "vllm:request_prefill_time_seconds_count": 12.0,
+    "vllm:request_prefill_time_seconds_sum": 0.9313441770001418,
+    "vllm:request_decode_time_seconds_count": 12.0,
+    "vllm:request_decode_time_seconds_sum": 45.46676053300018
+  },
+  "acceptance": {
+    "acceptance_length": 5.2680019074868865,
+    "draft_acceptance_rate": 0.7113336512478143,
+    "source": "vllm"
+  },
+  "log": {
+    "acceptance_length_log_mean": 5.25,
+    "n_log_samples": 4,
+    "source": "vllm-log"
+  },
+  "timing": {
+    "time_to_first_token_mean_ms": 81.12804094950359,
+    "request_queue_time_mean_ms": 0.019206583336502565,
+    "request_prefill_time_mean_ms": 77.61201475001182,
+    "request_decode_time_mean_ms": 3788.8967110833487,
+    "request_inference_time_mean_ms": 3866.5087258333606,
+    "e2e_request_latency_mean_ms": 3869.713306427002
+  }
+}

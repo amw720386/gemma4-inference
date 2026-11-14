@@ -1,0 +1,79 @@
+{
+  "captured_utc": "2026-11-14T00:56:27.830387+00:00",
+  "host": {
+    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "cpu_count": 8,
+    "cpu_model": "unknown",
+    "mem_total_kib": 67108864
+  },
+  "gpus": [
+    {
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "uuid": "GPU-81994a5d-d30a-68f8-d145-4b096bdd017f",
+      "pci.bus_id": "[Unknown Error]",
+      "driver_version": "610.57.04",
+      "memory.total": "97887",
+      "power.limit": "600.00",
+      "power.default_limit": "600.00",
+      "power.max_limit": "600.00",
+      "clocks.max.sm": "2430",
+      "clocks.max.memory": "12481",
+      "clocks.sm": "210",
+      "clocks.mem": "12481",
+      "pcie.link.gen.current": "5",
+      "pcie.link.width.current": "16",
+      "temperature.gpu": "35",
+      "persistence_mode": "Enabled",
+      "compute_mode": "Default",
+      "ecc.mode.current": "Enabled",
+      "vbios_version": "98.02.8D.00.01"
+    }
+  ],
+  "hardware_class": "RTX-PRO-6000-SEx1",
+  "exact_hardware": true,
+  "nvcc": "Build cuda_13.0.r13.0/compiler.36424714_0",
+  "packages": {
+    "vllm": "0.33.0",
+    "sglang": null,
+    "torch": "2.14.0+cu130",
+    "transformers": "5.20.2",
+    "flashinfer-python": "0.7.2.post1",
+    "flash-attn": null,
+    "triton": "3.8.0",
+    "sgl-kernel": null,
+    "numpy": "2.2.6",
+    "aiohttp": "3.14.5"
+  },
+  "git": {
+    "sha": "9c3f045650d2427192232d7bb5c0f10c0b54425f",
+    "dirty": true,
+    "source": "G4_CODE_SHA"
+  },
+  "env": {
+    "NVIDIA_DRIVER_CAPABILITIES": "all",
+    "MODAL_REGION": "us-east",
+    "MODAL_CLOUD_PROVIDER": "CLOUD_PROVIDER_UNSPECIFIED",
+    "MODAL_TASK_ID": "ta-01M7BRWEQT72HYFV2M5MY5J4TR",
+    "G4_IMAGE_PATCHES": "mtp_draft_prefill_last,splitk_per_group,mtp_draft_head_q,prefill_attn_g4,hybrid_tokenizer",
+    "G4_IMAGE_PIP": "",
+    "G4_CUBLAS_SIDE": "13.10=/opt/cublas-13.10"
+  },
+  "_errors": {},
+  "cublas": {
+    "request": {
+      "requested": null,
+      "mode": "image-default"
+    },
+    "loaded": [
+      "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcublas.so.13.1.1.3",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublas.so.13",
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/lib/libcublasLt.so.13"
+    ],
+    "check": {
+      "ok": true,
+      "why": "image cuBLAS only"
+    }
+  }
+}

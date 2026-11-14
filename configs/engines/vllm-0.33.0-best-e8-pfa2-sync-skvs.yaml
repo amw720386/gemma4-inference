@@ -1,0 +1,43 @@
+# Prefill-attention kernel update of best-e8-pfa2-sync (TTFT at 8K): identical engine args and env, only the
+#   sliding-layer prefill attention variant changes (patch prefill_attn_g4, same image patch list):
+#   sliding layers -> v2:gl_m64_n32_w4x1_kvs (K and V share one smem tile: 48 KB -> 2 CTAs / SM; paged bench 1.12-1.16x
+#   the current sliding winner, ~3 ms per 7.4K prompt); global layers keep v2:gl_m32_n32_w2x2 (no v3 variant beat it).
+#   Chosen by kernels/prefill_attn_v3_bench.py (paged serving launch, block sizes 64/16, fresh 7424- and 8192-token
+#   prompts, fp32-reference numerics). Same math, different reduction order / tiling: class unchanged (b). Each variant
+#   passes the patch's load-time paged numerics check at server start or falls back to the v1 winner (logged).
+name: vllm-0.33.0-best-e8-pfa2-sync-skvs
+image_patches: [mtp_draft_prefill_last, splitk_per_group, mtp_draft_head_q, prefill_attn_g4]
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: b       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E10-prefill-attn-sliding-kvs
+engine: vllm
+version: "0.33.0"
+client_backend: vllm          # InferenceX benchmark_serving --backend
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--no-async-scheduling]   # E9 (D-067)
+  - [--speculative-config, '{"method":"mtp","model":"{draft_repo}","revision":"{draft_rev}","num_speculative_tokens":6,"num_speculative_tokens_per_batch_size":[[1,32,6],[33,4096,4]],"use_local_argmax_reduction":true}']
+  - [--max-num-batched-tokens, "8192"]   # E8c: whole 8K prompt per prefill step
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env:
+  G4_DRAFT_PREFILL_LAST: "1"    # mtp_draft_prefill_last gate (D-061): on; unset = upstream draft prefill
+  G4_CUBLAS: "13.10"            # side-installed cuBLAS 13.10 via LD_PRELOAD (D-061; in-image upgrade before)
+  G4_SPLITK_T_FULL: "112"      # full/global group: 3D iff num_seqs * q_len <= 112 (BLOCK_Q 1)
+  G4_SPLITK_T_SLIDING: "8"     # sliding group: 3D iff num_seqs * cdiv(q_len, 8) <= 8
+  G4_DRAFT_HEAD_Q: fp8          # quantized draft-head scan format (fp8 | int4)
+  G4_DRAFT_HEAD_K: "32"         # candidates rescored exactly in BF16
+  G4_PREFILL_ATTN: "1"          # q_len > 8 requests -> packed-head prefill kernel (prefill_attn_g4)
+  G4_PREFILL_ATTN_GLOBAL: "v2:gl_m32_n32_w2x2"       # unchanged (v2 bench winner)
+  G4_PREFILL_ATTN_SLIDING: "v2:gl_m64_n32_w4x1_kvs"  # was v2:gl_m64_n32_w4x1
+unknowns:
+  - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
+  - "Kernel-bench gains are per fresh prompt at c1; at c16/c64 prefill chunks share steps with decode and the gain is diluted."

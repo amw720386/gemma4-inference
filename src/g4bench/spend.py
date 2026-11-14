@@ -69,14 +69,14 @@ SELFTEST_TIMEOUT_S = 1200
 class Caps:
     # Owner approvals: $10 project (2026-11-10); per-job $2 -> $3 (2026-11-11, D-041); "more Modal credits beyond
     # the allowance, but do not waste them" (2026-11-11) -> project cap set to $20 by the agent (D-045); kernel-lab phase
-    # ("use a lot more", 2026-11-11) -> $50 set by the agent (D-051).
-    project_usd: float = 50.0
+    # ("use a lot more", 2026-11-11) -> $50 set by the agent (D-051); $100 approved by the owner for TTFT work (2026-11-13, D-066); $120 left to the agent by the owner for the final confirmation runs (2026-11-14, D-069).
+    project_usd: float = 120.0
     per_job_usd: float = 4.0  # raised from $3 by the owner (2026-11-13) for single 8K x64 same-GPU pairs (D-062)
 
     @classmethod
     def from_env(cls) -> "Caps":
-        """Environment may only *tighten* the approved $50 / $4 (never relax it)."""
-        p = min(50.0, float(os.environ.get("G4_PROJECT_CAP_USD") or 50.0))
+        """Environment may only *tighten* the approved $120 / $4 (never relax it)."""
+        p = min(120.0, float(os.environ.get("G4_PROJECT_CAP_USD") or 120.0))
         j = min(4.0, p, float(os.environ.get("G4_PER_JOB_CAP_USD") or 4.0))
         return cls(p, j)
 

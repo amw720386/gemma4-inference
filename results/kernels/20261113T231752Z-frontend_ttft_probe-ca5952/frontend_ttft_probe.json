@@ -1,0 +1,645 @@
+{
+ "prompt_chars": {
+  "isl8192": [
+   37057,
+   42248,
+   45568,
+   42852,
+   7372,
+   47524,
+   43657,
+   14795
+  ],
+  "isl1024": [
+   5081,
+   4970,
+   5288,
+   5938
+  ]
+ },
+ "prompt_build_s": 10.7,
+ "variants": {
+  "default": {
+   "variant": "default",
+   "env": {},
+   "engine": {},
+   "vllm": "0.33.0",
+   "config_s": 13.58,
+   "renderer_init_s": 15.28,
+   "renderer_cls": "HfRenderer",
+   "mm_processor": "Gemma4MultiModalProcessor",
+   "supports_mm_inputs": true,
+   "tokenizer_cls": "TokenizerPoolCachedGemmaTokenizer",
+   "inner_tokenizer_cls": "tokenizers.Tokenizer",
+   "workloads": {
+    "isl8192": {
+     "n_tokens": [
+      7240,
+      7116,
+      7773,
+      7391,
+      7319,
+      7939,
+      7589,
+      6833
+     ],
+     "steps": {
+      "body_parse": {
+       "med_ms": 0.48,
+       "p90_ms": 0.489,
+       "min_ms": 0.466
+      },
+      "hf_encode": {
+       "med_ms": 13.52,
+       "p90_ms": 14.023,
+       "min_ms": 13.292
+      },
+      "rust_encode": {
+       "med_ms": 13.275,
+       "p90_ms": 13.614,
+       "min_ms": 13.01
+      },
+      "render": {
+       "med_ms": 14.147,
+       "p90_ms": 15.17,
+       "min_ms": 13.522
+      },
+      "process_inputs": {
+       "med_ms": 0.172,
+       "p90_ms": 0.184,
+       "min_ms": 0.167
+      },
+      "msgpack_encode": {
+       "med_ms": 0.03,
+       "p90_ms": 0.031,
+       "min_ms": 0.029
+      },
+      "msgpack_decode": {
+       "med_ms": 0.126,
+       "p90_ms": 0.136,
+       "min_ms": 0.124
+      },
+      "core_request": {
+       "med_ms": 0.019,
+       "p90_ms": 0.02,
+       "min_ms": 0.018
+      },
+      "detok_init": {
+       "med_ms": 0.071,
+       "p90_ms": 0.072,
+       "min_ms": 0.07
+      },
+      "detok_first": {
+       "med_ms": 5.737,
+       "p90_ms": 5.9,
+       "min_ms": 5.666
+      }
+     }
+    },
+    "isl1024": {
+     "n_tokens": [
+      993,
+      869,
+      938,
+      1013
+     ],
+     "steps": {
+      "body_parse": {
+       "med_ms": 0.076,
+       "p90_ms": 0.09,
+       "min_ms": 0.069
+      },
+      "hf_encode": {
+       "med_ms": 1.988,
+       "p90_ms": 2.027,
+       "min_ms": 1.932
+      },
+      "rust_encode": {
+       "med_ms": 1.846,
+       "p90_ms": 1.915,
+       "min_ms": 1.801
+      },
+      "render": {
+       "med_ms": 2.439,
+       "p90_ms": 2.543,
+       "min_ms": 2.24
+      },
+      "process_inputs": {
+       "med_ms": 0.07,
+       "p90_ms": 0.073,
+       "min_ms": 0.068
+      },
+      "msgpack_encode": {
+       "med_ms": 0.005,
+       "p90_ms": 0.005,
+       "min_ms": 0.005
+      },
+      "msgpack_decode": {
+       "med_ms": 0.024,
+       "p90_ms": 0.025,
+       "min_ms": 0.024
+      },
+      "core_request": {
+       "med_ms": 0.005,
+       "p90_ms": 0.006,
+       "min_ms": 0.005
+      },
+      "detok_init": {
+       "med_ms": 0.01,
+       "p90_ms": 0.01,
+       "min_ms": 0.01
+      },
+      "detok_first": {
+       "med_ms": 0.681,
+       "p90_ms": 0.702,
+       "min_ms": 0.656
+      }
+     }
+    }
+   },
+   "encode_kwargs": {
+    "truncation": true,
+    "max_length": 262145,
+    "add_special_tokens": true
+   },
+   "msgpack_bytes": {
+    "isl8192": 29379,
+    "isl1024": 5089
+   },
+   "detok_cls": "FastIncrementalDetokenizer"
+  },
+  "mm0": {
+   "variant": "mm0",
+   "env": {},
+   "engine": {
+    "limit_mm_per_prompt": {
+     "image": 0,
+     "audio": 0,
+     "video": 0
+    }
+   },
+   "vllm": "0.33.0",
+   "config_s": 12.93,
+   "renderer_init_s": 5.35,
+   "renderer_cls": "HfRenderer",
+   "mm_processor": null,
+   "supports_mm_inputs": false,
+   "tokenizer_cls": "TokenizerPoolCachedGemmaTokenizer",
+   "inner_tokenizer_cls": "tokenizers.Tokenizer",
+   "workloads": {
+    "isl8192": {
+     "n_tokens": [
+      7240,
+      7116,
+      7773,
+      7391,
+      7319,
+      7939,
+      7589,
+      6833
+     ],
+     "steps": {
+      "body_parse": {
+       "med_ms": 0.477,
+       "p90_ms": 0.486,
+       "min_ms": 0.461
+      },
+      "hf_encode": {
+       "med_ms": 13.558,
+       "p90_ms": 14.003,
+       "min_ms": 13.086
+      },
+      "rust_encode": {
+       "med_ms": 12.86,
+       "p90_ms": 13.08,
+       "min_ms": 12.771
+      },
+      "render": {
+       "med_ms": 14.232,
+       "p90_ms": 14.955,
+       "min_ms": 13.405
+      },
+      "process_inputs": {
+       "med_ms": 0.172,
+       "p90_ms": 0.184,
+       "min_ms": 0.168
+      },
+      "msgpack_encode": {
+       "med_ms": 0.029,
+       "p90_ms": 0.03,
+       "min_ms": 0.028
+      },
+      "msgpack_decode": {
+       "med_ms": 0.119,
+       "p90_ms": 0.126,
+       "min_ms": 0.117
+      },
+      "core_request": {
+       "med_ms": 0.02,
+       "p90_ms": 0.02,
+       "min_ms": 0.019
+      },
+      "detok_init": {
+       "med_ms": 0.071,
+       "p90_ms": 0.072,
+       "min_ms": 0.07
+      },
+      "detok_first": {
+       "med_ms": 5.176,
+       "p90_ms": 5.471,
+       "min_ms": 5.107
+      }
+     }
+    },
+    "isl1024": {
+     "n_tokens": [
+      993,
+      869,
+      938,
+      1013
+     ],
+     "steps": {
+      "body_parse": {
+       "med_ms": 0.074,
+       "p90_ms": 0.086,
+       "min_ms": 0.066
+      },
+      "hf_encode": {
+       "med_ms": 1.936,
+       "p90_ms": 1.98,
+       "min_ms": 1.867
+      },
+      "rust_encode": {
+       "med_ms": 1.747,
+       "p90_ms": 1.79,
+       "min_ms": 1.711
+      },
+      "render": {
+       "med_ms": 2.512,
+       "p90_ms": 2.603,
+       "min_ms": 2.354
+      },
+      "process_inputs": {
+       "med_ms": 0.07,
+       "p90_ms": 0.072,
+       "min_ms": 0.068
+      },
+      "msgpack_encode": {
+       "med_ms": 0.005,
+       "p90_ms": 0.005,
+       "min_ms": 0.005
+      },
+      "msgpack_decode": {
+       "med_ms": 0.023,
+       "p90_ms": 0.024,
+       "min_ms": 0.022
+      },
+      "core_request": {
+       "med_ms": 0.005,
+       "p90_ms": 0.006,
+       "min_ms": 0.005
+      },
+      "detok_init": {
+       "med_ms": 0.01,
+       "p90_ms": 0.011,
+       "min_ms": 0.01
+      },
+      "detok_first": {
+       "med_ms": 0.678,
+       "p90_ms": 0.691,
+       "min_ms": 0.652
+      }
+     }
+    }
+   },
+   "encode_kwargs": {
+    "truncation": true,
+    "max_length": 262145,
+    "add_special_tokens": true
+   },
+   "msgpack_bytes": {
+    "isl8192": 29379,
+    "isl1024": 5089
+   },
+   "detok_cls": "FastIncrementalDetokenizer"
+  },
+  "lmo": {
+   "variant": "lmo",
+   "env": {},
+   "engine": {
+    "language_model_only": true
+   },
+   "vllm": "0.33.0",
+   "config_s": 12.49,
+   "renderer_init_s": 4.97,
+   "renderer_cls": "HfRenderer",
+   "mm_processor": null,
+   "supports_mm_inputs": false,
+   "tokenizer_cls": "TokenizerPoolCachedGemmaTokenizer",
+   "inner_tokenizer_cls": "tokenizers.Tokenizer",
+   "workloads": {
+    "isl8192": {
+     "n_tokens": [
+      7240,
+      7116,
+      7773,
+      7391,
+      7319,
+      7939,
+      7589,
+      6833
+     ],
+     "steps": {
+      "body_parse": {
+       "med_ms": 0.474,
+       "p90_ms": 0.484,
+       "min_ms": 0.46
+      },
+      "hf_encode": {
+       "med_ms": 13.585,
+       "p90_ms": 13.751,
+       "min_ms": 13.176
+      },
+      "rust_encode": {
+       "med_ms": 13.152,
+       "p90_ms": 13.258,
+       "min_ms": 13.058
+      },
+      "render": {
+       "med_ms": 13.873,
+       "p90_ms": 14.113,
+       "min_ms": 13.372
+      },
+      "process_inputs": {
+       "med_ms": 0.171,
+       "p90_ms": 0.184,
+       "min_ms": 0.167
+      },
+      "msgpack_encode": {
+       "med_ms": 0.029,
+       "p90_ms": 0.029,
+       "min_ms": 0.028
+      },
+      "msgpack_decode": {
+       "med_ms": 0.118,
+       "p90_ms": 0.126,
+       "min_ms": 0.117
+      },
+      "core_request": {
+       "med_ms": 0.019,
+       "p90_ms": 0.02,
+       "min_ms": 0.019
+      },
+      "detok_init": {
+       "med_ms": 0.071,
+       "p90_ms": 0.073,
+       "min_ms": 0.07
+      },
+      "detok_first": {
+       "med_ms": 5.415,
+       "p90_ms": 5.504,
+       "min_ms": 5.336
+      }
+     }
+    },
+    "isl1024": {
+     "n_tokens": [
+      993,
+      869,
+      938,
+      1013
+     ],
+     "steps": {
+      "body_parse": {
+       "med_ms": 0.072,
+       "p90_ms": 0.086,
+       "min_ms": 0.066
+      },
+      "hf_encode": {
+       "med_ms": 1.921,
+       "p90_ms": 1.987,
+       "min_ms": 1.86
+      },
+      "rust_encode": {
+       "med_ms": 1.765,
+       "p90_ms": 1.81,
+       "min_ms": 1.736
+      },
+      "render": {
+       "med_ms": 2.325,
+       "p90_ms": 2.426,
+       "min_ms": 2.18
+      },
+      "process_inputs": {
+       "med_ms": 0.069,
+       "p90_ms": 0.072,
+       "min_ms": 0.068
+      },
+      "msgpack_encode": {
+       "med_ms": 0.005,
+       "p90_ms": 0.005,
+       "min_ms": 0.005
+      },
+      "msgpack_decode": {
+       "med_ms": 0.023,
+       "p90_ms": 0.024,
+       "min_ms": 0.022
+      },
+      "core_request": {
+       "med_ms": 0.005,
+       "p90_ms": 0.006,
+       "min_ms": 0.005
+      },
+      "detok_init": {
+       "med_ms": 0.01,
+       "p90_ms": 0.01,
+       "min_ms": 0.01
+      },
+      "detok_first": {
+       "med_ms": 0.599,
+       "p90_ms": 0.609,
+       "min_ms": 0.576
+      }
+     }
+    }
+   },
+   "encode_kwargs": {
+    "truncation": true,
+    "max_length": 262145,
+    "add_special_tokens": true
+   },
+   "msgpack_bytes": {
+    "isl8192": 29379,
+    "isl1024": 5089
+   },
+   "detok_cls": "FastIncrementalDetokenizer"
+  },
+  "fastokens": {
+   "variant": "fastokens",
+   "env": {
+    "VLLM_USE_FASTOKENS": "1"
+   },
+   "engine": {},
+   "vllm": "0.33.0",
+   "config_s": 14.26,
+   "renderer_init_s": 25.34,
+   "renderer_cls": "HfRenderer",
+   "mm_processor": "Gemma4MultiModalProcessor",
+   "supports_mm_inputs": true,
+   "tokenizer_cls": "TokenizerPoolCachedGemmaTokenizer",
+   "inner_tokenizer_cls": "fastokens._ConfiguredTokenizerShim",
+   "workloads": {
+    "isl8192": {
+     "n_tokens": [
+      7240,
+      7116,
+      7773,
+      7391,
+      7319,
+      7939,
+      7589,
+      6833
+     ],
+     "steps": {
+      "body_parse": {
+       "med_ms": 0.475,
+       "p90_ms": 0.486,
+       "min_ms": 0.462
+      },
+      "hf_encode": {
+       "med_ms": 1.083,
+       "p90_ms": 1.267,
+       "min_ms": 1.001
+      },
+      "rust_encode": {
+       "med_ms": 0.696,
+       "p90_ms": 0.767,
+       "min_ms": 0.659
+      },
+      "render": {
+       "med_ms": 1.564,
+       "p90_ms": 1.744,
+       "min_ms": 1.392
+      },
+      "process_inputs": {
+       "med_ms": 0.172,
+       "p90_ms": 0.185,
+       "min_ms": 0.168
+      },
+      "msgpack_encode": {
+       "med_ms": 0.028,
+       "p90_ms": 0.029,
+       "min_ms": 0.027
+      },
+      "msgpack_decode": {
+       "med_ms": 0.113,
+       "p90_ms": 0.123,
+       "min_ms": 0.112
+      },
+      "core_request": {
+       "med_ms": 0.019,
+       "p90_ms": 0.02,
+       "min_ms": 0.019
+      },
+      "detok_init": {
+       "med_ms": 0.09,
+       "p90_ms": 0.091,
+       "min_ms": 0.089
+      },
+      "detok_first": {
+       "med_ms": 2.407,
+       "p90_ms": 2.431,
+       "min_ms": 2.373
+      }
+     }
+    },
+    "isl1024": {
+     "n_tokens": [
+      993,
+      869,
+      938,
+      1013
+     ],
+     "steps": {
+      "body_parse": {
+       "med_ms": 0.073,
+       "p90_ms": 0.086,
+       "min_ms": 0.066
+      },
+      "hf_encode": {
+       "med_ms": 0.232,
+       "p90_ms": 0.273,
+       "min_ms": 0.215
+      },
+      "rust_encode": {
+       "med_ms": 0.056,
+       "p90_ms": 0.065,
+       "min_ms": 0.053
+      },
+      "render": {
+       "med_ms": 0.762,
+       "p90_ms": 0.808,
+       "min_ms": 0.536
+      },
+      "process_inputs": {
+       "med_ms": 0.07,
+       "p90_ms": 0.074,
+       "min_ms": 0.068
+      },
+      "msgpack_encode": {
+       "med_ms": 0.005,
+       "p90_ms": 0.005,
+       "min_ms": 0.005
+      },
+      "msgpack_decode": {
+       "med_ms": 0.024,
+       "p90_ms": 0.025,
+       "min_ms": 0.023
+      },
+      "core_request": {
+       "med_ms": 0.005,
+       "p90_ms": 0.006,
+       "min_ms": 0.005
+      },
+      "detok_init": {
+       "med_ms": 0.013,
+       "p90_ms": 0.013,
+       "min_ms": 0.013
+      },
+      "detok_first": {
+       "med_ms": 0.261,
+       "p90_ms": 0.274,
+       "min_ms": 0.257
+      }
+     }
+    }
+   },
+   "encode_kwargs": {
+    "truncation": true,
+    "max_length": 262145,
+    "add_special_tokens": true
+   },
+   "msgpack_bytes": {
+    "isl8192": 29379,
+    "isl1024": 5089
+   },
+   "detok_cls": "FastIncrementalDetokenizer"
+  }
+ },
+ "fastokens": {
+  "installed": "pip --target",
+  "pythonpath": "/tmp/fastokens_pkgs",
+  "rc": 0,
+  "err": "\n[notice] A new release of pip is available: 26.2.2 -> 26.3\n[notice] To update, run: python -m pip install --upgrade pip\n"
+ },
+ "ids_identical_to_default": {
+  "default/isl8192": true,
+  "default/isl1024": true,
+  "mm0/isl8192": true,
+  "mm0/isl1024": true,
+  "lmo/isl8192": true,
+  "lmo/isl1024": true,
+  "fastokens/isl8192": true,
+  "fastokens/isl1024": true
+ }
+}
