@@ -16,7 +16,7 @@ chat template), 1024 output tokens, input length 1K / 8K × concurrency 1 / 4 / 
 
 ## Results at a glance
 
-![Output throughput as % of Backboard](docs/results-vs-backboard.svg)
+![Throughput and p90 TTFT vs Backboard, same-GPU paired runs](docs/results-vs-backboard.svg)
 
 | | Result |
 |---|---|
