@@ -651,8 +651,16 @@ confirmation pairs (spend ≈ $85 after D-069).
 456 MB of results, 394 MB of it per-request InferenceX dumps (`inferencex_result.json`, 241 files) that no analysis
 reads (`analyze`, `report`, `claims` and the greedy gate use `results.jsonl`, `manifest.json`, `metadata.json`,
 `correctness.json`). Those dumps, two profiler traces and the tokenizer-probe id/prompt dumps are removed from the
-tree and ignored from now on; they remain in history at `fd29e73`. Server and client logs stay (≈ 19 MB; the logs are
+tree and ignored from now on; they remain in history (first parent of the PR #25 merge). Server and client logs stay (≈ 19 MB; the logs are
 the evidence for active kernels and patches). The Modal workspace name in D-010/D-033 is replaced by `<workspace>`.
-History is not rewritten (`main` is shared), so the name and the dumps are still in older commits. No secrets,
+On the owner's instruction the history was then rewritten (D-071), which also removed the name from older commits. No secrets,
 tokens, personal paths or e-mail addresses were found in tracked files; Modal resource ids (`vo-…`, `ap-…`) in run
 metadata are ephemeral and kept.
+
+**D-071 (2026-11-14) History rewrite on the owner's instruction.** The owner asked that agent-instruction files and
+budget talk never appear in the published repository, including its history. Every commit was rewritten with
+git-filter-repo: `CLAUDE.md`, `BUDGET.md`, the old handoff docs `STATUS.md` / `NEXT.md` and the launch ledger
+`results/budget_ledger.jsonl` are removed from all commits (the ledger stays local and untracked), budget and spend
+passages are removed from every version of the README files, and the Modal workspace name is redacted everywhere.
+Merged topic branches were deleted. Commit SHAs before this point changed; a full bundle of the old history is kept
+off-repo by the owner.

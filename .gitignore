@@ -17,3 +17,4 @@ results/runs/*/points/*/inferencex_result.json
 *.pt.trace.json.gz
 results/kernels/*/ids_*.json
 results/kernels/*/prompts.json
+results/budget_ledger.jsonl

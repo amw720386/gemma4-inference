@@ -175,7 +175,7 @@ g4bench modal job ... --profile-key 8192x4 --execute   # torch-profiler summary 
 g4bench analyze && g4bench claims         # aggregate results/runs → results/summary, docs/CLAIMS.md
 ```
 
-- **Paid runs go straight to Modal** from your machine (credentials in an untracked `.env`), one ephemeral app per
+- **GPU runs go straight to Modal** from your machine (credentials in an untracked `.env`), one ephemeral app per
   launch, nothing left deployed. Engine images are digest-pinned (vLLM v0.33.0, SGLang v0.5.23). A separate patched
   vLLM image carries build-time patches (`src/g4bench/patches/`: anchored, idempotent, opt-in per config) plus
   cuBLAS 13.10; every run records which patches and settings were active.
@@ -185,7 +185,7 @@ g4bench analyze && g4bench claims         # aggregate results/runs → results/s
 - **Not committed:** the per-request InferenceX dumps (`points/*/inferencex_result.json`), profiler traces and
   tokenizer-probe id dumps stay local (`.gitignore`). Everything the tables are built from is committed. The dumps
   from runs up to 2026-11-14 (≈ 400 MB) are in git history:
-  `git checkout fd29e73 -- results/runs/<run_id>/points/<point>/inferencex_result.json`.
+  `git checkout "$(git log -1 --format=%H --grep='Merge pull request #25')^1" -- results/runs/<run_id>/points/<point>/inferencex_result.json`.
 
 ## Quick start (CPU)
 
