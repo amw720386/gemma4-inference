@@ -1,7 +1,7 @@
 # gemma4-inference-repro
 
-**Stock vLLM 0.33.0, a tuned config and five patches on one GPU: faster than Backboard's proprietary engine on
-Gemma 4 12B.**
+**Stock vLLM 0.33.0, a tuned config and five patches on one GPU: faster than or on par with Backboard's proprietary
+engine on Gemma 4 12B, on almost every number across the board.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![vLLM 0.33.0](https://img.shields.io/badge/vLLM-0.33.0-30a2ff.svg)](https://github.com/vllm-project/vllm/releases/tag/v0.33.0)
