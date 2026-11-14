@@ -338,10 +338,42 @@ class V2Variant(NamedTuple):
     kv_shared: bool  # K and V share one tile buffer
     kw_qk: int       # DotOperand k_width for Q/K
     kw_pv: int       # DotOperand k_width for P/V
+    stages: int = 1  # v3 only: K/V shared-memory ring depth (1 = v2's single buffers)
 
 
 def _gl(name, bm, bn, bd, wm, wn, kvs=False, kw_qk=8, kw_pv=2):
     return V2Variant(V2_PREFIX + name, bm, bn, bd, wm, wn, kvs, kw_qk, kw_pv)
+
+
+# v3 (names ``v3:g3_*``): the v2 kernel with an S-deep K/V cp.async ring (``_g4_pfa_gl3_fwd``) and the causal/window
+# mask applied only on tiles that need it (diagonal, window edge, tail). Bench: kernels/prefill_attn_v3_bench.py.
+V3_PREFIX = "v3:"
+
+
+def _g3(name, bm, bn, bd, wm, wn, stages, kw_qk=8, kw_pv=2):
+    return V2Variant(V3_PREFIX + name, bm, bn, bd, wm, wn, False, kw_qk, kw_pv, stages)
+
+
+V3_GLOBAL_VARIANTS = {v.name: v for v in [
+    _g3("g3_m32_n32_w2x2_s1", 32, 32, 64, 2, 2, 1),     # v2 winner's shape + mask skip (96K)
+    _g3("g3_m32_n16_w2x2_s2", 32, 16, 64, 2, 2, 2),     # Q 32K + 2 x (K 16K + V 16K) = 96K
+    _g3("g3_m32_n16_w2x2_s1", 32, 16, 64, 2, 2, 1),     # 64K
+    _g3("g3_m64_n16_w4x2_s1", 64, 16, 128, 4, 2, 1),    # 96K, 8 warps
+    _g3("g3_m32_n32_w2x4_s1", 32, 32, 64, 2, 4, 1),     # 8 warps, 64 acc regs/thread
+    _g3("g3_m16_n32_w1x4_s1", 16, 32, 64, 1, 4, 1),     # one token: Q 16K + 64K
+    _g3("g3_m16_n16_w1x2_s2", 16, 16, 64, 1, 2, 2),     # Q 16K + 64K
+]}
+V3_SLIDING_VARIANTS = {v.name: v for v in [
+    _g3("g3_m64_n32_w4x1_s1", 64, 32, 64, 4, 1, 1),     # v2 winner's shape + mask skip (64K)
+    _g3("g3_m64_n32_w4x1_s2", 64, 32, 64, 4, 1, 2),     # 96K
+    _g3("g3_m64_n16_w4x1_s2", 64, 16, 64, 4, 1, 2),     # 64K
+    _g3("g3_m64_n16_w4x1_s3", 64, 16, 64, 4, 1, 3),     # 80K
+    _g3("g3_m64_n16_w4x1_s1", 64, 16, 64, 4, 1, 1),     # 48K: 2 CTAs / SM
+    _g3("g3_m32_n32_w2x1_s1", 32, 32, 64, 2, 1, 1),     # 48K: 2 CTAs / SM
+    _g3("g3_m32_n32_w2x1_s2", 32, 32, 64, 2, 1, 2),     # 80K
+    _g3("g3_m128_n16_w8x1_s2", 128, 16, 128, 8, 1, 2),  # 96K, 8 warps
+    _g3("g3_m64_n32_w4x2_s1", 64, 32, 64, 4, 2, 1),     # 8 warps, head_dim split
+]}
 
 
 # Same _gl(...) literals as kernels/prefill_attn_v2.py (keep in sync), minus V2_EXCLUDED.
@@ -356,6 +388,7 @@ V2_SLIDING_VARIANTS = {v.name: v for v in [
     _gl("gl_m128_n64_w8x1_kvs", 128, 64, 64, 8, 1, kvs=True),
     _gl("gl_m64_n64_w4x1", 64, 64, 64, 4, 1),
     _gl("gl_m64_n32_w4x1", 64, 32, 64, 4, 1),                # bench winner: 190.9 TFLOPS (8K chunk)
+    _gl("gl_m64_n32_w4x1_kvs", 64, 32, 64, 4, 1, kvs=True),  # 48K smem -> 2 CTAs / SM; paged bench 1.12x the above
 ]}
 V2_EXCLUDED = {
     "gl_m64_n16_w4x2_kw8": "failed the v2 bench numerics (max_abs 8.4)",
@@ -366,7 +399,16 @@ V2_EXCLUDED = {
 
 
 def is_v2(v) -> bool:
-    return v.name.startswith(V2_PREFIX)
+    """A Gluon variant (v2 or v3: ``V2Variant``, the Gluon launch path, load-time check and fallback)."""
+    return v.name.startswith((V2_PREFIX, V3_PREFIX))
+
+
+def is_v3(v) -> bool:
+    return v.name.startswith(V3_PREFIX)
+
+
+# where a v3 variant falls back to first (the v2 bench winners), before the v1 fallback
+V2_FALLBACK = {"global": V2_PREFIX + "gl_m32_n32_w2x2", "sliding": V2_PREFIX + "gl_m64_n32_w4x1"}
 
 
 def requested(environ=None) -> bool:
@@ -388,11 +430,14 @@ def variant_for(window: int, environ=None):
         if base.startswith("tl_"):
             raise ValueError(f"{NAME}: {key}={name!r}: v2 tl_* variants use TMA descriptors over contiguous K/V and "
                              "are not available on vLLM's paged cache; use a v2:gl_* or a v1 variant")
+    elif name.startswith(V3_PREFIX):
+        table = V3_SLIDING_VARIANTS if sliding else V3_GLOBAL_VARIANTS
     else:
         table = SLIDING_VARIANTS if sliding else GLOBAL_VARIANTS
     if name not in table:
         known = list(SLIDING_VARIANTS if sliding else GLOBAL_VARIANTS) + list(
-            V2_SLIDING_VARIANTS if sliding else V2_GLOBAL_VARIANTS)
+            V2_SLIDING_VARIANTS if sliding else V2_GLOBAL_VARIANTS) + list(
+            V3_SLIDING_VARIANTS if sliding else V3_GLOBAL_VARIANTS)
         raise ValueError(f"{NAME}: {key}={name!r} is not a variant; known: {', '.join(known)}")
     return table[name]
 
@@ -402,9 +447,17 @@ def fallback_for(window: int) -> Variant:
     return SLIDING_VARIANTS[V1_FALLBACK["sliding"]] if window > 0 else GLOBAL_VARIANTS[V1_FALLBACK["global"]]
 
 
+def gluon_fallback_for(v, window: int):
+    """A failed v3 variant falls back to the v2 bench winner (checked in turn), a failed v2 variant to v1."""
+    if is_v3(v):
+        sliding = window > 0
+        return (V2_SLIDING_VARIANTS if sliding else V2_GLOBAL_VARIANTS)[V2_FALLBACK["sliding" if sliding else "global"]]
+    return fallback_for(window)
+
+
 def v2_smem_bytes(v: V2Variant, head_dim: int, elt: int = 2) -> int:
-    """Explicit shared-memory buffers of a v2 variant (Q + K + V, + the P exchange tile when wn > 1)."""
-    kv = v.block_n * head_dim * elt * (1 if v.kv_shared else 2)
+    """Explicit shared-memory buffers of a v2/v3 variant (Q + stages x (K + V), + the P exchange tile when wn > 1)."""
+    kv = v.block_n * head_dim * elt * (1 if v.kv_shared else 2) * max(int(v.stages), 1)
     p_x = v.block_m * v.block_n * elt if v.wn > 1 else 0
     return v.block_m * head_dim * elt + kv + p_x
 
@@ -551,15 +604,19 @@ def run_prefill(impl, query, key_cache, value_cache, output, attn_metadata, outp
     group = num_heads // num_kv
     v = variant_for(window)
     on_gpu = _gpu_path(query)
-    if num_heads % num_kv == 0 and is_v2(v) and on_gpu:
+    key = None
+    for _ in range(2):  # v3 -> v2 bench winner -> v1
+        if not (num_heads % num_kv == 0 and is_v2(v) and on_gpu):
+            break
         key = v2_key(v, head_dim, group, num_kv, window, int(value_cache.shape[1]), query)
         fits = variant_fits(v, head_dim, group)
         if not fits:
             _v2_fail(key, "does not fit this layer shape")
-        if not fits or not v2_usable(key, lambda: v2_self_check(v, num_heads, num_kv, head_dim, window,
-                                                                  int(value_cache.shape[1]), query.dtype,
-                                                                  query.device, impl.scale)):
-            v = fallback_for(window)
+        if fits and v2_usable(key, lambda v=v: v2_self_check(v, num_heads, num_kv, head_dim, window,
+                                                               int(value_cache.shape[1]), query.dtype,
+                                                               query.device, impl.scale)):
+            break
+        v = gluon_fallback_for(v, window)
     if num_heads % num_kv or not variant_fits(v, head_dim, group):
         _once(logging.WARNING, ("fit", head_dim, group, v.name), "%s: variant %s does not fit head_dim %d, %d q heads "
               "per KV head; upstream for this layer shape", NAME, v.name, head_dim, group)
@@ -575,7 +632,7 @@ def run_prefill(impl, query, key_cache, value_cache, output, attn_metadata, outp
                 return p.rest
             except Exception as e:  # noqa: BLE001 - e.g. a recompile for other strides failing; nothing was written
                 _v2_fail(key, f"launch failed: {type(e).__name__}: {e}"[:300])
-                v = fallback_for(window)
+                v = fallback_for(window)  # straight to v1: no load-time check runs inside a step
                 if not variant_fits(v, head_dim, group):
                     return None
         prefill_triton(*args, v)
@@ -597,8 +654,10 @@ def _v2_fail(key, why: str) -> None:
     if isinstance(_V2_STATE.get(key), str):
         return  # already failed and logged
     _V2_STATE[key] = why
-    _once(logging.WARNING, ("v2fail",) + tuple(key), "%s: v2 variant %s disabled for %s (%s); falling back to v1 %s",
-          NAME, key[0], key[1:], why, V1_FALLBACK["sliding" if key[4] > 0 else "global"])
+    sliding = key[4] > 0
+    to = (V2_FALLBACK if key[0].startswith(V3_PREFIX) else V1_FALLBACK)["sliding" if sliding else "global"]
+    _once(logging.WARNING, ("v2fail",) + tuple(key), "%s: Gluon variant %s disabled for %s (%s); falling back to %s",
+          NAME, key[0], key[1:], why, to)
 
 
 def v2_usable(key, check) -> bool:
@@ -1023,10 +1082,135 @@ if gluon is not None:
         o_ptrs = Out + gl.expand_dims((q0 + t) * stride_ot + head * stride_oh, 1) + gl.expand_dims(offs_d, 0)
         gl.store(o_ptrs, out.to(Out.dtype.element_ty), mask=st_msk)
 
+    @gluon.jit
+    def _g4_pfa_gl3_fwd(
+        Q, KC, VC, Out, BT, CU, SEQ, WORK, qk_scale,
+        stride_qt, stride_qh, stride_kb, stride_ks, stride_kh, stride_vb, stride_vs, stride_vh,
+        stride_ot, stride_oh, stride_bt,
+        G: gl.constexpr, HEAD_DIM: gl.constexpr, WINDOW: gl.constexpr, BLOCK_SIZE: gl.constexpr,
+        BLOCK_M: gl.constexpr, BLOCK_N: gl.constexpr, BLOCK_D: gl.constexpr,
+        WM: gl.constexpr, WN: gl.constexpr, NW: gl.constexpr, TPR: gl.constexpr, TPC: gl.constexpr,
+        KW_QK: gl.constexpr, KW_PV: gl.constexpr, STAGES: gl.constexpr,
+    ):
+        """v3: ``_g4_pfa_gl_fwd`` with an S-deep K/V ring and masks only where needed. Commit-group order: Q,
+        K0, V0, ..., K(S-2), V(S-2), K(S-1); iteration j issues V(j+S-1) (slot freed by PV(j-1)), waits K(j), QK,
+        issues K(j+S) into K(j)'s slot, softmax, waits V(j), PV. Both waits see exactly 2S-1 newer groups (S = 1 is
+        v2's FA2 schedule). Tiles past the causal end are zero-filled copies (keep the group count uniform)."""
+        mma: gl.constexpr = gl.NVMMADistributedLayout(version=[2, 0], warps_per_cta=[WM, WN], instr_shape=[16, 8])
+        dot_a_qk: gl.constexpr = gl.DotOperandLayout(operand_index=0, parent=mma, k_width=KW_QK)
+        dot_b_qk: gl.constexpr = gl.DotOperandLayout(operand_index=1, parent=mma, k_width=KW_QK)
+        dot_a_pv: gl.constexpr = gl.DotOperandLayout(operand_index=0, parent=mma, k_width=KW_PV)
+        dot_b_pv: gl.constexpr = gl.DotOperandLayout(operand_index=1, parent=mma, k_width=KW_PV)
+        blk: gl.constexpr = gl.BlockedLayout(size_per_thread=[1, 8], threads_per_warp=[TPR, TPC],
+                                             warps_per_cta=[NW, 1], order=[1, 0])
+        smem_l: gl.constexpr = gl.SwizzledSharedLayout(vec=8, per_phase=1, max_phase=8, order=[1, 0])
+        row_l: gl.constexpr = gl.SliceLayout(1, mma)
+        col_l: gl.constexpr = gl.SliceLayout(0, mma)
+
+        w = gl.program_id(0)
+        kvh = gl.program_id(1)
+        req = gl.load(WORK + 2 * w)
+        mb = gl.load(WORK + 2 * w + 1)
+        q0 = gl.load(CU + req)
+        T = gl.load(CU + req + 1) - q0
+        start = gl.load(SEQ + req) - T          # context length (tokens before this chunk)
+
+        t_lo = (mb * BLOCK_M) // G
+        t_hi = gl.minimum((mb * BLOCK_M + BLOCK_M - 1) // G, T - 1)
+        q_first = start + t_lo                  # smallest / largest query position of the block (padded rows
+        q_last = start + t_hi                   # duplicate the last token)
+        hi = q_last + 1
+        if WINDOW > 0:
+            j_lo = (gl.maximum(q_first - WINDOW + 1, 0) // BLOCK_N) * BLOCK_N
+        else:
+            j_lo = start * 0
+        j_hi = hi
+
+        q_smem = gl.allocate_shared_memory(Q.dtype.element_ty, [BLOCK_M, HEAD_DIM], smem_l)
+        k_ring = gl.allocate_shared_memory(KC.dtype.element_ty, [STAGES, BLOCK_N, HEAD_DIM], smem_l)
+        v_ring = gl.allocate_shared_memory(VC.dtype.element_ty, [STAGES, BLOCK_N, HEAD_DIM], smem_l)
+
+        offs_qr = mb * BLOCK_M + gl.arange(0, BLOCK_M, layout=gl.SliceLayout(1, blk))
+        q_row = (q0 + offs_qr // G) * stride_qt + (kvh * G + offs_qr % G) * stride_qh
+        offs_qd = gl.arange(0, BLOCK_D, layout=gl.SliceLayout(0, blk))
+        q_msk = gl.expand_dims(offs_qr < T * G, 1) & gl.expand_dims(offs_qd < BLOCK_D, 0)
+        for i in gl.static_range(HEAD_DIM // BLOCK_D):
+            cp.async_load(q_smem.slice(i * BLOCK_D, BLOCK_D, dim=1),
+                          Q + gl.expand_dims(q_row, 1) + gl.expand_dims(i * BLOCK_D + offs_qd, 0), mask=q_msk)
+        cp.commit_group()
+
+        bt_row = BT + req.to(gl.int64) * stride_bt
+        k_base = KC + kvh * stride_kh
+        v_base = VC + kvh * stride_vh
+        for i in gl.static_range(STAGES - 1):
+            _g4_gl_issue_tile(k_ring.index(i), k_base, bt_row, j_lo + i * BLOCK_N, j_hi, stride_kb, stride_ks,
+                              BLOCK_N, HEAD_DIM, BLOCK_D, BLOCK_SIZE, blk)
+            _g4_gl_issue_tile(v_ring.index(i), v_base, bt_row, j_lo + i * BLOCK_N, j_hi, stride_vb, stride_vs,
+                              BLOCK_N, HEAD_DIM, BLOCK_D, BLOCK_SIZE, blk)
+        _g4_gl_issue_tile(k_ring.index(STAGES - 1), k_base, bt_row, j_lo + (STAGES - 1) * BLOCK_N, j_hi,
+                          stride_kb, stride_ks, BLOCK_N, HEAD_DIM, BLOCK_D, BLOCK_SIZE, blk)
+
+        offs_m = mb * BLOCK_M + gl.arange(0, BLOCK_M, layout=row_l)
+        qpos = start + gl.minimum(offs_m // G, T - 1)
+        m_i = gl.full([BLOCK_M], float("-inf"), gl.float32, row_l)
+        l_i = gl.zeros([BLOCK_M], gl.float32, row_l)
+        acc = gl.zeros([BLOCK_M, HEAD_DIM], gl.float32, mma)
+
+        for n0 in range(j_lo, j_hi, BLOCK_N):
+            it = (n0 - j_lo) // BLOCK_N
+            slot = it % STAGES
+            _g4_gl_issue_tile(v_ring.index((it + STAGES - 1) % STAGES), v_base, bt_row, n0 + (STAGES - 1) * BLOCK_N,
+                              j_hi, stride_vb, stride_vs, BLOCK_N, HEAD_DIM, BLOCK_D, BLOCK_SIZE, blk)
+            cp.wait_group(2 * STAGES - 1)                                                       # Q, K(j) landed
+            gl.barrier()
+            k_cur = k_ring.index(slot)
+            s = gl.zeros([BLOCK_M, BLOCK_N], gl.float32, mma)
+            for i in gl.static_range(HEAD_DIM // BLOCK_D):
+                qa = q_smem.slice(i * BLOCK_D, BLOCK_D, dim=1).load(dot_a_qk)
+                kb = k_cur.slice(i * BLOCK_D, BLOCK_D, dim=1).permute((1, 0)).load(dot_b_qk)
+                s = mma_v2(qa, kb, s)
+            gl.barrier()                                                                        # K slot free
+            _g4_gl_issue_tile(k_ring.index(slot), k_base, bt_row, n0 + STAGES * BLOCK_N, j_hi, stride_kb,
+                              stride_ks, BLOCK_N, HEAD_DIM, BLOCK_D, BLOCK_SIZE, blk)
+
+            # every key of the tile visible to every row (incl. the tail bound j_hi = q_last + 1): no mask
+            need_mask = n0 + BLOCK_N - 1 > q_first
+            if WINDOW > 0:
+                need_mask = need_mask | (n0 <= q_last - WINDOW)
+            if need_mask:
+                offs_n = n0 + gl.arange(0, BLOCK_N, layout=col_l)
+                valid = gl.expand_dims(offs_n, 0) <= gl.expand_dims(qpos, 1)
+                if WINDOW > 0:
+                    valid = valid & ((gl.expand_dims(qpos, 1) - gl.expand_dims(offs_n, 0)) < WINDOW)
+                s = gl.where(valid, s, float("-inf"))
+            m_new = gl.maximum(m_i, gl.max(s, axis=1) * qk_scale)
+            m_use = gl.where(m_new == float("-inf"), 0.0, m_new)
+            alpha = gl.exp2(m_i - m_use)
+            p = gl.exp2(s * qk_scale - gl.expand_dims(m_use, 1))
+            l_i = l_i * alpha + gl.sum(p, axis=1)
+            acc = acc * gl.expand_dims(alpha, 1)
+            pa = gl.convert_layout(p.to(VC.dtype.element_ty), dot_a_pv)
+            m_i = m_new
+
+            cp.wait_group(2 * STAGES - 1)                                                       # V(j) landed
+            gl.barrier()
+            vb = v_ring.index(slot).load(dot_b_pv)
+            acc = mma_v2(pa, vb, acc)
+            gl.barrier()                                                                        # V slot free
+        cp.wait_group(0)
+
+        offs_d = gl.arange(0, HEAD_DIM, layout=col_l)
+        t = gl.minimum(offs_m // G, T - 1)
+        head = kvh * G + offs_m % G
+        st_msk = gl.expand_dims(offs_m < T * G, 1) & gl.expand_dims(offs_d < HEAD_DIM, 0)
+        out = acc / gl.expand_dims(gl.where(l_i > 0.0, l_i, 1.0), 1)
+        o_ptrs = Out + gl.expand_dims((q0 + t) * stride_ot + head * stride_oh, 1) + gl.expand_dims(offs_d, 0)
+        gl.store(o_ptrs, out.to(Out.dtype.element_ty), mask=st_msk)
+
 
 def prefill_gluon(p: Plan, query, key_cache, value_cache, output, block_table, query_start_loc, seq_lens, scale,
                   window: int, v: V2Variant) -> None:
-    """Launch the paged v2 Gluon kernel for the plan's prefill requests (raises if Gluon is unavailable)."""
+    """Launch the paged v2 (or v3) Gluon kernel for the plan's prefill requests (raises if Gluon is unavailable)."""
     if gluon is None:
         raise RuntimeError(f"gluon unavailable: {GLUON_ERROR}")
     T, H, D = query.shape
@@ -1039,15 +1223,17 @@ def prefill_gluon(p: Plan, query, key_cache, value_cache, output, block_table, q
     if n_work == 0:
         return
     tpc = min(32, v.block_d // 8)
-    _g4_pfa_gl_fwd[(n_work, num_kv)](
-        query, key_cache, value_cache, output, block_table, query_start_loc, seq_lens, work,
-        float(scale) * LOG2E,
-        query.stride(0), query.stride(1),
-        key_cache.stride(0), key_cache.stride(1), key_cache.stride(2),
-        value_cache.stride(0), value_cache.stride(1), value_cache.stride(2),
-        output.stride(0), output.stride(1), block_table.stride(0),
-        G=G, HEAD_DIM=D, WINDOW=int(window), BLOCK_SIZE=int(value_cache.shape[1]),
-        BLOCK_M=v.block_m, BLOCK_N=v.block_n, BLOCK_D=v.block_d,
-        WM=v.wm, WN=v.wn, NW=v.wm * v.wn, TPR=32 // tpc, TPC=tpc, KW_QK=v.kw_qk, KW_PV=v.kw_pv,
-        KV_SHARED=v.kv_shared, num_warps=v.wm * v.wn,
-    )
+    args = (query, key_cache, value_cache, output, block_table, query_start_loc, seq_lens, work,
+            float(scale) * LOG2E,
+            query.stride(0), query.stride(1),
+            key_cache.stride(0), key_cache.stride(1), key_cache.stride(2),
+            value_cache.stride(0), value_cache.stride(1), value_cache.stride(2),
+            output.stride(0), output.stride(1), block_table.stride(0))
+    meta = dict(G=G, HEAD_DIM=D, WINDOW=int(window), BLOCK_SIZE=int(value_cache.shape[1]),
+                BLOCK_M=v.block_m, BLOCK_N=v.block_n, BLOCK_D=v.block_d,
+                WM=v.wm, WN=v.wn, NW=v.wm * v.wn, TPR=32 // tpc, TPC=tpc, KW_QK=v.kw_qk, KW_PV=v.kw_pv,
+                num_warps=v.wm * v.wn)
+    if is_v3(v):
+        _g4_pfa_gl3_fwd[(n_work, num_kv)](*args, STAGES=int(v.stages), **meta)
+    else:
+        _g4_pfa_gl_fwd[(n_work, num_kv)](*args, KV_SHARED=v.kv_shared, **meta)
