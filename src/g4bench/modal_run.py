@@ -341,7 +341,8 @@ def add_parser(sub) -> None:
     j.add_argument("--profile-key", help="E5g: torch-profile this workload key (e.g. 8192x4); rows flagged profiled")
     j.add_argument("--profile-seconds", type=float, default=4.0, help="profiler window length (keep short)")
     j.add_argument("--profile-warmup-s", type=float, default=30.0,
-                   help="seconds after the client starts before /start_profile")
+                   help="seconds after the server first counts prompt tokens (the client's first request; "
+                        "client launch if the metric is absent) before /start_profile")
     j.add_argument("--no-greedy", action="store_true", help="skip the token-level greedy-equivalence capture")
     j.add_argument("--correctness-only", action="store_true",
                    help="start the server for the first selected point, run probes + greedy gate, no benchmark")

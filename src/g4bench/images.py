@@ -26,7 +26,7 @@ ALWAYS_ON_PATCHES: frozenset[str] = frozenset()
 # Library upgrades installed INTO the production patched image (lossless; results/kernels/*cublas_upgrade*).
 VLLM_PATCH_PIP: tuple[str, ...] = ("nvidia-cublas==13.10.0.20",)
 # Experimental image: VLLM_PATCHES + patches still under evaluation (D-058).
-VLLM_PATCHES_EXP: tuple[str, ...] = VLLM_PATCHES + ("prefill_attn_g4",)
+VLLM_PATCHES_EXP: tuple[str, ...] = VLLM_PATCHES + ("prefill_attn_g4", "hybrid_tokenizer")
 # Experimental image only: cuBLAS builds installed next to (not over) the image's own, selected per config through
 # ``G4_CUBLAS: "<version>"`` (runner -> cublas.resolve -> LD_PRELOAD). version -> (pip requirement, target dir).
 CUBLAS_SIDE: dict[str, tuple[str, str]] = {"13.10": ("nvidia-cublas==13.10.0.20", "/opt/cublas-13.10")}

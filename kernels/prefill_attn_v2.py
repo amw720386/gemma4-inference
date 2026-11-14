@@ -129,6 +129,7 @@ SLIDING_VARIANTS = {v.name: v for v in [
     _gl("gl_m128_n64_w8x1_kvs", 128, 64, 64, 8, 1, kvs=True),  # Q 64K + KV 32K
     _gl("gl_m64_n64_w4x1", 64, 64, 64, 4, 1),                # Q 32K + K 32K + V 32K
     _gl("gl_m64_n32_w4x1", 64, 32, 64, 4, 1),                # 64K
+    _gl("gl_m64_n32_w4x1_kvs", 64, 32, 64, 4, 1, kvs=True),  # 48K: 2 CTAs / SM (paged v3 bench: 1.12x the winner)
     _gl("gl_m128_n32_w8x1_sk2", 128, 32, 64, 8, 1, splits=2),
     _gl("gl_m128_n32_w8x1_kw8", 128, 32, 64, 8, 1, kw_pv=8),
     _tl("tl_m128_n32_q_w8_tma_s2", 128, 32, 256, 8, 2),       # Q in regs (64 regs), O 128 regs, [8,1] warps

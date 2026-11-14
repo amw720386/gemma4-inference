@@ -14,6 +14,10 @@ def test_worker_body_runs_mock_and_returns_full_evidence(tmp_path, tokenizer_dir
     res = guarded(lambda s: run_job(s, tmp_path / "runs", tokenizer=tokenizer_dir, server_timeout_s=60,
                                     client_timeout_s=300), spec)
     assert "error" not in res and "aborted" not in res, res
+    if res.get("n_valid") != 2:  # say why a point was invalid (selftest logs are the only evidence; owner policy)
+        import json
+        rows = [json.loads(x) for x in (tmp_path / "runs" / res["run_id"] / "results.jsonl").read_text().splitlines()]
+        pytest.fail(f"invalid points: {[(r.get('point_id'), r.get('problems')) for r in rows]}")
     assert res["n_points"] == res["n_valid"] == 2 and res["ended_unix"] >= res["started_unix"]
     files = collect_run_files(tmp_path / "runs", res["run_id"])
     for rel in ("REPORT.md", "throughput.svg", "manifest.json", "metadata.json", "results.jsonl", "results.csv"):

@@ -1,0 +1,53 @@
+# E10b TTFT: best-e8-pfa2-sync + hybrid tokenizer (image patch hybrid_tokenizer, G4_HYBRID_TOKENIZER=1): prompt encode on
+#   fastokens (identical ids; the -ftok gain, 13.5 -> 1.1 ms per 7.4K-token prompt) while decode and vLLM's streaming
+#   DecodeStream stay on HF tokenizers (the -ftok run lost 4 % output tok/s at 8K c=1). VLLM_USE_FASTOKENS stays UNSET:
+#   the patch builds its own fastokens encoder, and with VLLM_USE_FASTOKENS=1 it would not install (full fastokens).
+# E9 TTFT diagnostic: best-e8-pfa2-c8k with --no-async-scheduling (removes the one-step admission lag of async scheduling).
+# E8a + PREFILL ATTENTION v2 (prefill_attn_g4 with the v2 Gluon kernels): vllm-0.33.0-best-e8-pfa-c8k with every
+#   request of q_len > 8 (prefill chunks) on the paged Gluon mma_v2 FA2 kernel (kernels/prefill_attn_v2.py ported to
+#   vLLM's paged KV cache in the patch runtime); decode/verify requests keep vLLM's unified attention. Each v2 layer
+#   shape passes a load-time paged numerics check or falls back to the v1 winners (logged). Same math, different
+#   reduction order: class unchanged from E8a. Variants: the v2 bench winners (results/kernels/*prefill_attn_v2_bench*).
+name: vllm-0.33.0-best-e8-pfa2-sync-hybtok
+image_patches: [mtp_draft_prefill_last, splitk_per_group, mtp_draft_head_q, prefill_attn_g4, hybrid_tokenizer]
+role: variant            # baseline = article's published recipe; variant = our experiment
+admissibility: b       # DECISIONS D-011: a like-for-like, b output-preserving but InferenceX-inadmissible, c not comparable
+experiment: E10b-ttft-hybtok
+engine: vllm
+version: "0.33.0"
+client_backend: vllm          # InferenceX benchmark_serving --backend
+endpoint: /v1/completions
+port: 8000
+health_path: /health
+args:
+  - ["{target_repo}"]            # positional model_tag, as in the vLLM recipe
+  - [--revision, "{target_rev}"]
+  - [--tensor-parallel-size, "1"]
+  - [--dtype, bfloat16]
+  - [--gpu-memory-utilization, "0.90"]
+  - [--no-enable-prefix-caching]
+  - [--no-async-scheduling]   # E9 diagnostic
+  - [--speculative-config, '{"method":"mtp","model":"{draft_repo}","revision":"{draft_rev}","num_speculative_tokens":6,"num_speculative_tokens_per_batch_size":[[1,32,6],[33,4096,4]],"use_local_argmax_reduction":true}']
+  - [--max-num-batched-tokens, "8192"]   # E8c: whole 8K prompt per prefill step (model: +2.5 % at 8K x64 if prefill and decode costs add)
+  # No --cudagraph-capture-sizes: vLLM default list (see header).
+  # Deliberately NO --max-model-len / --limit-mm-per-prompt: article says "default settings".
+  # Those live in the vllm-0.33.0-mtp4-textonly variant (DECISIONS D-007).
+  - [--host, 0.0.0.0]
+  - [--port, "{port}"]
+env:
+  G4_HYBRID_TOKENIZER: "1"     # hybrid_tokenizer gate: prompt encode -> fastokens, decode -> HF tokenizers; unset = upstream
+  G4_DRAFT_PREFILL_LAST: "1"    # mtp_draft_prefill_last gate (D-061): on; unset = upstream draft prefill
+  G4_CUBLAS: "13.10"            # side-installed cuBLAS 13.10 via LD_PRELOAD (D-061; in-image upgrade before)
+  G4_SPLITK_T_FULL: "112"      # full/global group: 3D iff num_seqs * q_len <= 112 (BLOCK_Q 1)
+  G4_SPLITK_T_SLIDING: "8"     # sliding group: 3D iff num_seqs * cdiv(q_len, 8) <= 8
+  G4_DRAFT_HEAD_Q: fp8          # quantized draft-head scan format (fp8 | int4)
+  G4_DRAFT_HEAD_K: "32"         # candidates rescored exactly in BF16
+  G4_PREFILL_ATTN: "1"          # q_len > 8 requests -> packed-head prefill kernel (prefill_attn_g4)
+  G4_PREFILL_ATTN_GLOBAL: "v2:gl_m32_n32_w2x2"   # global layers: v2 bench winner (190.8 TFLOPS, 1.51x v1 at 8K)
+  G4_PREFILL_ATTN_SLIDING: "v2:gl_m64_n32_w4x1"  # sliding layers: v2 bench winner (190.9 TFLOPS, 1.42x v1 at 8K)
+unknowns:
+  - "Article does not state max-model-len, max-num-seqs, max-num-batched-tokens, attention backend, or whether --limit-mm-per-prompt was set."
+  - "Article does not state whether speculative 'revision' was pinned (pinning has no perf effect)."
+  - "If the engine-default max-model-len fails to fit, the fallback is the textonly variant; log it in DECISIONS."
+  - "Draft (MTP) launches are q_len 1 and use the same per-group thresholds; 3D vs 2D at q_len 1 above 16 requests is unmeasured."
+  - "v2 paged gather (per-row block-table load in the cp.async path) is new vs the contiguous bench kernel; speed on the paged cache unmeasured."

@@ -55,7 +55,7 @@ PATCHES_REMOTE = "/opt/g4patches"
 
 
 def _engine_image(ref: str, engine_module: str, patches: tuple[str, ...] = (), pip: tuple[str, ...] | None = None,
-                  side: dict[str, tuple[str, str]] | None = None) -> modal.Image:
+                  side: dict[str, tuple[str, str]] | None = None, extra: tuple[str, ...] = ()) -> modal.Image:
     """``pip``: upgraded IN the image (default VLLM_PATCH_PIP for a patched image); ``side``: version ->
     (requirement, dir) installed with ``pip --target`` next to the image's own libs, selected per config (D-061)."""
     # Only aliases `python` to the image's own python3 when missing (vLLM image) and checks it sees the engine (D-038).
@@ -72,11 +72,16 @@ def _engine_image(ref: str, engine_module: str, patches: tuple[str, ...] = (), p
             img = img.run_commands(f"python -m pip install --no-deps --upgrade {' '.join(pip)}")
         for _, (req, target) in sorted(side.items()):
             img = img.run_commands(f"python -m pip install --no-deps --target {target} {req}")
+        for req in extra:  # optional packages the engine only uses when a config's env enables them (D-068)
+            mod = req.split("==")[0].replace("-", "_")
+            img = img.run_commands(f"python -m pip install --no-deps {req}", f"python -c 'import {mod}'")
     env = dict(ENV)
     if patches:
         env.update({"G4_IMAGE_PATCHES": ",".join(patches), "G4_IMAGE_PIP": ",".join(pip)})
         if side:
             env["G4_CUBLAS_SIDE"] = side_env(side)
+        if extra:
+            env["G4_IMAGE_EXTRA"] = ",".join(extra)
     return img.env(env).add_local_dir(str(REPO_LOCAL), REPO_REMOTE, ignore=IGNORE)
 
 
@@ -88,7 +93,10 @@ vllm_patched_image = _engine_image(VLLM_IMAGE, "vllm", VLLM_PATCHES)
 # image (and any run series on it) stays byte-identical while they are tested (D-058). Since D-061 its cuBLAS is the
 # stock image's (13.1); 13.10 is side-installed and chosen per config (G4_CUBLAS), so the article's stock recipe runs
 # here unchanged and can be paired with a candidate on the same GPU.
-vllm_patched_exp_image = _engine_image(VLLM_IMAGE, "vllm", VLLM_PATCHES_EXP, pip=(), side=CUBLAS_SIDE)
+# fastokens: vLLM 0.33's optional Rust tokenizer (VLLM_USE_FASTOKENS=1; same ids as the HF tokenizer, 13.5 -> 1.1 ms per
+# 7.4K-token prompt, results/kernels/*frontend_ttft_probe*); unused unless a config sets the env var (D-068).
+vllm_patched_exp_image = _engine_image(VLLM_IMAGE, "vllm", VLLM_PATCHES_EXP, pip=(), side=CUBLAS_SIDE,
+                                       extra=("fastokens==0.3.6",))
 sglang_image = _engine_image(SGLANG_IMAGE, "sglang")
 cpu_image = (modal.Image.debian_slim(python_version="3.12")
              .pip_install("pyyaml==6.0.3", "numpy==2.5.4", "requests==2.34.2", "huggingface_hub==2.4.0",
