@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command setup + verification for the Gemma 4 reproduction harness (CPU only; spends nothing).
+# One-command setup + verification for the Gemma 4 reproduction harness (CPU only; no GPU launches).
 #   scripts/setup.sh            # venv, install, model availability, flag preflight, tests
 #   scripts/setup.sh --data     # also prepare SPEED-Bench prompt sets (~4.6 GB streamed, digest-gated)
 #   scripts/setup.sh --no-tests # skip the test suite
@@ -42,4 +42,4 @@ if [ "$tests" = 1 ]; then
   .venv/bin/python -m pytest -q
 fi
 step "done"
-echo "Next: g4bench modal spend   (free; needs MODAL_TOKEN_ID/MODAL_TOKEN_SECRET in .env)"
+echo "Next: g4bench modal job --engine vllm-0.33.0-best-e8-pfa2-sync-hybtok --matrix backboard-repro-shared --only 8192x4   (plan only; add --execute to run; needs MODAL_TOKEN_ID/MODAL_TOKEN_SECRET in .env)"

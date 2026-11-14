@@ -34,7 +34,7 @@ Model-availability test: `g4bench sources` (HF API + HEAD on weights at the pinn
 |---|---|---|---|
 | GPU | 1× RTX PRO 6000 Blackwell 96 GB, "two identical machines, default clocks and power" | Edition (Workstation 600 W / Server / Max-Q 300 W), driver, CUDA, host CPU **not stated** | ⚠️ |
 | Memory bandwidth | – | RTX PRO 6000 Blackwell **Server Edition** (the edition Modal serves, per `nvidia-smi`): rated **1597 GB/s** (added 2026-11-11, D-052); measured device copy 1.46 TB/s | ✅ |
-| Availability for us | – | Modal lists `gpu="RTX-PRO-6000"` at $0.000842/s (≈$3.03/h) on modal.com/pricing; edition not stated by Modal either → we record `nvidia-smi` name, power limits, clocks per run | ✅ (exact model), ❓ (edition) |
+| Availability for us | – | Modal offers `gpu="RTX-PRO-6000"`; edition not stated by Modal either → we record `nvidia-smi` name, power limits, clocks per run | ✅ (exact model), ❓ (edition) |
 
 ## Software versions
 

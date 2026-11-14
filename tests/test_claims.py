@@ -11,7 +11,7 @@ def test_register_is_well_formed():
     reg = load_yaml(CONFIGS / "claims.yaml")["claims"]
     assert len({c["id"] for c in reg}) == len(reg) >= 10
     for c in reg:
-        assert c["kind"] in KINDS and c["budget"] in {"in-budget", "partial", "out-of-budget", "n/a"}
+        assert c["kind"] in KINDS
         if c["kind"] == "untestable":
             assert c.get("reason")
         if c["kind"].startswith("verified"):
