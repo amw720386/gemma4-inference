@@ -615,3 +615,34 @@ workloads (1–2 pairs each): throughput B/A 1.08–1.32 (estimate vs Backboard 
 before); p90 TTFT 15–46 % below the article recipe and below Backboard's at 6/8 (behind at 8K×1 +3 %, 8K×4 +14 %).
 Held-out seeds 1/2 at 8K×4 (previous config) gave B/A 1.320 / 1.335 vs 1.326 on seed 0; 8K×64 on a second GPU with B
 first gave 1.165 vs 1.162. Remaining 8K TTFT is prefill compute (≈ 530 ms per 8K prompt) and collisions.
+
+**D-068 (2026-11-14) 8K TTFT: tokenizer and prefill breakdown; config `best-e8-pfa2-sync-hybtok`.**
+Server histograms at 8K×1 (D-067 config): TTFT 547 ms = engine prefill 518 ms + ~29 ms outside the engine; queue 0.
+- Frontend (`kernels/frontend_ttft_probe.py`): arrival is stamped before tokenization; HF tokenization of a 7.4K-token
+  prompt 13.5–14.1 ms, first-token detokenization 5.7 ms (client-side only); multimodal limits / text-only mode change
+  nothing per request (no processor runs for text prompts). ~10 ms of the 29 stays unattributed (IPC, GIL).
+- `VLLM_USE_FASTOKENS=1` (fastokens 0.3.6 in the experimental image): identical ids, 8K×1 median TTFT −16 to −28 ms,
+  but output throughput −3.6 % and p99 TPOT +22 % at 8K×1, reproduced on two GPUs in both orders (cause not found;
+  decode itself is not slower in isolation). Not adopted.
+- Patch `hybrid_tokenizer` (`G4_HYBRID_TOKENIZER=1`): fastokens for prompt encoding only, HF `tokenizers` for every
+  decode path; ids and streamed text identical to HF (`kernels/hybrid_tok_probe.py`). Same GPU vs the D-067 config:
+  8K×1 p90 TTFT 561 → 545 ms, median 533 → 516, throughput +0.3 %, p99 TPOT unchanged. **Adopted.**
+- Prefill profile of one 7,772-token step (profiler window now anchored on the first request, runner fix): 527 ms GPU
+  = GEMMs 409 ms (cuBLAS 13.10, 399–428 TFLOPS), attention 68 ms (global 43, sliding 26; ~185–191 TFLOPS), GELU·mul
+  22 ms (memory-bound), norms/RoPE/residual 20 ms, idle 4 ms; logits and drafter < 2 ms. Attention v3 (multi-stage
+  cp.async) was slower; a shared K/V tile sliding variant (`v2:gl_m64_n32_w4x1_kvs`) is 1.12–1.16× in the bench (~3 ms
+  per prompt) but unmeasurable in serving (config `-skvs`, not adopted). Remaining exact-math levers: a GEMM epilogue
+  fusing GELU·mul (≤ 22 ms) or a > 250 TFLOPS global-attention kernel (~12 ms); neither attempted.
+
+**D-069 (2026-11-14) TTFT vs TPOT at 8K×4: keep full 8K prefill steps; project cap $120.**
+8K×4 p99 TPOT (ours 11.3 vs Backboard 10.3) is set by the same few requests in every run, ours and the article
+recipe's: those that sit through other requests' whole-prompt prefill steps (~530 ms each, one decode step per
+prefill). Median TPOT is 6.15 vs 8.5 ms for the article recipe. `--long-prefill-token-threshold` caps a chunk only
+when more than one request is eligible (vLLM scheduler.py), so c=1 is untouched. Rule fixed before the result: adopt
+the threshold with the lowest 8K×4 p99 TPOT if 8K×4 p90 TTFT stays under Backboard's 724 ms and 8K×64 throughput
+drops < 0.5 %. Same GPU vs `-hybtok`: 4096: 8K×4 p99 TPOT −3 %, 8K×16 slightly worse, 8K×64 flat (noise level);
+2048: 8K×4 p99 TPOT 11.5–11.7 → 10.4–10.8 ms, p99 E2EL → 10.7–11.0 s, but p90 TTFT 969–1126 ms (all four burst
+prompts prefill in parallel at 2048 tokens per step) and median TTFT +45–55 ms. Neither meets the rule: **rejected**.
+At 8K×4 these scheduler options trade one metric against the other; the frozen config takes the TTFT side (p90 TTFT
+610–677 ms over 4 pairs on 2 GPUs). The owner left a further spend increase to the agent; the cap is $120 for the
+confirmation pairs (spend ≈ $85 after D-069).

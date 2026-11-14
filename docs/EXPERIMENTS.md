@@ -132,6 +132,10 @@ model numerically and are reported only in a "not BF16 – not comparable" table
   config `vllm-0.33.0-best-e8-pfa2-sync` paired at all 8 workloads: throughput geomean 1.053 of Backboard (est.),
   p90 TTFT below Backboard's at 6/8.
 
+- g. ✅ E10 frontend/prefill (D-068): hybrid tokenizer adopted (`vllm-0.33.0-best-e8-pfa2-sync-hybtok`, the frozen
+  final config); fastokens, multimodal limits, shared-tile sliding kernel and attention v3 not adopted.
+- h. ✅ E11 long-prefill threshold (D-069): 4096 / 2048 rejected by a rule fixed in advance (TPOT vs TTFT trade).
+
 **Amendment (2026-11-13) to criterion 5, output preservation (D-063).** Exact greedy token identity against the BF16
 no-speculation reference is unattainable for any speculative config in vLLM, the article's unmodified recipe included
 (4/8 identical). The criterion applied from now on, identically to the article recipe and every candidate: every first
