@@ -1,148 +1,163 @@
 # gemma4-inference-repro
 
-Backboard published a Gemma 4 12B serving benchmark on 2026-11-09
-([article](https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference)) in which its proprietary engine beat vLLM
-and SGLang. This repository reproduces that benchmark with open tooling, then goes past it: **open-source vLLM
-0.33.0 with a handful of small, documented patches beats Backboard's published throughput on average and its
-published p90 time-to-first-token at 7 of 8 workloads.**
+**Stock vLLM 0.33.0, a tuned config and five patches on one GPU: faster than Backboard's proprietary engine on
+Gemma 4 12B.**
 
-Setup: 1× NVIDIA RTX PRO 6000 Blackwell Server Edition (96 GB) on Modal, `google/gemma-4-12B-it` in BF16 with the
-`google/gemma-4-12B-it-assistant` MTP draft, the article's workload (InferenceX client, random-token prompts,
-1024 output tokens, input 1K / 8K × concurrency 1 / 4 / 16 / 64).
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![vLLM 0.33.0](https://img.shields.io/badge/vLLM-0.33.0-30a2ff.svg)](https://github.com/vllm-project/vllm/releases/tag/v0.33.0)
+[![GPU: RTX PRO 6000 Blackwell](https://img.shields.io/badge/GPU-RTX%20PRO%206000%20Blackwell-76b900.svg)](#setup)
+
+[Results](#results) · [What we changed](#what-we-changed) · [Reproduce](#reproduce) · [How we measured](#how-we-measured) · [Decision log](docs/DECISIONS.md)
+
+![Throughput and p90 TTFT speed-up over Backboard, per workload](docs/results-vs-backboard.svg)
+
+- **+5.4% throughput vs Backboard** (geometric mean over 8 workloads), up to **+14%** at concurrency 1.
+- **Lower p90 time-to-first-token at 7 of 8 workloads.**
+- **1.07–1.33× the article's own vLLM recipe**, side by side on the same GPU.
+- **Same model, same precision:** BF16 target, outputs checked against a no-speculation BF16 reference.
+
+Backboard's [Gemma 4 12B benchmark](https://backboard.io/blog/gemma-4-12b-vllm-sglang-inference) (2026-11-09)
+showed its engine beating vLLM and SGLang everywhere. We reproduced the article's vLLM and SGLang baselines, then
+tuned and patched stock vLLM until it beat Backboard's own numbers.
 
 ## Results
 
-![Throughput and p90 TTFT vs Backboard, same-GPU paired runs](docs/results-vs-backboard.svg)
+One frozen config, [`vllm-0.33.0-best-e8-pfa2-sync-hybtok`](configs/engines/vllm-0.33.0-best-e8-pfa2-sync-hybtok.yaml),
+for all eight workloads.
 
-One frozen configuration, [`vllm-0.33.0-best-e8-pfa2-sync-hybtok`](configs/engines/vllm-0.33.0-best-e8-pfa2-sync-hybtok.yaml),
-for all eight workloads, measured head-to-head against the article's own vLLM recipe on the same GPU:
-
-- **Throughput 1.07–1.33× the article's vLLM recipe** at every workload.
-- **Ahead of Backboard's published throughput** at 6 of 8 workloads (up to +14 %), level at 8K × 4 and 8K × 64;
-  geometric mean **1.054×**.
-- **p90 TTFT below Backboard's at 7 of 8 workloads** (8K × 1 is a tie) and 16–48 % below the article recipe's;
-  median TTFT 16–26 % below the article recipe's everywhere.
-- **p99 end-to-end latency better than Backboard's at 7 of 8**, p99 TPOT better or level at 5 of 8.
-
-| Workload | Pairs | Throughput vs article recipe (same GPU) | **Throughput vs Backboard (est.)** | p90 TTFT ms: ours / article recipe / Backboard | p99 TPOT ms: ours / Backboard | p99 E2EL ms: ours / Backboard |
+| Workload<br><sub>input × conc.</sub> | Backboard<br><sub>tok/s</sub> | Ours¹<br><sub>tok/s</sub> | Throughput<br><sub>speed-up</sub> | Backboard<br><sub>p90 TTFT ms</sub> | Ours<br><sub>p90 TTFT ms</sub> | TTFT<br><sub>speed-up</sub> |
 |---|---:|---:|---:|---:|---:|---:|
-| 1K × 1 | 2 | 1.238 | **1.14** | **81** / 104 / 85 | **4.75** / 5.0 | **4861** / 5074 |
-| 1K × 4 | 2 | 1.258 | **1.05** | **152** / 190 / 176 | **5.70** / 6.1 | **5162** / 5846 |
-| 1K × 16 | 2 | 1.190 | **1.06** | **218** / 261 / 245 | 8.73 / 8.7 | **8381** / 8452 |
-| 1K × 64 | 1 | 1.073 | **1.02** | **510** / 686 / 547 | **18.97** / 19.4 | **19237** / 20123 |
-| 8K × 1 | 4 | 1.274 | **1.14** | 552 / 658 / 549 | **5.53** / 6.0 | **5833** / 6276 |
-| 8K × 4 | 4 | 1.334 | 1.00 | **656** / 1031 / 724 | 11.25 / 10.3 | 11637 / 10414 |
-| 8K × 16 | 3 | 1.257 | **1.04** | **1327** / 1637 / 1537 | 24.52 / 23.6 | **23288** / 23806 |
-| 8K × 64 | 1 | 1.164 | 1.00 | **3005** / 5799 / 3102 | 76.96 / 73.8 | **77953** / 78977 |
+| 1K × 1  | 204  | 231  | **1.14×** | 85   | 81   | **1.05×** |
+| 1K × 4  | 779  | 816  | **1.05×** | 176  | 152  | **1.16×** |
+| 1K × 16 | 2082 | 2214 | **1.06×** | 245  | 218  | **1.12×** |
+| 1K × 64 | 3822 | 3901 | **1.02×** | 547  | 510  | **1.07×** |
+| 8K × 1  | 179  | 203  | **1.14×** | 549  | 552  | 0.99×     |
+| 8K × 4  | 530  | 528  | 1.00×     | 724  | 656  | **1.10×** |
+| 8K × 16 | 962  | 999  | **1.04×** | 1537 | 1327 | **1.16×** |
+| 8K × 64 | 1254 | 1256 | 1.00×     | 3102 | 3005 | **1.03×** |
 
-Bold = better than Backboard. "Throughput vs Backboard" = (ours / article recipe, same GPU) × (article's vLLM /
-Backboard, as published). Latencies are means over pairs. Raw data: [`results/pairs/`](results/pairs/), aggregated in
-[`results/summary/SUMMARY.md`](results/summary/SUMMARY.md).
+Gemma 4 12B-it BF16 + MTP draft, 1024 output tokens, InferenceX client, as in the article. p99 TPOT and p99
+end-to-end latency per workload: [`results/summary/SUMMARY.md`](results/summary/SUMMARY.md).
 
-**The baselines reproduce.** The article's vLLM recipe lands within +0.9 … +3.1 % of its published throughput at
-8/8 workloads (+0.5 … +1.6 % over the 6–10 runs per workload it got as the reference side of the pairs), and its
-SGLang recipe runs 7–17 % faster than published:
+¹ Same-GPU speed-up over the article's vLLM recipe × the article's published vLLM figure; see [Notes](#notes).
 
-| Workload | vLLM ours | vLLM article | Δ | SGLang ours | SGLang article | Δ |
-|---|---:|---:|---:|---:|---:|---:|
-| 1K × 1 | 190.4 | 186.8 | +1.9 % | 136.9 | 122.6 | +11.7 % |
-| 1K × 4 | 655.0 | 649.0 | +0.9 % | 499.1 | 456.8 | +9.3 % |
-| 1K × 16 | 1905 | 1861 | +2.4 % | 1299 | 1122 | +15.8 % |
-| 1K × 64 | 3668 | 3634 | +0.9 % | 2039 | 1750 | +16.5 % |
-| 8K × 1 | 164.6 | 159.6 | +3.1 % | 89.4 | 82.5 | +8.4 % |
-| 8K × 4 | 402.6 | 395.7 | +1.8 % | 287.9 | 269.5 | +6.8 % |
-| 8K × 16 | 801.9 | 794.5 | +0.9 % | 587.5 | 533.7 | +10.1 % |
-| 8K × 64 | 1095 | 1079 | +1.5 % | 728.6 | 673.6 | +8.2 % |
+## What we changed
 
-Output tok/s, seed 0, same recipes as the article (vLLM MTP 4 tokens; SGLang NEXTN 5 steps / 6 tokens).
+Configuration alone reaches 97.7% of Backboard ([config only, no patches](configs/engines/vllm-0.33.0-best-e6b.yaml)).
+The patches live in [`src/g4bench/patches/`](src/g4bench/patches/), are applied at image build and each sits behind
+its own switch.
 
-## What made the difference
-
-Configuration changes alone (`vllm-0.33.0-best-e6b`, no patches) already reach 97.7 % of Backboard (geometric
-mean). The rest comes from engine patches in [`src/g4bench/patches/`](src/g4bench/patches/): anchored, idempotent,
-enabled per config, applied when the image is built.
-
-| Change | Effect | Ref |
+| Change | Kind | Effect |
 |---|---|---|
-| **Async scheduling off** (`--no-async-scheduling`): vLLM 0.33's async mode admits a new request one engine step late | p90 TTFT 302 → 219 ms at 1K × 16, 600 → 448 ms at 1K × 64; throughput unchanged | D-067 |
-| **Hybrid tokenizer** (patch): fastokens for prompt encoding, HF tokenizers for decode; identical ids and text | prompt encode 13.5 → 1.1 ms per 7.4K tokens; 8K × 1 median TTFT −17 ms, throughput unchanged | D-068 |
-| **Split-K attention for Gemma 4's head-dim-512 global layers**, kept on by choosing CUDA-graph capture sizes | +8.4 % throughput at 8K × 4 | D-044 |
-| **FP8 draft-head scan with exact BF16 rescoring** of the top 32 (patch; the drafter otherwise scores all 262 144 tokens in BF16 every step) | draft head 395 → 210 µs per step, acceptance unchanged | D-054 |
-| **Split-K thresholds per attention layer group** (patch; global and sliding layers want opposite kernels) | attention −3.4 ms per forward at 8K × 16 | D-053 |
-| **Custom prefill attention** (patch): FlashAttention-2-style kernel in Gluon for sm_120 that packs the 16 query heads sharing the single global KV head, plus a sliding-window variant | prefill attention per 8K prompt 191 → 73 ms; +4–5 % throughput at 8K × 16 / 64 | D-059, D-064 |
-| Deeper speculation: 6 draft tokens up to 32 running requests, 4 above | +8 % at 8K × 4, +3 % at 1K × 64 | D-042, D-047 |
-| Draft prefill on the last token only (patch; the Gemma 4 draft is KV-shared) | +2.6 % at 8K × 16 | D-046 |
-| cuBLAS 13.10 instead of the image's 13.1 | −2 to −3 % per forward on every GEMM size | D-052 |
+| [Custom prefill attention](src/g4bench/patches/prefill_attn_g4.py): a Gluon FlashAttention-2 kernel for sm_120 that packs the 16 query heads sharing each KV head | patch | 8K prefill attention 191 → 73 ms; +4–5% at 8K × 16 / 64 |
+| Synchronous scheduling (`--no-async-scheduling`): new requests start one step sooner | config | p90 TTFT −27% at 1K × 16, −25% at 1K × 64 |
+| Split-K decode attention for the head-dim-512 layers, [thresholds per layer group](src/g4bench/patches/splitk_per_group.py) | patch | +8.4% at 8K × 4 |
+| Deeper speculation: 6 draft tokens up to 32 running requests, 4 above | config | +8% at 8K × 4, +3% at 1K × 64 |
+| [FP8 draft-head scan with exact BF16 rescoring](src/g4bench/patches/mtp_draft_head_q.py) of the top 32 | patch | draft head 395 → 210 µs per step, same acceptance |
+| [Draft prefill on the last token only](src/g4bench/patches/mtp_draft_prefill_last.py) (the draft shares the target's KV cache) | patch | +2.6% at 8K × 16 |
+| [Hybrid tokenizer](src/g4bench/patches/hybrid_tokenizer.py): fastokens to encode, HF tokenizers to decode, identical ids | patch | prompt encode 13.5 → 1.1 ms per 8K prompt |
+| cuBLAS 13.10 instead of 13.1 | toolchain | −2 to −3% on every GEMM |
 
-Micro-benchmarks on the same GPU ([`kernels/`](kernels/), results in [`results/kernels/`](results/kernels/)) show
-the GEMMs already at the hardware limit (decode near the weight-read floor, prefill at 400–430 TFLOPS), so further
-gains would have to come from attention and fusion. The full decision log is [docs/DECISIONS.md](docs/DECISIONS.md)
-(D-001 … D-071); the pre-registered plan and run log is [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md); the article's
-claims and their status are in [docs/CLAIMS.md](docs/CLAIMS.md).
+Every change, adopted or rejected, is documented in the [decision log](docs/DECISIONS.md). GEMMs already run at the
+hardware limit on this GPU (decode at the weight-read floor, prefill at 400–430 TFLOPS; see [`kernels/`](kernels/)).
+
+## Setup
+
+- **GPU:** 1× NVIDIA RTX PRO 6000 Blackwell Server Edition (96 GB, 600 W, sm_120) on [Modal](https://modal.com).
+- **Engine:** vLLM v0.33.0 (digest-pinned image) plus the patches above; SGLang v0.5.23 for the baseline.
+- **Model:** [`google/gemma-4-12B-it`](https://huggingface.co/google/gemma-4-12B-it) in BF16 with the
+  [`gemma-4-12B-it-assistant`](https://huggingface.co/google/gemma-4-12B-it-assistant) MTP draft, revisions pinned.
+- **Client:** [InferenceX](https://github.com/SemiAnalysisAI/InferenceX) `bench_serving` ([vendored](third_party/inferencex/)
+  @ `0b991451`): random prompts of 1K or 8K tokens, 1024 output tokens, concurrency 1 / 4 / 16 / 64, 10 requests per
+  unit of concurrency.
 
 ## Reproduce
 
 ```bash
-scripts/setup.sh                    # CPU: venv from requirements-lock.txt, pinned-revision check, flag preflight, tests
+scripts/setup.sh                    # venv, pinned-revision and engine-flag checks
 g4bench modal prefetch --execute    # pinned weights into a Modal Volume
 
-# Same-GPU pair: the article recipe (A) against the final config (B), interleaved in one container on one GPU
-g4bench modal pair --a vllm-0.33.0-mtp4 --b vllm-0.33.0-best-e8-pfa2-sync-hybtok \
-    --matrix backboard-repro-shared --only 8192x4 --repeats 2              # prints the plan
-g4bench modal pair ... --execute                                          # runs it
+# The headline table: article recipe (A) vs final config (B), interleaved on one GPU, one job per workload
+# (workloads are named <input>x<concurrency>; drop --execute to print the plan)
+for w in 1024x1 1024x4 1024x16 1024x64 8192x1 8192x4 8192x16 8192x64; do
+  g4bench modal pair --a vllm-0.33.0-mtp4 --b vllm-0.33.0-best-e8-pfa2-sync-hybtok \
+      --matrix backboard-repro-shared --only "$w" --repeats 2 --execute
+done
 
-g4bench modal job --engine vllm-0.33.0-mtp4 --matrix backboard-repro-shared --only 1024x1 --execute   # one config
-g4bench modal script --path kernels/gemm_bench.py --execute                                         # a kernel micro-benchmark
-g4bench analyze && g4bench claims   # results/ → results/summary/, docs/CLAIMS.md
+g4bench analyze && g4bench claims   # results/ → results/summary/ and docs/CLAIMS.md
 ```
 
-Modal credentials go in an untracked `.env` (`MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`). Every launch is an ephemeral
-Modal app; nothing stays deployed. Engine images are digest-pinned (vLLM v0.33.0, SGLang v0.5.23). Every run writes
-`results/runs/<run_id>/` with normalized results, server and client logs, the effective engine config, active
-patches, speculative-decoding counters, GPU samples and correctness probes; per-request client dumps and profiler
-traces stay local. The harness targets Linux (the images run Python 3.12); `g4bench modal selftest --execute` runs
-the test suite on Linux inside Modal.
+Modal credentials go in an untracked `.env` (`MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`).
+`g4bench modal selftest --execute` runs the test suite on Linux.
+
+## How we measured
+
+- **Same-GPU A/B pairs.** Cloud GPUs of one SKU vary 5–15%, so every number is a pair: the article's vLLM recipe
+  and our config on one GPU, interleaved ABBA / BAAB. Pairs at one workload agree within 0.1–1% (3% at 8K × 4). All pair
+  results: [`results/pairs/`](results/pairs/).
+- **Baselines reproduced first.** The article's vLLM recipe lands within +0.9% to +3.1% of its published throughput
+  at all 8 workloads; its SGLang recipe runs 7–17% faster than published (below).
+- **Adoption rules written before each run**, and configs tuned on seed 0 then confirmed on held-out seeds 1 and 2.
+- **Outputs checked.** Every config is compared with a greedy, no-speculation BF16 reference on 8 prompts up to
+  7.9K tokens; the only divergences, the article's recipe included, are near-ties between the top two tokens.
+
+<details>
+<summary>Baseline reproduction (output tok/s, seed 0)</summary>
+
+| Workload | vLLM ours | vLLM article | Δ | SGLang ours | SGLang article | Δ |
+|---|---:|---:|---:|---:|---:|---:|
+| 1K × 1 | 190.4 | 186.8 | +1.9% | 136.9 | 122.6 | +11.7% |
+| 1K × 4 | 655.0 | 649.0 | +0.9% | 499.1 | 456.8 | +9.3% |
+| 1K × 16 | 1905 | 1861 | +2.4% | 1299 | 1122 | +15.8% |
+| 1K × 64 | 3668 | 3634 | +0.9% | 2039 | 1750 | +16.5% |
+| 8K × 1 | 164.6 | 159.6 | +3.1% | 89.4 | 82.5 | +8.4% |
+| 8K × 4 | 402.6 | 395.7 | +1.8% | 287.9 | 269.5 | +6.8% |
+| 8K × 16 | 801.9 | 794.5 | +0.9% | 587.5 | 533.7 | +10.1% |
+| 8K × 64 | 1095 | 1079 | +1.5% | 728.6 | 673.6 | +8.2% |
+
+Recipes as in the article: vLLM MTP with 4 draft tokens; SGLang NEXTN with 5 steps / 6 tokens.
+</details>
+
+### Notes
+
+- Backboard's engine is not public, so throughput is normalized through the article's vLLM figure (¹); TTFT is
+  measured directly.
+- p99 TPOT trails Backboard at 8K × 4 (11.3 vs 10.3 ms), 8K × 16 and 8K × 64 (+4%); the config favours TTFT there.
+- p90 TTFT at concurrency ≥ 4 is dominated by the first burst of simultaneous requests; median TTFT is 16–26% below
+  the article recipe's at every workload.
+- Prompts are random tokens with range ratio 0.8 and ignore-EOS, following InferenceX.
 
 ## Repository layout
 
 ```
-configs/engines/        engine configs: the article's recipes (role: baseline) and every experiment (role: variant)
-configs/matrix/         workload matrices
+configs/engines/        engine configs: the article's recipes and every experiment
 configs/targets/        the article's published numbers, transcribed and test-checked
-src/g4bench/            harness: runner, InferenceX client, stats, analysis, Modal launcher, engine patches (patches/)
+src/g4bench/            harness: runner, client, stats, analysis, Modal launcher, vLLM patches (patches/)
 kernels/                GPU micro-benchmarks and the prefill-attention kernels
-results/runs/           every measured run
-results/pairs/          same-GPU paired comparisons (paired.json per pair job)
-results/kernels/        micro-benchmark outputs
-results/summary/        aggregated tables (SUMMARY.md, paired.csv, …)
-docs/                   DECISIONS.md, EXPERIMENTS.md, CLAIMS.md, SOURCES.md, analysis/
-third_party/inferencex/ vendored InferenceX bench_serving @ 0b991451 (Apache-2.0)
+results/pairs/          same-GPU paired comparisons
+results/runs/           every measured run: normalized results, server logs, configs
+results/summary/        aggregated tables
+docs/                   decision log, experiment plan, claims register, sources
 ```
 
-## Notes on method
+## Acknowledgements
 
-- **Estimator.** Backboard's engine is proprietary and its GPU edition, power limit and driver are not stated, so
-  it cannot be run here. The comparison takes our measured speed-up over the article's vLLM recipe on one GPU and
-  scales it by the article's own vLLM-to-Backboard ratio. Pairs at one workload agree within 0.1–1 % (3 % at
-  8K × 4), so the uncertainty sits mostly in the article's single published figures: ±2–3 % there would cover the 1.02–1.06
-  margins. Pairing cancels Modal's 5–15 % GPU-to-GPU spread; 1K × 64 and 8K × 64 have one pair with this exact
-  config (three with the near-identical `-sync` config, same result).
-- **Where we are behind.** p99 TPOT trails Backboard at 8K × 4 (+9 %), 8K × 16 (+4 %) and 8K × 64 (+4 %), and so
-  does p99 E2EL at 8K × 4. At 8K × 4 it is set by the few requests that wait through other requests' 8K prefill
-  steps (median TPOT 6.15 vs 8.5 ms for the article recipe); splitting prefills brings p99 TPOT to 10.4–10.8 ms but
-  pushes p90 TTFT to 0.97–1.13 s, so the frozen config keeps the TTFT side (D-069).
-- **p90 TTFT at concurrency ≥ 4** largely measures the first burst of `c` simultaneous arrivals on an idle server
-  and varies between repeats (8K × 4: 610–677 ms over 4 pairs; 8K × 16: 1171–1614 ms over 3); medians are steadier.
-- **Workload assumptions** the article leaves open: random-token prompts, range ratio 0.8, ignore-EOS, 10 requests
-  per unit of concurrency, 8 warm-ups, a fresh server per point. Part of the low-concurrency gain is deeper
-  speculation (acceptance length ≈ 5.1 vs 4.1), which random-token prompts may favour; real-text prompts were not
-  run. Configurations were tuned on seed 0, the seed the table uses; held-out seeds 1 and 2 at 8K × 4 reproduce the
-  speed-up (1.320 / 1.335 vs 1.326).
-- **Outputs.** The target model stays BF16. Against a BF16 no-speculation greedy reference (8 prompts up to 7.9K
-  tokens), every divergence of every configuration, the article's recipe included, falls where the reference's top
-  two tokens are within 0.25 nats; bitwise identity is not attainable with speculative decoding in vLLM (D-063).
-  The FP8 draft-head scan is the same category of change as Backboard's disclosed 4-bit shortlist.
+Built on [vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang),
+[InferenceX](https://github.com/SemiAnalysisAI/InferenceX), [Triton](https://github.com/triton-lang/triton) and
+Gluon, [fastokens](https://pypi.org/project/fastokens/) and [Modal](https://modal.com). Thanks to Backboard for
+publishing detailed numbers to compare against.
+
+## Citation
+
+```bibtex
+@misc{gemma4-inference-repro,
+  title  = {gemma4-inference-repro: Open-source vLLM beyond Backboard's published Gemma 4 12B serving numbers},
+  author = {Wajibu, Ahamed Mohamed},
+  year   = {2026},
+  url    = {https://github.com/amw720386/gemma4-inference-repro}
+}
+```
 
 ## License
 
-Not yet chosen. `third_party/inferencex` keeps its upstream Apache-2.0 licence and notice.
+[MIT](LICENSE). `third_party/inferencex` keeps its Apache-2.0 license.

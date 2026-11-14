@@ -12,9 +12,8 @@ results/scratch/
 data/speedbench/*.jsonl
 .cache/
 .claude/*.local.md
-# Bulky raw outputs stay local (removed from the tree in the repo-cleanup PR; earlier ones remain in git history):
+# Bulky raw outputs stay local:
 results/runs/*/points/*/inferencex_result.json
 *.pt.trace.json.gz
 results/kernels/*/ids_*.json
 results/kernels/*/prompts.json
-results/budget_ledger.jsonl
