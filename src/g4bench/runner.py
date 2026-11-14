@@ -496,14 +496,43 @@ def _sleep_while_running(proc: subprocess.Popen, seconds: float, deadline: float
     return proc.poll() is None and time.monotonic() < deadline
 
 
+PROMPT_TOKENS_METRIC = "vllm:prompt_tokens_total"
+
+
+def _wait_first_prompt_tokens(proc: subprocess.Popen, base_url: str, deadline: float,
+                              max_wait_s: float = 600.0, poll_s: float = 0.25) -> tuple[str, float]:
+    """Block until the server's prompt-token counter moves (the client's first request reached the engine).
+
+    Returns (how the anchor was found, seconds waited). Servers without the metric (mock, other engines) anchor at
+    once, i.e. the old client-launch behaviour."""
+    from . import promscrape
+
+    t = time.monotonic()
+    base = (promscrape.scrape(base_url) or {}).get(PROMPT_TOKENS_METRIC)
+    if base is None:
+        return "no_metric", 0.0
+    end = min(t + max_wait_s, deadline)
+    while time.monotonic() < end and proc.poll() is None:
+        cur = (promscrape.scrape(base_url, timeout=5.0) or {}).get(PROMPT_TOKENS_METRIC)
+        if cur is not None and cur > base:
+            return "first_prompt_tokens", round(time.monotonic() - t, 3)
+        time.sleep(poll_s)
+    return "timeout", round(time.monotonic() - t, 3)
+
+
 def profile_window(proc: subprocess.Popen, base_url: str, prof: dict[str, Any], deadline: float) -> dict[str, Any]:
-    """While the client runs: wait ``warmup_s``, POST /start_profile, wait ``duration_s``, POST /stop_profile.
+    """While the client runs: wait for its first request to reach the server, then ``warmup_s``, POST
+    /start_profile, wait ``duration_s``, POST /stop_profile.
 
     /stop_profile is always sent once /start_profile was (even if the client finished early)."""
     rec: dict[str, Any] = {"key": prof["key"], "point_id": prof["point_id"], "warmup_s": prof["warmup_s"],
                            "duration_s": prof["duration_s"], "server_argv_added": prof["server_argv"],
                            "server_env_added": prof["server_env"]}
     t0 = time.monotonic()
+    # Anchor the warmup on the server's first prompt token, not on the client's launch: the client spends a
+    # variable few seconds loading the tokenizer and generating prompts, and a window that closes before the first
+    # request records an empty trace (run 20261113T212447Z-...-7610: 3 s warmup at 1K x1, 1.4 KB trace, no events).
+    rec["anchor"], rec["anchor_at_s"] = _wait_first_prompt_tokens(proc, base_url, deadline)
     if not _sleep_while_running(proc, prof["warmup_s"], deadline):
         rec["skipped"] = "client finished (or deadline) before the warmup ended; no profile taken"
         return rec
