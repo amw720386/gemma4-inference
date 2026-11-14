@@ -182,6 +182,10 @@ g4bench analyze && g4bench claims         # aggregate results/runs → results/s
 - **Every run** writes `results/runs/<run_id>/` with raw InferenceX output, server logs, effective engine config,
   speculative-decoding counters, GPU samples, correctness probes and a `REPORT.md`. Mock, proxy-hardware, profiled
   and non-article-length runs are never compared with the article.
+- **Not committed:** the per-request InferenceX dumps (`points/*/inferencex_result.json`), profiler traces and
+  tokenizer-probe id dumps stay local (`.gitignore`). Everything the tables are built from is committed. The dumps
+  from runs up to 2026-11-14 (≈ 400 MB) are in git history:
+  `git checkout fd29e73 -- results/runs/<run_id>/points/<point>/inferencex_result.json`.
 
 ## Quick start (CPU)
 
@@ -201,10 +205,11 @@ configs/targets/        the article's published numbers, transcribed and test-ch
 src/g4bench/            harness: runner, InferenceX client, stats, analysis, Modal app + launcher,
                         engine patches (patches/), profiler summaries
 kernels/                GPU micro-benchmarks (GEMM, cuBLAS versions, CuTe DSL, attention, draft-head scan)
-results/runs/           every measured run, raw and normalized
+results/runs/           every measured run: normalized results, logs, configs (raw per-request dumps stay local)
+results/pairs/          same-GPU paired comparisons (paired.json per pair job)
 results/kernels/        micro-benchmark outputs
 results/summary/        aggregated tables (SUMMARY.md, best_vs_backboard.csv, …)
-docs/                   DECISIONS.md (decision log D-001…D-056), EXPERIMENTS.md (pre-registered plan and run log),
+docs/                   DECISIONS.md (decision log D-001…D-069), EXPERIMENTS.md (pre-registered plan and run log),
                         CLAIMS.md, SOURCES.md, analysis/
 third_party/inferencex/ vendored InferenceX bench_serving @ 0b991451 (Apache-2.0)
 ```
