@@ -98,6 +98,8 @@ Modal credentials go in an untracked `.env` (`MODAL_TOKEN_ID`, `MODAL_TOKEN_SECR
 - **Baselines reproduced first.** The article's vLLM recipe lands within +0.9% to +3.1% of its published throughput
   at all 8 workloads; its SGLang recipe runs 7–17% faster than published (below).
 - **Adoption rules written before each run**, and configs tuned on seed 0 then confirmed on held-out seeds 1 and 2.
+- **Held-out batch sizes.** At concurrencies never used for tuning (8, 32, 48) the final config runs 1.07–1.28×
+  the article recipe, on the curve through the tuned points ([D-072](docs/DECISIONS.md)).
 - **Outputs checked.** Every config is compared with a greedy, no-speculation BF16 reference on 8 prompts up to
   7.9K tokens; the only divergences, the article's recipe included, are near-ties between the top two tokens.
 

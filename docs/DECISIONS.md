@@ -664,3 +664,15 @@ git-filter-repo: `CLAUDE.md`, `BUDGET.md`, the old handoff docs `STATUS.md` / `N
 passages are removed from every version of the README files, and the Modal workspace name is redacted everywhere.
 Merged topic branches were deleted. Commit SHAs before this point changed; a full bundle of the old history is kept
 off-repo by the owner.
+
+**D-072 (2026-11-15) Held-out concurrencies: the final config generalizes.** Asked whether the config only works at
+the tuned batch sizes, we ran same-GPU pairs (article recipe A vs final config B, n = 2 pairs each) at concurrencies
+never used for tuning: 8, 32 (the speculation-depth switch) and 48 (above it), at 1K and 8K input
+(`configs/matrix/untuned-conc.yaml`). Throughput B/A: 1K × 8 1.18, 1K × 32 1.13, 1K × 48 1.07, 8K × 8 1.28,
+8K × 32 1.16, 8K × 48 1.16; the two pairs at each point agree within 0.4%, and every value lies on the curve through
+the tuned neighbours (1K: 1.26 @4, 1.19 @16, 1.07 @64; 8K: 1.33 @4, 1.26 @16, 1.16 @64). p99 TPOT is lower at every
+pair; median TTFT is 0.49–0.84× the recipe's; p90 TTFT is lower in 11 of 12 pairs (one 1K × 32 pair 1.08×, a
+first-burst outlier; its twin 0.75×). Above 32 running requests the config drafts 4 tokens like the recipe
+(acceptance ratio ≈ 1.00 vs 1.25 below), so 1K × 48 gets the patches' gain but not deeper speculation; whether 6
+drafts pay up to 48 at 1K is untested. The pair launcher's cost estimate now interpolates the article's throughput
+between published concurrencies instead of assuming 50 tok/s for unpublished ones.

@@ -60,8 +60,9 @@ def segment_order(order: str, repeat: int) -> str:
 
 
 def _tok_s_guess(p, targets: dict[str, Any]) -> float:
-    near = 8192 if p.isl > 4096 else 1024
-    ref = targets.get(f"{near}x{p.conc}", {}).get("output_throughput", {}).get("vllm")
+    from .cost import article_tok_s
+
+    ref = article_tok_s(targets, p.isl, p.conc)
     return float(ref) if ref else 50.0
 
 
