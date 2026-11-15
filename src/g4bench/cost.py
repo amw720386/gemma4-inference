@@ -32,6 +32,20 @@ class Estimate:
                 f"(pessimistic; slowdown x{SLOWDOWN_FACTOR}, start {DEFAULT_SERVER_START_S:.0f}s/server)")
 
 
+def article_tok_s(targets: dict[str, Any], isl: int, conc: int, ref: str = "vllm") -> float | None:
+    """Article throughput for (isl, conc); between published concurrencies, linear interpolation
+    (throughput is concave in concurrency, so this underestimates = pessimistic); outside, the nearest end."""
+    near = 8192 if isl > 4096 else 1024
+    pts = sorted((int(k.split("x")[1]), float(v["output_throughput"][ref])) for k, v in targets.items()
+                 if k.startswith(f"{near}x") and "@" not in k and v.get("output_throughput", {}).get(ref))
+    if not pts:
+        return None
+    for (c0, t0), (c1, t1) in zip(pts, pts[1:]):
+        if c0 <= conc <= c1:
+            return t0 + (t1 - t0) * (conc - c0) / (c1 - c0)
+    return pts[0][1] if conc < pts[0][0] else pts[-1][1]
+
+
 def point_seconds(p: Point, tok_s: float) -> float:
     toks = (p.num_prompts + p.num_warmups) * p.osl
     return toks / max(tok_s, 1e-6)
@@ -49,8 +63,7 @@ def estimate(points: list[Point], gpu: str = "RTX-PRO-6000", *, fresh_server_per
     for p in points:
         # Real-prompt arms (key "...@dataset", isl 0 = natural length) borrow the nearest article workload's
         # throughput as the guess; the 1.5x slowdown factor still applies.
-        near = 8192 if p.isl > 4096 else 1024
-        ref = targets.get(f"{near}x{p.conc}", {}).get("output_throughput", {}).get(tok_s_ref)
+        ref = article_tok_s(targets, p.isl, p.conc, tok_s_ref)
         tok_s = (ref / SLOWDOWN_FACTOR) if ref else 50.0
         s = point_seconds(p, tok_s) + (server_start_s if fresh_server_per_point else 0.0)
         detail.append({"point_id": p.point_id, "est_tok_s": tok_s, "est_s": s})

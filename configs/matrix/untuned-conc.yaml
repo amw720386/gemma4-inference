@@ -1,0 +1,14 @@
+# Generalization check: the backboard-repro-shared workloads at concurrencies never used for tuning
+# (8, 32 at the speculation-depth switch, 48 above it). Same client policy, one shared server per job; n=1 per pair.
+name: untuned-conc
+isl: [1024, 8192]
+osl: [1024]
+conc: [8, 32, 48]
+seeds: [0]
+trials_per_seed: 1
+random_range_ratio: 0.8
+use_chat_template: true
+num_prompts_per_conc: 10
+num_warmups_per_conc: 2
+max_model_len: 10240
+fresh_server_per_point: false
